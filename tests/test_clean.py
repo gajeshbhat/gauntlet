@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from gauntlet.clean import Finding, check, function_findings
+from gauntlet.scope import Scope, parse
 
 SIMPLE = "def f(x):\n    return x\n"
 BRANCHY = (
@@ -49,25 +50,25 @@ def write_project(root: Path, source: str, executed: list[int], missing: list[in
 
 def test_check_passes_when_all_under_threshold(tmp_path: Path) -> None:
     write_project(tmp_path, SIMPLE, [1, 2], [])
-    assert check(tmp_path, tmp_path / "coverage.json", crap_max=8) == []
+    assert check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope()).offenders == []
 
 
 def test_check_reports_offenders_with_path(tmp_path: Path) -> None:
     write_project(tmp_path, BRANCHY, [1], [2, 3, 4, 5, 6, 7, 8])
-    ((path, f),) = check(tmp_path, tmp_path / "coverage.json", crap_max=8)
+    ((path, f),) = check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope()).offenders
     assert path == "mod.py"
     assert f.name == "g"
 
 
 def test_threshold_is_inclusive(tmp_path: Path) -> None:
     write_project(tmp_path, SIMPLE, [1, 2], [])
-    assert check(tmp_path, tmp_path / "coverage.json", crap_max=1) == []
-    assert len(check(tmp_path, tmp_path / "coverage.json", crap_max=0)) == 1
+    assert check(tmp_path, tmp_path / "coverage.json", crap_max=1, scope=Scope()).offenders == []
+    assert len(check(tmp_path, tmp_path / "coverage.json", crap_max=0, scope=Scope()).offenders) == 1
 
 
 def test_missing_coverage_file_explains_how_to_make_it(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="--cov-report=json"):
-        check(tmp_path, tmp_path / "coverage.json", crap_max=8)
+        check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope())
 
 
 def test_coverage_is_per_function_not_per_file() -> None:
@@ -88,7 +89,7 @@ def test_check_collects_offenders_from_every_file(tmp_path: Path) -> None:
         (tmp_path / name).write_text(BRANCHY)
         files[name] = {"executed_lines": [1], "missing_lines": [2, 3, 4, 5, 6, 7, 8]}
     (tmp_path / "coverage.json").write_text(json.dumps({"files": files}))
-    paths = [p for p, _ in check(tmp_path, tmp_path / "coverage.json", crap_max=8)]
+    paths = [p for p, _ in check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope()).offenders]
     assert paths == ["a.py", "b.py"]
 
 
@@ -96,3 +97,43 @@ def test_adjacent_functions_do_not_share_lines() -> None:
     src = "def f():\n    return 1\ndef g():\n    return 2\n"
     f, g = function_findings(src, executed={1, 2}, missing={3, 4})
     assert (f.coverage, g.coverage) == (1.0, 0.0)
+
+
+def test_check_reports_how_many_functions_it_evaluated(tmp_path: Path) -> None:
+    write_project(tmp_path, SIMPLE + "\n" + BRANCHY.replace("g", "h", 1), [1, 2], [4, 5, 6, 7, 8, 9, 10, 11])
+    result = check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope())
+    assert result.evaluated == 2
+
+
+def test_check_counts_only_functions_in_scope(tmp_path: Path) -> None:
+    write_project(tmp_path, SIMPLE, [1, 2], [])
+    assert check(tmp_path, tmp_path / "coverage.json", 8, parse(["mod.py"])).evaluated == 1
+    assert check(tmp_path, tmp_path / "coverage.json", 8, parse(["other.py"])).evaluated == 0
+
+
+def test_coverage_paths_cannot_escape_the_root(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    (tmp_path / "secret.py").write_text("def f():\n    return 1\n")
+    cov = {"files": {"../secret.py": {"executed_lines": [1], "missing_lines": []}}}
+    (root / "coverage.json").write_text(json.dumps(cov))
+    with pytest.raises(ValueError, match="escapes the project root"):
+        check(root, root / "coverage.json", 8, Scope())
+
+
+def test_unparseable_source_is_a_clean_error(tmp_path: Path) -> None:
+    write_project(tmp_path, "def broken(:\n", [], [])
+    with pytest.raises(ValueError, match=r"cannot analyse mod\.py"):
+        check(tmp_path, tmp_path / "coverage.json", 8, Scope())
+
+
+def test_pathologically_nested_source_is_a_clean_error(tmp_path: Path) -> None:
+    write_project(tmp_path, "x = " + "(" * 5000 + "1" + ")" * 5000 + "\n", [], [])
+    with pytest.raises(ValueError, match=r"cannot analyse mod\.py"):
+        check(tmp_path, tmp_path / "coverage.json", 8, Scope())
+
+
+def test_oversized_source_is_rejected(tmp_path: Path) -> None:
+    write_project(tmp_path, "x = 1\n" * 10, [], [])
+    with pytest.raises(ValueError, match="byte limit"):
+        check(tmp_path, tmp_path / "coverage.json", 8, Scope(), max_bytes=10)

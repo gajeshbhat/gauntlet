@@ -46,3 +46,10 @@ unit tests red. gremlins errs towards under-reporting here.
   That is what the key promises, but it deserves an explicit doc warning.
 - Docs say `private` is the default; the real default is a recursive slave. `propagationTypes` in `disk.go` duplicates the new map.
 - The shell subtest has no failure cleanup trap (same as its neighbours).
+- Restricted projects: a client allowed a host path (`restricted.devices.disk.paths`) could now set `propagation=rshared` and
+  create mounts under that path on the host. Consider gating the key in restricted projects (flagged by the automated security
+  review of the commit).
+
+## After this report
+Gauntlet was then hardened (fail-closed gates, stamped provenance, user policy, sandboxed `run`, `loop`); the Go gates here
+consumed artifacts produced by hand in the `v1` VM, which `gauntlet run` now automates for repos a stock Go sandbox can build.

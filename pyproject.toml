@@ -33,6 +33,9 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]  # test data tables read better on one line
+
 [tool.ruff.lint.mccabe]
 max-complexity = 8  # same ceiling the clean gate enforces on target repos
 

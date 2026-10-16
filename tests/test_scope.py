@@ -43,3 +43,16 @@ def test_scope_is_a_value() -> None:
 
 def test_a_colon_inside_the_path_is_kept() -> None:
     assert parse(["dir:x/a.go:3-4"]) == Scope((("dir:x/a.go", (3, 4)),))
+
+
+def test_directory_entries_match_everything_below_them() -> None:
+    scope = parse(["src/"])
+    assert scope.contains("src/gauntlet/cli.py", 3)
+    assert scope.contains("pkg/src/x.py", 1)
+    assert not scope.contains("tests/test_cli.py", 1)
+    assert not scope.contains("mysrc/x.py", 1)
+
+
+def test_directory_entries_take_no_line_range() -> None:
+    with pytest.raises(ValueError, match="scope"):
+        parse(["src/:1-5"])

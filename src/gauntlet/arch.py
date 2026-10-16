@@ -8,6 +8,8 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text
+
 
 @dataclass(frozen=True)
 class Violation:
@@ -48,18 +50,47 @@ def layer_of(module: str, layers: tuple[str, ...], sep: str = ".") -> int | None
     return max(matches)[1] if matches else None
 
 
-def check(root: Path, layers: tuple[str, ...]) -> list[Violation]:
+@dataclass(frozen=True)
+class ArchResult:
+    modules: int  # modules that belong to a layer; 0 means the gate saw nothing and must not pass
+    violations: list[Violation]
+    edges: frozenset[tuple[int, int]] = frozenset()  # (importer layer, imported layer) between different layers
+
+
+def _violations(rel: Path, layers: tuple[str, ...], own: int, found: list[tuple[int, str]]) -> list[Violation]:
+    out: list[Violation] = []
+    seen: set[tuple[int, str]] = set()
+    for line, name in found:
+        target = layer_of(name, layers)
+        if target is not None and target < own and (line, layers[target]) not in seen:
+            seen.add((line, layers[target]))
+            out.append(Violation(str(rel), line, layers[own], layers[target]))
+    return out
+
+
+def _edges(own: int, layers: tuple[str, ...], found: list[tuple[int, str]]) -> set[tuple[int, int]]:
+    targets = {layer_of(name, layers) for _, name in found}
+    return {(own, t) for t in targets if t is not None and t != own}
+
+
+def _imports_of(root: Path, rel: Path, package: list[str], max_bytes: int) -> list[tuple[int, str]]:
+    try:
+        return _imports_at(read_text(inside(root, str(rel)), max_bytes), package)
+    except (SyntaxError, RecursionError, MemoryError) as e:
+        raise ValueError(f"cannot analyse {rel}: {type(e).__name__}") from None
+
+
+def check(root: Path, layers: tuple[str, ...], max_bytes: int = MAX_SOURCE_BYTES) -> ArchResult:
+    modules = 0
     violations: list[Violation] = []
+    edges: set[tuple[int, int]] = set()
     for path in sorted(root.rglob("*.py")):
-        parts = path.relative_to(root).with_suffix("").parts
-        module = ".".join(parts)  # a package __init__ is "pkg.__init__", still inside layer "pkg"
-        own = layer_of(module, layers)
-        if own is None:
-            continue
-        seen: set[tuple[int, str]] = set()
-        for line, name in _imports_at(path.read_text(), list(parts[:-1])):
-            target = layer_of(name, layers)
-            if target is not None and target < own and (line, layers[target]) not in seen:
-                seen.add((line, layers[target]))
-                violations.append(Violation(str(path.relative_to(root)), line, layers[own], layers[target]))
-    return violations
+        rel = path.relative_to(root)
+        parts = rel.with_suffix("").parts
+        own = layer_of(".".join(parts), layers)  # a package __init__ is "pkg.__init__", still inside layer "pkg"
+        if own is not None:
+            modules += 1
+            found = _imports_of(root, rel, list(parts[:-1]), max_bytes)
+            violations += _violations(rel, layers, own, found)
+            edges |= _edges(own, layers, found)
+    return ArchResult(modules, violations, frozenset(edges))

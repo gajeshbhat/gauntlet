@@ -1,2 +1,27 @@
 language = "python"
 src = "src"
+
+# Outermost first; imports may only point down this list.
+[layers]
+order = [
+  "gauntlet.cli",
+  "gauntlet.loop",
+  "gauntlet.runner",
+  "gauntlet.golang",
+  "gauntlet.spec",
+  "gauntlet.diagram",
+  "gauntlet.report",
+  "gauntlet.clean",
+  "gauntlet.arch",
+  "gauntlet.exclusions",
+  "gauntlet.harden",
+  "gauntlet.sandbox",
+  "gauntlet.snapshot",
+  "gauntlet.policy",
+  "gauntlet.provenance",
+  "gauntlet.config",
+  "gauntlet.scope",
+  "gauntlet.crap",
+  "gauntlet.results",
+  "gauntlet.safefs",
+]

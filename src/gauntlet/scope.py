@@ -12,10 +12,13 @@ class Scope:
     def contains(self, path: str, line: int) -> bool:
         if not self.entries:
             return True
-        return any(
-            (path == name or path.endswith("/" + name)) and (span is None or span[0] <= line <= span[1])
-            for name, span in self.entries
-        )
+        return any(_matches(path, name) and (span is None or span[0] <= line <= span[1]) for name, span in self.entries)
+
+
+def _matches(path: str, name: str) -> bool:
+    if name.endswith("/"):  # a directory: everything below it
+        return path.startswith(name) or ("/" + name) in path
+    return path == name or path.endswith("/" + name)
 
 
 def _entry(item: str) -> Entry:
@@ -26,6 +29,8 @@ def _entry(item: str) -> Entry:
         raise ValueError(f"bad scope entry {item!r}: empty path")
     if not span:
         return name, None
+    if name.endswith("/"):
+        raise ValueError(f"bad scope entry {item!r}: a directory takes no line range")
     lo, _, hi = span.partition("-")
     if not (lo.isdigit() and hi.isdigit() and int(lo) <= int(hi)):
         raise ValueError(f"bad scope entry {item!r}: expected path or path:lo-hi")

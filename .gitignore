@@ -7,3 +7,7 @@ __pycache__/
 coverage.json
 mutants/
 pilots/*/artifacts/
+gauntlet-manifest.json
+.gauntlet/
+.gauntlet-out/
+EVIDENCE.md

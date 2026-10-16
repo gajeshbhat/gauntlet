@@ -10,9 +10,11 @@ import json
 import re
 from pathlib import Path
 
-from gauntlet.arch import Violation, layer_of
-from gauntlet.clean import Finding
+from gauntlet.arch import ArchResult, Violation, layer_of
+from gauntlet.clean import CleanResult, Finding
 from gauntlet.crap import crap_score
+from gauntlet.results import Mutation
+from gauntlet.safefs import MAX_ARTIFACT_BYTES, read_text
 from gauntlet.scope import Scope
 
 COVER_LINE = re.compile(r"^(.+?):(\d+):\s+\S.*?\s+([\d.]+)%$")
@@ -24,7 +26,7 @@ def read(root: Path, name: str, how: str) -> str:
     path = root / name
     if not path.exists():
         raise FileNotFoundError(f"{path} not found; produce it with: {how}")
-    return path.read_text()
+    return read_text(path, MAX_ARTIFACT_BYTES)
 
 
 def _gocyclo(text: str) -> list[tuple[str, int, str, int]]:
@@ -55,17 +57,19 @@ def _function_coverage(path: str, row: int, covered: dict[int, list[tuple[str, f
     return 0.0  # absent from the profile: nothing exercised it (fail closed)
 
 
-def clean_check(gocyclo: str, cover_func: str, crap_max: float, scope: Scope) -> list[tuple[str, Finding]]:
+def clean_check(gocyclo: str, cover_func: str, crap_max: float, scope: Scope) -> CleanResult:
     covered = _coverage(cover_func)
+    evaluated = 0
     offenders: list[tuple[str, Finding]] = []
     for path, row, name, complexity in _gocyclo(gocyclo):
         if not scope.contains(path, row):
             continue
+        evaluated += 1
         fraction = _function_coverage(path, row, covered)
         crap = crap_score(complexity, fraction)
         if crap > crap_max:
             offenders.append((path, Finding(name, row, complexity, fraction, crap)))
-    return offenders
+    return CleanResult(evaluated, offenders)
 
 
 def _outward(package: str, imported: list[str], layers: tuple[str, ...]) -> list[Violation]:
@@ -76,12 +80,23 @@ def _outward(package: str, imported: list[str], layers: tuple[str, ...]) -> list
     return [Violation(package, 0, layers[own], layers[t]) for t in sorted(outer)]
 
 
-def arch_check(imports: str, layers: tuple[str, ...]) -> list[Violation]:
+def _targets(imported: list[str], layers: tuple[str, ...]) -> set[int]:
+    return {t for t in (layer_of(n, layers, "/") for n in imported) if t is not None}
+
+
+def _edges(rows: list[list[str]], layers: tuple[str, ...]) -> frozenset[tuple[int, int]]:
+    pairs = [(layer_of(r[0], layers, "/"), _targets(r[1:], layers)) for r in rows]
+    return frozenset((own, t) for own, targets in pairs if own is not None for t in targets if t != own)
+
+
+def arch_check(imports: str, layers: tuple[str, ...]) -> ArchResult:
     rows = [line.split() for line in imports.splitlines() if line.strip()]
-    return [v for package, *imported in rows for v in _outward(package, imported, layers)]
+    modules = sum(layer_of(r[0], layers, "/") is not None for r in rows)
+    violations = [v for package, *imported in rows for v in _outward(package, imported, layers)]
+    return ArchResult(modules, violations, _edges(rows, layers))
 
 
-def harden_check(mutation_json: str, scope: Scope, base: str = "") -> tuple[float, list[str]]:
+def harden_check(mutation_json: str, scope: Scope, base: str = "") -> Mutation:
     caught, total = 0, 0
     bad: list[str] = []
     for file in json.loads(mutation_json)["files"]:
@@ -96,4 +111,4 @@ def harden_check(mutation_json: str, scope: Scope, base: str = "") -> tuple[floa
                 bad.append(f"{name}:{m['line']}:{m['column']} {m['type']} {m['status']}")
     if total == 0:
         raise ValueError("no mutants in scope; check the scope and that gremlins ran")
-    return 100 * caught / total, bad
+    return Mutation(100 * caught / total, bad, caught, total)

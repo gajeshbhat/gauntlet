@@ -1,6 +1,10 @@
 # Gauntlet: agent-agnostic quality pipeline (proposal)
 
-Status: draft for discussion. Nothing is built.
+Status: implemented for Python and Go (see README.md for the commands, SECURITY.md for the threat model).
+Built: `clean`, `arch`, `harden`, `exclusions` and `spec` gates; provenance stamping; user-owned policy; Workshop-sandboxed
+`run`; `loop` (Specifier -> human approval -> Coder -> Fixer rounds, patch out); `report`; `diagram`.
+Not built: other languages, a Gherkin step runner (the `spec` gate checks structure and traceability only),
+mutation-aware CRAP, and independent verification rounds.
 
 ## Problem
 Long steering prompts get lost in context. Quality should come from deterministic tools that fail loudly,

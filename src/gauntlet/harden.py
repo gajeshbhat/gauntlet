@@ -1,13 +1,12 @@
-"""Harden gate: mutation testing via mutmut; the score must reach `mutation.min_score`."""
+"""Harden gate (Python): the mutation score from `mutmut results --all true` must reach `mutation.min_score`.
 
-import subprocess
-from collections.abc import Callable
-from pathlib import Path
+The gate only reads results; mutmut itself runs in the sandbox (`gauntlet run`), never on the host.
+"""
+
+from gauntlet.results import Mutation
 
 CAUGHT = {"killed", "timeout", "segfault"}
 IGNORED = {"skipped"}
-
-Run = Callable[..., "subprocess.CompletedProcess[str]"]
 
 
 def score(results: str) -> tuple[int, int, list[str]]:
@@ -27,9 +26,6 @@ def score(results: str) -> tuple[int, int, list[str]]:
     return caught, total, bad
 
 
-def check(root: Path, run: Run = subprocess.run) -> tuple[float, list[str]]:
-    base = ["uv", "run", "--project", str(root), "mutmut"]
-    run([*base, "run"], cwd=root, capture_output=True, text=True)
-    done = run([*base, "results", "--all", "true"], cwd=root, capture_output=True, text=True)
-    caught, total, bad = score(done.stdout)
-    return 100 * caught / total, bad
+def check(results: str) -> Mutation:
+    caught, total, bad = score(results)
+    return Mutation(100 * caught / total, bad, caught, total)
