@@ -57,5 +57,5 @@ Each gate has a self-test against a fixture repo (a deliberately complex functio
 - Python 3.12 project managed by `uv`; ruff, pyright (strict), pytest with 100% branch coverage enforced by `./check.sh`.
 - Workshop is **required**: every agent runs via `workshop exec`.
 - Pilot (validates gates on real code, which fixtures cannot): upstream `canonical/lxd`.
-  Candidate issue: #19162 "Failure to parse large QMP messages" (unit-testable Go parser; unassigned, no PR).
+  Pilot issue: canonical/lxd#15874 "disk propagation not working" (chosen by user; supersedes #19162).
   LXD builds/tests run in the `lxd-test-vm` VM, so the Go adapter runs gates there while agents stay in Workshop.
