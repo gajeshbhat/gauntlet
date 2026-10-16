@@ -56,9 +56,7 @@ def test_same_layer_import_allowed(tmp_path: Path) -> None:
 
 
 def test_modules_outside_layers_are_ignored(tmp_path: Path) -> None:
-    make(
-        tmp_path, {"other/x.py": "from app.web import views\n", "app/domain/m.py": "import other\n"}
-    )
+    make(tmp_path, {"other/x.py": "from app.web import views\n", "app/domain/m.py": "import other\n"})
     assert check(tmp_path, LAYERS) == []
 
 
@@ -80,9 +78,7 @@ def test_every_import_statement_counts(tmp_path: Path) -> None:
 
 
 def test_files_outside_layers_do_not_stop_the_scan(tmp_path: Path) -> None:
-    make(
-        tmp_path, {"aaa/x.py": "", "app/domain/m.py": "from app.web import v\n", "app/web/v.py": ""}
-    )
+    make(tmp_path, {"aaa/x.py": "", "app/domain/m.py": "from app.web import v\n", "app/web/v.py": ""})
     assert len(check(tmp_path, LAYERS)) == 1
 
 

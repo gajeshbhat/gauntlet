@@ -42,9 +42,9 @@ def imports(source: str, package: str) -> set[str]:
     return {name for _, name in _imports_at(source, package.split(".") if package else [])}
 
 
-def _layer(module: str, layers: tuple[str, ...]) -> int | None:
+def layer_of(module: str, layers: tuple[str, ...], sep: str = ".") -> int | None:
     for i, prefix in enumerate(layers):
-        if module == prefix or module.startswith(prefix + "."):
+        if module == prefix or module.startswith(prefix + sep):
             return i
     return None
 
@@ -54,15 +54,13 @@ def check(root: Path, layers: tuple[str, ...]) -> list[Violation]:
     for path in sorted(root.rglob("*.py")):
         parts = path.relative_to(root).with_suffix("").parts
         module = ".".join(parts)  # a package __init__ is "pkg.__init__", still inside layer "pkg"
-        own = _layer(module, layers)
+        own = layer_of(module, layers)
         if own is None:
             continue
         seen: set[tuple[int, str]] = set()
         for line, name in _imports_at(path.read_text(), list(parts[:-1])):
-            target = _layer(name, layers)
+            target = layer_of(name, layers)
             if target is not None and target < own and (line, layers[target]) not in seen:
                 seen.add((line, layers[target]))
-                violations.append(
-                    Violation(str(path.relative_to(root)), line, layers[own], layers[target])
-                )
+                violations.append(Violation(str(path.relative_to(root)), line, layers[own], layers[target]))
     return violations

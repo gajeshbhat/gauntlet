@@ -44,7 +44,5 @@ def check(root: Path, coverage_json: Path, crap_max: float) -> list[tuple[str, F
     for rel, data in files.items():
         source = (root / rel).read_text()
         executed, missing = set(data["executed_lines"]), set(data["missing_lines"])
-        offenders += [
-            (rel, f) for f in function_findings(source, executed, missing) if f.crap > crap_max
-        ]
+        offenders += [(rel, f) for f in function_findings(source, executed, missing) if f.crap > crap_max]
     return offenders

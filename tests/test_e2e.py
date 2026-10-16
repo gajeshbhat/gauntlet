@@ -37,8 +37,6 @@ def victim(root: Path, test: str) -> Path:
 
 
 @pytest.mark.parametrize(("test", "code"), [(WEAK, 1), (STRONG, 0)])
-def test_harden_against_real_mutmut(
-    tmp_path: Path, test: str, code: int, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_harden_against_real_mutmut(tmp_path: Path, test: str, code: int, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["harden", str(victim(tmp_path, test))]) == code
     assert "mutation score" in capsys.readouterr().out
