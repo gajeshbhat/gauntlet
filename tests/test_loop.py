@@ -233,3 +233,9 @@ def test_control_file_matching_is_precise() -> None:
         "conftest.py",
         "pyproject.toml",
     ]
+
+
+def test_agent_failures_show_both_stderr_and_stdout() -> None:
+    box = FakeSandbox(lambda argv: ExecResult(1, "Not logged in", "a warning"))
+    with pytest.raises(ValueError, match=r"^coder failed \(exit 1\): a warning \| Not logged in$"):
+        loop.implement(loop.Agent(box, ("a",), (), 60), loop.load_roles(), "SPEC", lambda: result(True), 3)

@@ -276,7 +276,7 @@ def test_failed_step_message_uses_stderr_then_stdout_and_keeps_the_tail(repo: Pa
     def boom(stdout: str, stderr: str) -> Behave:
         return lambda argv, project: ExecResult(3, stdout, stderr)
 
-    for stdout, stderr, expected in [("out only", "", "out only"), ("ignored", "err", "err")]:
+    for stdout, stderr, expected in [("out only", "", "out only"), ("also", "err", "err \\| also")]:
         factory, _ = make(boom(stdout, stderr))
         with pytest.raises(ValueError, match=rf"^step 'tests' failed \(exit 3\): {expected}$"):
             runner.produce(repo, Config(language="python"), tmp_path / "out", factory)

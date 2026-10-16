@@ -13,6 +13,7 @@ from pathlib import Path
 from gauntlet import spec
 from gauntlet.provenance import git_output
 from gauntlet.results import GateResult
+from gauntlet.runner import output_tail
 from gauntlet.sandbox import ExecResult, Sandbox
 from gauntlet.snapshot import snapshot
 
@@ -67,7 +68,7 @@ def control_files(patch_text: str) -> list[str]:
 
 
 def _failed(agent_name: str, done: ExecResult) -> ValueError:
-    return ValueError(f"{agent_name} failed (exit {done.code}): {(done.stderr or done.stdout).strip()[-2000:]}")
+    return ValueError(f"{agent_name} failed (exit {done.code}): {output_tail(done)}")
 
 
 def specify(agent: Agent, roles: Roles, requirement: str, workspace: Path) -> str:

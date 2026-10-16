@@ -13,7 +13,7 @@ from pathlib import Path
 from gauntlet.config import Config
 from gauntlet.provenance import excluded, fingerprint, stamp
 from gauntlet.safefs import MAX_ARTIFACT_BYTES
-from gauntlet.sandbox import Sandbox
+from gauntlet.sandbox import ExecResult, Sandbox
 from gauntlet.snapshot import snapshot
 
 OUT_DIR = ".gauntlet-out"
@@ -108,13 +108,17 @@ FILES = {"python": ("coverage.json",), "go": ("mutation.json",)}  # artifacts th
 REQUIRED = {"python": ("coverage.json", "mutmut-results.txt"), "go": ("cover-func.txt", "gocyclo.txt", "imports.txt")}
 
 
+def output_tail(done: ExecResult) -> str:
+    """The end of what a failed command printed: stderr and stdout, whichever have content."""
+    return " | ".join(part for part in (done.stderr.strip(), done.stdout.strip()) if part)[-2000:]
+
+
 def _run_steps(box: Sandbox, plan: list[Step]) -> dict[str, bytes]:
     captured: dict[str, bytes] = {}
     for step in plan:
         done = box.exec(step.argv, dict(step.env), step.timeout)
         if done.code != 0 and step.must_pass:
-            tail = (done.stderr or done.stdout).strip()[-2000:]
-            raise ValueError(f"step {step.name!r} failed (exit {done.code}): {tail}")
+            raise ValueError(f"step {step.name!r} failed (exit {done.code}): {output_tail(done)}")
         if step.capture and done.stdout:
             captured[step.capture] = done.stdout.encode()
     return captured

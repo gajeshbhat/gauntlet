@@ -127,7 +127,7 @@ def test_every_workshop_call_captures_text_output(tmp_path: Path) -> None:
     box.ensure()
     box.exec(["true"])
     box.remove()
-    assert runner.kwargs == [{"capture_output": True, "text": True}] * 4
+    assert runner.kwargs == [{"capture_output": True, "text": True, "stdin": subprocess.DEVNULL}] * 4
 
 
 def test_default_timeout_and_inclusive_limits(tmp_path: Path) -> None:

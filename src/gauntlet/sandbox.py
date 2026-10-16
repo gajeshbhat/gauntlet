@@ -50,7 +50,9 @@ class WorkshopSandbox:
         self.project, self.name, self.sdks, self._run = project, name, sdks, run
 
     def _workshop(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return self._run(["workshop", "-p", str(self.project), *args], capture_output=True, text=True)
+        return self._run(
+            ["workshop", "-p", str(self.project), *args], capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )  # a closed stdin: an inherited one makes tools such as `claude -p` wait for input
 
     def ensure(self) -> None:
         if (self.project / ".workshop" / f"{self.name}.yaml").exists():
