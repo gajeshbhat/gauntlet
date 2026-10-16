@@ -6,7 +6,9 @@ authors = [
     { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "radon>=6.0.1",
+]
 
 [project.scripts]
 gauntlet = "gauntlet:main"
@@ -38,5 +40,5 @@ include = ["src", "tests"]
 typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]
-addopts = "--cov=gauntlet --cov-branch --cov-fail-under=100 --cov-report=term-missing"
+addopts = "--cov=gauntlet --cov-branch --cov-fail-under=100 --cov-report=term-missing --cov-report=json"
 testpaths = ["tests"]

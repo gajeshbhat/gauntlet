@@ -13,6 +13,7 @@ class Config:
     crap_max: int = 8  # raised from the human-oriented 4-5: agents handle more complexity
     mutation_min: int = 90
     layers: tuple[str, ...] = ()  # outermost first; dependencies only point inward
+    src: str = "."  # where module names are rooted for the arch gate
 
 
 def load(path: Path) -> Config:
@@ -27,4 +28,5 @@ def load(path: Path) -> Config:
         crap_max=data.get("crap", {}).get("max", Config.crap_max),
         mutation_min=data.get("mutation", {}).get("min_score", Config.mutation_min),
         layers=tuple(data.get("layers", {}).get("order", ())),
+        src=data.get("src", Config.src),
     )

@@ -1,6 +1,3 @@
-import sys
+from gauntlet.cli import main
 
-
-def main() -> int:
-    print("gauntlet: no commands yet (see PROPOSAL.md)", file=sys.stderr)
-    return 2
+__all__ = ["main"]
