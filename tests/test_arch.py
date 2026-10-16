@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from gauntlet.arch import Violation, check, imports
+from gauntlet.arch import Violation, check, imports, layer_of
 
 LAYERS = ("app.web", "app.service", "app.domain")  # outermost first
 
@@ -106,3 +106,11 @@ def test_a_single_file_module_is_its_own_layer(tmp_path: Path) -> None:
 
 def test_relative_import_at_the_source_root() -> None:
     assert imports("from . import x\n", "") == {"x"}
+
+
+def test_longest_prefix_wins() -> None:
+    layers = ("pkg/device", "pkg/storage", "pkg/device/config")
+    assert layer_of("pkg/device/config/x", layers, "/") == 2
+    assert layer_of("pkg/device/other", layers, "/") == 0
+    assert layer_of("pkg/device", layers, "/") == 0
+    assert layer_of("pkg/devices", layers, "/") is None

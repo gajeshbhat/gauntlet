@@ -1,6 +1,7 @@
 import argparse
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from gauntlet import arch, clean, golang, harden
@@ -8,12 +9,22 @@ from gauntlet.clean import Finding
 from gauntlet.config import Config, load
 from gauntlet.scope import Scope, parse
 
+
+@dataclass(frozen=True)
+class Run:
+    root: Path  # where gauntlet.toml and the target's sources live
+    art: Path  # where Go artifacts (gocyclo.txt, ...) are read from
+    cfg: Config
+    scope: Scope
+
+
 IMPORTS_HOW = "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."
 
 
-def _arch(root: Path, cfg: Config, scope: Scope) -> int:
+def _arch(run: Run) -> int:
+    root, cfg = run.root, run.cfg
     if cfg.language == "go":
-        violations = golang.arch_check(golang.read(root, "imports.txt", IMPORTS_HOW), cfg.layers)
+        violations = golang.arch_check(golang.read(run.art, "imports.txt", IMPORTS_HOW), cfg.layers)
     else:
         violations = arch.check(root / cfg.src, cfg.layers)
     for v in violations:
@@ -22,12 +33,13 @@ def _arch(root: Path, cfg: Config, scope: Scope) -> int:
     return 1 if violations else 0
 
 
-def _offenders(root: Path, cfg: Config, scope: Scope) -> list[tuple[str, Finding]]:
+def _offenders(run: Run) -> list[tuple[str, Finding]]:
+    root, cfg, scope = run.root, run.cfg, run.scope
     if cfg.language == "go":
         return golang.clean_check(
-            golang.read(root, "gocyclo.txt", "gocyclo ./..."),
+            golang.read(run.art, "gocyclo.txt", "gocyclo ./..."),
             golang.read(
-                root,
+                run.art,
                 "cover-func.txt",
                 "go test -coverprofile=c.out ./... && go tool cover -func=c.out",
             ),
@@ -38,8 +50,9 @@ def _offenders(root: Path, cfg: Config, scope: Scope) -> list[tuple[str, Finding
     return [(path, f) for path, f in found if scope.contains(path, f.line)]
 
 
-def _clean(root: Path, cfg: Config, scope: Scope) -> int:
-    offenders = _offenders(root, cfg, scope)
+def _clean(run: Run) -> int:
+    cfg = run.cfg
+    offenders = _offenders(run)
     for path, f in offenders:
         print(
             f"{path}:{f.line}: {f.name} CRAP {f.crap:.1f} > {cfg.crap_max} "
@@ -48,10 +61,11 @@ def _clean(root: Path, cfg: Config, scope: Scope) -> int:
     return 1 if offenders else 0
 
 
-def _harden(root: Path, cfg: Config, scope: Scope) -> int:
+def _harden(run: Run) -> int:
+    root, cfg, scope = run.root, run.cfg, run.scope
     if cfg.language == "go":
         pct, survivors = golang.harden_check(
-            golang.read(root, "mutation.json", "gremlins unleash -o mutation.json ."), scope
+            golang.read(run.art, "mutation.json", "gremlins unleash -o mutation.json ."), scope
         )
     else:
         pct, survivors = harden.check(root)
@@ -62,7 +76,7 @@ def _harden(root: Path, cfg: Config, scope: Scope) -> int:
     return 0 if ok else 1
 
 
-Gate = Callable[[Path, Config, Scope], int]
+Gate = Callable[["Run"], int]
 GATES: dict[str, list[Gate]] = {
     "arch": [_arch],
     "clean": [_clean],
@@ -82,11 +96,14 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH[:LO-HI]",
         help="limit clean/harden to a file or line range (repeatable)",
     )
+    parser.add_argument(
+        "--artifacts", type=Path, default=None, metavar="DIR", help="where Go artifacts are read from (default: ROOT)"
+    )
     args = parser.parse_args(argv)
     try:
         cfg = load(args.root / "gauntlet.toml")
-        scope = parse(args.only)
-        return max(gate(args.root, cfg, scope) for gate in GATES[args.gate])
+        run = Run(args.root, args.artifacts or args.root, cfg, parse(args.only))
+        return max(gate(run) for gate in GATES[args.gate])
     except (FileNotFoundError, ValueError) as e:
         print(f"gauntlet: {e}", file=sys.stderr)
         return 2

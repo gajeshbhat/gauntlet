@@ -43,10 +43,9 @@ def imports(source: str, package: str) -> set[str]:
 
 
 def layer_of(module: str, layers: tuple[str, ...], sep: str = ".") -> int | None:
-    for i, prefix in enumerate(layers):
-        if module == prefix or module.startswith(prefix + sep):
-            return i
-    return None
+    """Index of the layer with the longest prefix matching `module`, if any."""
+    matches = [(len(p), i) for i, p in enumerate(layers) if module == p or module.startswith(p + sep)]
+    return max(matches)[1] if matches else None
 
 
 def check(root: Path, layers: tuple[str, ...]) -> list[Violation]:

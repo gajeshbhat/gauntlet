@@ -172,3 +172,15 @@ def test_go_missing_artifact_says_how_to_make_it(tmp_path: Path, capsys: pytest.
 def test_bad_scope_is_a_usage_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["arch", str(go_project(tmp_path)), "--only", "x.go:9-1"]) == 2
     assert "scope" in capsys.readouterr().err
+
+
+def test_artifacts_can_live_elsewhere(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root, art = tmp_path / "pilot", tmp_path / "art"
+    art.mkdir()
+    root.mkdir()
+    go_project(root)
+    for name in ("gocyclo.txt", "cover-func.txt", "imports.txt"):
+        (art / name).write_text((root / name).read_text())
+        (root / name).unlink()
+    assert main(["clean", str(root), "--artifacts", str(art)]) == 1
+    assert "DiskMount CRAP" in capsys.readouterr().out
