@@ -239,3 +239,15 @@ def test_agent_failures_show_both_stderr_and_stdout() -> None:
     box = FakeSandbox(lambda argv: ExecResult(1, "Not logged in", "a warning"))
     with pytest.raises(ValueError, match=r"^coder failed \(exit 1\): a warning \| Not logged in$"):
         loop.implement(loop.Agent(box, ("a",), (), 60), loop.load_roles(), "SPEC", lambda: result(True), 3)
+
+
+def test_the_patch_leaves_out_gauntlets_own_sandbox_files(repo: Path, tmp_path: Path) -> None:
+    ws = loop.prepare_workspace(repo, tmp_path / "ws")
+    (ws / ".workshop").mkdir()
+    (ws / ".workshop" / "gauntlet-agent.yaml").write_text("name: gauntlet-agent\n")
+    (ws / ".workshop.lock").write_text("lock\n")
+    (ws / "a.py").write_text("x = 5\n")
+    text = loop.patch(ws)
+    assert "a.py" in text
+    assert ".workshop" not in text
+    assert loop.control_files(text) == []
