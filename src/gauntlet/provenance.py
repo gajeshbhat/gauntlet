@@ -1,18 +1,28 @@
 """Bind gate inputs to the exact source they were produced from, so a stale green artifact cannot pass.
 
 `stamp` records the source fingerprint and a hash of every artifact; `verify` refuses anything that changed since.
-Our own git calls ignore repository config that can run commands (diff.external, textconv, fsmonitor).
+Git is only asked for names (HEAD, tracked and untracked paths); file contents are hashed here, so no diff, textconv or
+clean/smudge filter ever runs, whatever the repository's config or .gitattributes say.
 """
 
 import hashlib
 import json
+import os
+import stat
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 MANIFEST = "gauntlet-manifest.json"
-SAFE_GIT = ["-c", "core.fsmonitor=false", "-c", "diff.external=", "-c", "core.hooksPath=/dev/null"]
+SAFE_GIT = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
+GIT_ENV = {
+    "PATH": "/usr/bin:/bin",
+    "HOME": "/nonexistent",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_ATTR_NOSYSTEM": "1",
+}
 
 
 def git_output(source: Path, *args: str) -> bytes:
@@ -31,16 +41,28 @@ def _digest(path: Path) -> str:
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
+def _entry(path: Path) -> bytes:
+    """What identifies a file's state: its type, executable bit and bytes (a symlink's own target, never followed)."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return b"deleted"
+    executable = b"x" if info.st_mode & stat.S_IXUSR else b"-"
+    if stat.S_ISLNK(info.st_mode):
+        return b"l" + executable + os.readlink(path).encode()
+    if stat.S_ISDIR(info.st_mode):  # a submodule: its own repository is out of scope
+        return b"d"
+    return b"f" + executable + _digest(path).encode()
+
+
 def fingerprint(source: Path, exclude: tuple[str, ...] = ()) -> str:
-    """Hash of HEAD, every tracked change and every untracked file, minus the excluded paths."""
+    """Hash of HEAD plus the state of every tracked and untracked (non-ignored) file, minus the excluded paths."""
     skip = [f":(exclude){p}" for p in exclude]
     h = hashlib.sha256()
     h.update(git_output(source, "rev-parse", "HEAD"))
-    h.update(git_output(source, "diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", "--", ".", *skip))
-    untracked = git_output(source, "ls-files", "-z", "--others", "--exclude-standard", "--", ".", *skip)
-    for name in sorted(filter(None, untracked.split(b"\0"))):
-        h.update(name)
-        h.update(_digest(source / name.decode()).encode())
+    listed = git_output(source, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".", *skip)
+    for name in sorted(set(filter(None, listed.split(b"\0")))):
+        h.update(name + b"\0" + _entry(source / name.decode()) + b"\0")
     return h.hexdigest()
 
 

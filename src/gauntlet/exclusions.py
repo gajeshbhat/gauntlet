@@ -72,15 +72,30 @@ def _pyproject(root: Path) -> list[str]:
     return [f"pyproject.toml: {label} {item}" for label, items in wanted for item in items]
 
 
-def _coveragerc(root: Path) -> list[str]:
-    path = root / ".coveragerc"
+COVERAGE_KEYS = (("run", "omit"), ("report", "exclude_lines"), ("report", "exclude_also"))
+
+
+def _ini(root: Path, name: str, coverage_prefix: str, mutmut_section: str | None) -> list[str]:
+    path = root / name
     if not path.is_file():
         return []
-    parser = configparser.ConfigParser()
+    parser = configparser.ConfigParser(interpolation=None)
     parser.read_string(read_text(path, MAX_SOURCE_BYTES))
-    omit = parser.get("run", "omit", fallback="")
-    return [f".coveragerc: coverage omit {line.strip()}" for line in omit.splitlines() if line.strip()]
+    wanted = [(f"{coverage_prefix}{sec}", key, f"coverage {key}") for sec, key in COVERAGE_KEYS]
+    if mutmut_section:
+        wanted.append((mutmut_section, "do_not_mutate", "mutmut do_not_mutate"))
+    return [
+        f"{name}: {label} {line.strip()}"
+        for section, key, label in wanted
+        for line in parser.get(section, key, fallback="").splitlines()
+        if line.strip()
+    ]
 
 
 def config_excludes(root: Path) -> list[str]:
-    return _pyproject(root) + _coveragerc(root)
+    return (
+        _pyproject(root)
+        + _ini(root, ".coveragerc", "", None)
+        + _ini(root, "setup.cfg", "coverage:", "mutmut")
+        + _ini(root, "tox.ini", "coverage:", None)
+    )

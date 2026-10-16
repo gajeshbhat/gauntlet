@@ -225,3 +225,59 @@ def test_untracked_content_counts_not_just_names(repo: Path) -> None:
     first = fingerprint(repo)
     (repo / "new.py").write_text("b\n")
     assert fingerprint(repo) != first
+
+
+def test_attribute_filters_never_run(repo: Path, tmp_path: Path) -> None:
+    marker = tmp_path / "filter-ran"
+    script = tmp_path / "filter.sh"
+    script.write_text(f"#!/bin/sh\ntouch {marker}\ncat\n")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    (repo / ".gitattributes").write_text("*.py filter=evil\n")
+    git(repo, "config", "filter.evil.clean", str(script))
+    git(repo, "config", "filter.evil.smudge", str(script))
+    git(repo, "add", ".gitattributes")
+    git(repo, "commit", "-q", "-m", "attrs", "--no-gpg-sign")
+    marker.unlink(missing_ok=True)
+    (repo / "a.py").write_text("x = 11\n")
+    fingerprint(repo)
+    assert not marker.exists()
+
+
+def test_deleted_tracked_files_change_the_fingerprint(repo: Path) -> None:
+    before = fingerprint(repo)
+    (repo / "a.py").unlink()
+    assert fingerprint(repo) != before
+
+
+def test_symlinks_are_hashed_by_target_not_followed(repo: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+    secret = tmp_path_factory.mktemp("outside") / "secret.txt"
+    secret.write_text("one")
+    (repo / "link").symlink_to(secret)
+    first = fingerprint(repo)
+    secret.write_text("two")  # the target outside the repo changes: not our source
+    assert fingerprint(repo) == first
+
+
+def test_mode_changes_count(repo: Path) -> None:
+    before = fingerprint(repo)
+    (repo / "a.py").chmod(0o755)
+    assert fingerprint(repo) != before
+
+
+def test_global_and_system_git_config_are_ignored(repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = tmp_path / "gitconfig"
+    config.write_text("[core]\n\tautocrlf = true\n[alias]\n\tls-files = !touch " + str(tmp_path / "alias-ran") + "\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    fingerprint(repo)
+    assert not (tmp_path / "alias-ran").exists()
+
+
+def test_an_embedded_repository_is_a_directory_entry_not_an_error(repo: Path) -> None:
+    nested = repo / "sub"
+    nested.mkdir()
+    git(nested, "init", "-q", "-b", "main")
+    (nested / "n.py").write_text("n = 1\n")
+    git(nested, "add", "-A")
+    git(nested, "commit", "-q", "-m", "n", "--no-gpg-sign")
+    git(repo, "add", "sub")
+    assert len(fingerprint(repo)) == 64

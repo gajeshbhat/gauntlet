@@ -109,3 +109,29 @@ def test_python_files_that_cannot_be_tokenised_are_errors(tmp_path: Path) -> Non
 def test_go_comments_are_still_found_by_pattern(tmp_path: Path) -> None:
     put(tmp_path, "m.go", "package m\n\nfunc F() {} // nolint\n")
     assert pragmas(tmp_path, "go", Scope()) == ["m.go:3: func F() {} // nolint"]
+
+
+def test_setup_cfg_and_tox_ini_are_checked_too(tmp_path: Path) -> None:
+    put(
+        tmp_path,
+        "setup.cfg",
+        "[coverage:run]\nomit =\n    legacy/*\n[coverage:report]\nexclude_lines = pragma: no cover\n[mutmut]\ndo_not_mutate = x.py\n",
+    )
+    put(tmp_path, "tox.ini", "[coverage:report]\nexclude_also =\n    def __repr__\n")
+    assert config_excludes(tmp_path) == [
+        "setup.cfg: coverage omit legacy/*",
+        "setup.cfg: coverage exclude_lines pragma: no cover",
+        "setup.cfg: mutmut do_not_mutate x.py",
+        "tox.ini: coverage exclude_also def __repr__",
+    ]
+
+
+def test_coveragerc_report_settings_count(tmp_path: Path) -> None:
+    put(tmp_path, ".coveragerc", "[report]\nexclude_lines =\n    raise NotImplementedError\n")
+    assert config_excludes(tmp_path) == [".coveragerc: coverage exclude_lines raise NotImplementedError"]
+
+
+def test_ini_files_without_the_sections_are_clean(tmp_path: Path) -> None:
+    put(tmp_path, "setup.cfg", "[metadata]\nname = x\n")
+    put(tmp_path, "tox.ini", "[tox]\nenvlist = py\n")
+    assert config_excludes(tmp_path) == []
