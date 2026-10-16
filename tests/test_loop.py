@@ -246,8 +246,9 @@ def test_the_patch_leaves_out_gauntlets_own_sandbox_files(repo: Path, tmp_path: 
     (ws / ".workshop").mkdir()
     (ws / ".workshop" / "gauntlet-agent.yaml").write_text("name: gauntlet-agent\n")
     (ws / ".workshop.lock").write_text("lock\n")
+    (ws / ".workshop" / "other.yaml").write_text("an agent added this\n")
     (ws / "a.py").write_text("x = 5\n")
     text = loop.patch(ws)
     assert "a.py" in text
-    assert ".workshop" not in text
-    assert loop.control_files(text) == []
+    assert "gauntlet-agent.yaml" not in text and ".workshop.lock" not in text
+    assert loop.control_files(text) == [".workshop/other.yaml"]  # anything else under .workshop is still flagged

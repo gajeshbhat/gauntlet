@@ -57,10 +57,7 @@ def prepare_workspace(source: Path, dest: Path) -> Path:
     return dest
 
 
-OWN_FILES = (
-    ":(exclude).workshop",
-    ":(exclude).workshop.lock",
-)  # gauntlet's own sandbox definition, not the agent's work
+OWN_FILES = (":(exclude).workshop/gauntlet-agent.yaml", ":(exclude).workshop.lock")  # not the agent's work
 
 
 def patch(workspace: Path) -> str:
