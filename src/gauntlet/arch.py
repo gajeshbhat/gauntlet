@@ -17,30 +17,29 @@ class Violation:
     target: str
 
 
-def _resolve(node: ast.ImportFrom, module: str, is_package: bool) -> str:
+def _resolve(node: ast.ImportFrom, package: list[str]) -> str:
     if node.level == 0:
-        return node.module or ""
-    package = module.split(".")
-    if not is_package:
-        package = package[:-1]
+        return node.module or ""  # pragma: no mutate (module is only None for relative imports)
     base = package[: len(package) - (node.level - 1)]
     return ".".join([*base, *([node.module] if node.module else [])])
 
 
-def _imports_at(source: str, module: str, is_package: bool) -> list[tuple[int, str]]:
+def _imports_at(source: str, package: list[str]) -> list[tuple[int, str]]:
     found: list[tuple[int, str]] = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             found += [(node.lineno, a.name) for a in node.names]
         elif isinstance(node, ast.ImportFrom):
-            base = _resolve(node, module, is_package)
-            found.append((node.lineno, base))
-            found += [(node.lineno, f"{base}.{a.name}") for a in node.names]
+            base = _resolve(node, package)
+            found += [(node.lineno, f"{base}.{a.name}" if base else a.name) for a in node.names]
+            if base:
+                found.append((node.lineno, base))
     return found
 
 
-def imports(source: str, module: str, is_package: bool) -> set[str]:
-    return {name for _, name in _imports_at(source, module, is_package)}
+def imports(source: str, package: str) -> set[str]:
+    """Names imported by `source` living in dotted `package` (where relative imports resolve)."""
+    return {name for _, name in _imports_at(source, package.split(".") if package else [])}
 
 
 def _layer(module: str, layers: tuple[str, ...]) -> int | None:
@@ -54,13 +53,12 @@ def check(root: Path, layers: tuple[str, ...]) -> list[Violation]:
     violations: list[Violation] = []
     for path in sorted(root.rglob("*.py")):
         parts = path.relative_to(root).with_suffix("").parts
-        is_package = parts[-1] == "__init__"
-        module = ".".join(parts[:-1] if is_package else parts)
+        module = ".".join(parts)  # a package __init__ is "pkg.__init__", still inside layer "pkg"
         own = _layer(module, layers)
         if own is None:
             continue
         seen: set[tuple[int, str]] = set()
-        for line, name in _imports_at(path.read_text(), module, is_package):
+        for line, name in _imports_at(path.read_text(), list(parts[:-1])):
             target = _layer(name, layers)
             if target is not None and target < own and (line, layers[target]) not in seen:
                 seen.add((line, layers[target]))

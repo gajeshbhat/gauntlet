@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -72,3 +73,58 @@ def test_check_runs_both_gates(tmp_path: Path, capsys: pytest.CaptureFixture[str
     (tmp_path / "coverage.json").write_text(json.dumps({"files": {}}))
     assert main(["check", str(tmp_path)]) == 1
     assert "imports outer layer" in capsys.readouterr().out
+
+
+def test_clean_passes_when_functions_are_covered(tmp_path: Path) -> None:
+    project(tmp_path, 'language = "python"\n')
+    (tmp_path / "mod.py").write_text("def f():\n    return 1\n")
+    cov = {"files": {"mod.py": {"executed_lines": [1, 2], "missing_lines": []}}}
+    (tmp_path / "coverage.json").write_text(json.dumps(cov))
+    assert main(["clean", str(tmp_path)]) == 0
+
+
+def test_root_defaults_to_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project(tmp_path, 'language = "python"\n')
+    monkeypatch.chdir(tmp_path)
+    assert main(["arch"]) == 0
+
+
+def test_usage_names_the_program(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    assert capsys.readouterr().out.startswith("usage: gauntlet")
+
+
+def fake_harden(
+    result: tuple[float, list[str]], seen: list[Path]
+) -> Callable[[Path], tuple[float, list[str]]]:
+    def check(root: Path) -> tuple[float, list[str]]:
+        seen.append(root)
+        return result
+
+    return check
+
+
+def test_harden_fails_below_threshold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project(tmp_path, 'language = "python"\n[mutation]\nmin_score = 90\n')
+    seen: list[Path] = []
+    survivors = (50.0, ["p.x_a__mutmut_2: survived"])
+    monkeypatch.setattr("gauntlet.cli.harden.check", fake_harden(survivors, seen))
+    assert main(["harden", str(tmp_path)]) == 1
+    assert seen == [tmp_path]
+    out = capsys.readouterr().out
+    assert "p.x_a__mutmut_2: survived" in out
+    assert "mutation score 50.0% < 90%" in out
+
+
+def test_harden_passes_at_threshold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project(tmp_path, 'language = "python"\n[mutation]\nmin_score = 90\n')
+    monkeypatch.setattr("gauntlet.cli.harden.check", fake_harden((90.0, []), []))
+    assert main(["harden", str(tmp_path)]) == 0
+    assert "mutation score 90.0% >= 90%" in capsys.readouterr().out

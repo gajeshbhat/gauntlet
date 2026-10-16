@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from gauntlet import arch, clean
+from gauntlet import arch, clean, harden
 from gauntlet.config import Config, load
 
 
@@ -23,7 +23,16 @@ def _clean(root: Path, cfg: Config) -> int:
     return 1 if offenders else 0
 
 
-GATES = {"arch": [_arch], "clean": [_clean], "check": [_arch, _clean]}
+def _harden(root: Path, cfg: Config) -> int:
+    pct, survivors = harden.check(root)
+    for line in survivors:
+        print(line)
+    ok = pct >= cfg.mutation_min
+    print(f"mutation score {pct:.1f}% {'>=' if ok else '<'} {cfg.mutation_min}%")
+    return 0 if ok else 1
+
+
+GATES = {"arch": [_arch], "clean": [_clean], "harden": [_harden], "check": [_arch, _clean]}
 
 
 def main(argv: list[str] | None = None) -> int:

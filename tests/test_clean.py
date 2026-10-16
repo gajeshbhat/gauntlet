@@ -68,3 +68,31 @@ def test_threshold_is_inclusive(tmp_path: Path) -> None:
 def test_missing_coverage_file_explains_how_to_make_it(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="--cov-report=json"):
         check(tmp_path, tmp_path / "coverage.json", crap_max=8)
+
+
+def test_coverage_is_per_function_not_per_file() -> None:
+    src = SIMPLE + "\n" + BRANCHY.replace("g", "h", 1)
+    covered, risky = function_findings(src, executed={1, 2}, missing=set(range(4, 12)))
+    assert covered.coverage == 1.0
+    assert risky.coverage == 0.0
+
+
+def test_half_covered_function() -> None:
+    (f,) = function_findings(SIMPLE, executed={1}, missing={2})
+    assert f.coverage == 0.5
+
+
+def test_check_collects_offenders_from_every_file(tmp_path: Path) -> None:
+    files = {}
+    for name in ("a.py", "b.py"):
+        (tmp_path / name).write_text(BRANCHY)
+        files[name] = {"executed_lines": [1], "missing_lines": [2, 3, 4, 5, 6, 7, 8]}
+    (tmp_path / "coverage.json").write_text(json.dumps({"files": files}))
+    paths = [p for p, _ in check(tmp_path, tmp_path / "coverage.json", crap_max=8)]
+    assert paths == ["a.py", "b.py"]
+
+
+def test_adjacent_functions_do_not_share_lines() -> None:
+    src = "def f():\n    return 1\ndef g():\n    return 2\n"
+    f, g = function_findings(src, executed={1, 2}, missing={3, 4})
+    assert (f.coverage, g.coverage) == (1.0, 0.0)

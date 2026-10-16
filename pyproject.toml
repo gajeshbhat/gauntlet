@@ -19,6 +19,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "mutmut>=3.8.0",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
@@ -42,3 +43,7 @@ typeCheckingMode = "strict"
 [tool.pytest.ini_options]
 addopts = "--cov=gauntlet --cov-branch --cov-fail-under=100 --cov-report=term-missing --cov-report=json"
 testpaths = ["tests"]
+
+[tool.mutmut]
+source_paths = ["src/gauntlet/"]
+pytest_add_cli_args = ["--no-cov", "--ignore=tests/test_e2e.py"]

@@ -21,7 +21,7 @@ class Finding:
 
 def function_findings(source: str, executed: set[int], missing: set[int]) -> list[Finding]:
     findings: list[Finding] = []
-    blocks = cast("list[Any]", cc_visit(source))  # radon ships no type stubs
+    blocks = cast("list[Any]", cc_visit(source))  # pragma: no mutate (radon ships no stubs)
     for block in blocks:
         if type(block).__name__ != "Function":
             continue  # radon also yields Class blocks; their methods come through as Functions
