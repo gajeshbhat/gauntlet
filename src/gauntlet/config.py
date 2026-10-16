@@ -14,6 +14,7 @@ class Config:
     mutation_min: int = 90
     layers: tuple[str, ...] = ()  # outermost first; dependencies only point inward
     src: str = "."  # where module names are rooted for the arch gate
+    mutation_dir: str = ""  # Go: directory gremlins ran on; its file names are relative to it
 
 
 def load(path: Path) -> Config:
@@ -29,4 +30,5 @@ def load(path: Path) -> Config:
         mutation_min=data.get("mutation", {}).get("min_score", Config.mutation_min),
         layers=tuple(data.get("layers", {}).get("order", ())),
         src=data.get("src", Config.src),
+        mutation_dir=data.get("go", {}).get("mutation_dir", Config.mutation_dir),
     )

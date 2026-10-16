@@ -81,18 +81,19 @@ def arch_check(imports: str, layers: tuple[str, ...]) -> list[Violation]:
     return [v for package, *imported in rows for v in _outward(package, imported, layers)]
 
 
-def harden_check(mutation_json: str, scope: Scope) -> tuple[float, list[str]]:
+def harden_check(mutation_json: str, scope: Scope, base: str = "") -> tuple[float, list[str]]:
     caught, total = 0, 0
     bad: list[str] = []
     for file in json.loads(mutation_json)["files"]:
+        name = f"{base}/{file['file_name']}" if base else file["file_name"]
         for m in file["mutations"]:
-            if not scope.contains(file["file_name"], m["line"]) or m["status"] in IGNORED:
+            if not scope.contains(name, m["line"]) or m["status"] in IGNORED:
                 continue
             total += 1
             if m["status"] in CAUGHT:
                 caught += 1
             else:
-                bad.append(f"{file['file_name']}:{m['line']}:{m['column']} {m['type']} {m['status']}")
+                bad.append(f"{name}:{m['line']}:{m['column']} {m['type']} {m['status']}")
     if total == 0:
         raise ValueError("no mutants in scope; check the scope and that gremlins ran")
     return 100 * caught / total, bad

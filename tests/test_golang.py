@@ -138,3 +138,15 @@ def test_arch_violation_has_no_line() -> None:
 def test_harden_no_mutants_message() -> None:
     with pytest.raises(ValueError, match=r"^no mutants in scope; check the scope and that gremlins ran$"):
         golang.harden_check(mutation(("a.go", "KILLED", 1)), parse(["zzz.go"]))
+
+
+def test_harden_paths_are_relative_to_the_mutation_dir() -> None:
+    text = mutation(("disk.go", "LIVED", 5))
+    pct, bad = golang.harden_check(text, parse(["lxd/device/disk.go:1-9"]), base="lxd/device")
+    assert pct == 0.0
+    assert bad == ["lxd/device/disk.go:5:3 ARITHMETIC_BASE LIVED"]
+
+
+def test_harden_without_base_keeps_paths_as_reported() -> None:
+    _, bad = golang.harden_check(mutation(("disk.go", "LIVED", 5)), parse([]))
+    assert bad == ["disk.go:5:3 ARITHMETIC_BASE LIVED"]

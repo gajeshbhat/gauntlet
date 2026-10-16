@@ -65,7 +65,7 @@ def _harden(run: Run) -> int:
     root, cfg, scope = run.root, run.cfg, run.scope
     if cfg.language == "go":
         pct, survivors = golang.harden_check(
-            golang.read(run.art, "mutation.json", "gremlins unleash -o mutation.json ."), scope
+            golang.read(run.art, "mutation.json", "gremlins unleash -o mutation.json ."), scope, cfg.mutation_dir
         )
     else:
         pct, survivors = harden.check(root)

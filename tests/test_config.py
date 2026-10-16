@@ -13,13 +13,15 @@ def write(tmp_path: Path, text: str) -> Path:
 
 def test_defaults(tmp_path: Path) -> None:
     cfg = load(write(tmp_path, 'language = "python"\n'))
-    assert cfg == Config(language="python", crap_max=8, mutation_min=90, layers=(), src=".")
+    assert cfg == Config(language="python", crap_max=8, mutation_min=90, layers=(), src=".", mutation_dir="")
 
 
 def test_overrides(tmp_path: Path) -> None:
     text = """
 language = "go"
 src = "pkg"
+[go]
+mutation_dir = "lxd/device"
 [crap]
 max = 6
 [mutation]
@@ -28,7 +30,7 @@ min_score = 95
 order = ["web", "service", "domain"]
 """
     cfg = load(write(tmp_path, text))
-    assert cfg == Config("go", 6, 95, ("web", "service", "domain"), "pkg")
+    assert cfg == Config("go", 6, 95, ("web", "service", "domain"), "pkg", "lxd/device")
 
 
 def test_language_required(tmp_path: Path) -> None:

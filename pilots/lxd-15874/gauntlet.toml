@@ -1,5 +1,9 @@
 language = "go"
 
+[go]
+# gremlins reports file names relative to the directory it ran on
+mutation_dir = "lxd/device"
+
 [crap]
 max = 8
 

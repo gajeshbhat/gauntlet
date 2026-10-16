@@ -184,3 +184,11 @@ def test_artifacts_can_live_elsewhere(tmp_path: Path, capsys: pytest.CaptureFixt
         (root / name).unlink()
     assert main(["clean", str(root), "--artifacts", str(art)]) == 1
     assert "DiskMount CRAP" in capsys.readouterr().out
+
+
+def test_go_harden_uses_mutation_dir_for_scope(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    project(tmp_path, 'language = "go"\n[go]\nmutation_dir = "lxd/device"\n')
+    muts = [{"type": "X", "status": "LIVED", "line": 3, "column": 1}]
+    (tmp_path / "mutation.json").write_text(json.dumps({"files": [{"file_name": "a.go", "mutations": muts}]}))
+    assert main(["harden", str(tmp_path), "--only", "lxd/device/a.go:1-9"]) == 1
+    assert "lxd/device/a.go:3:1 X LIVED" in capsys.readouterr().out
