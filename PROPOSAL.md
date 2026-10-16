@@ -47,10 +47,30 @@ Reason: tiny, readable, no build step. Upgrade path: split per-language adapters
 - M0: `clean` + `arch` gates for Python, proven on `snapcraft.io` (CRAP script + import-linter).
 - M1: `harden` + `loop` with Claude Code in a Workshop sandbox.
 - M2: Go adapters (pilot on a small Go repo, not lxd); Codex adapter.
-- M3: `qa` gate, `specifier`, `diagram`.
+- M3: `qa` gate, `specifier` with human-approved SPEC, `gauntlet report` (EVIDENCE), `diagram`.
+- M4: optional layers (property-based, supply-chain, secrets) and the fresh-context verifier.
 
 ## Verification
 Each gate has a self-test against a fixture repo (a deliberately complex function must fail `clean`; an import in the wrong direction must fail `arch`).
+
+## Credits and what we borrow
+Gauntlet builds on two sources; credit where it is due.
+- **Robert C. Martin ("Uncle Bob")**: the approach itself. Do not read the agents' code; surround them with extreme
+  constraints (unit and Gherkin tests, QA procedures, quality metrics, mutation testing, coverage) and make the code run the gauntlet.
+  Source for our design: his interview with Matt Pocock, https://youtu.be/zcLPGC-tvgk
+  (CRAP thresholds raised for agents, ephemeral agents, deep modules), and his post
+  https://x.com/unclebobmartin/status/2080257779395154409
+- **AmazingAng, `old-coder`** (MIT): https://github.com/amazingang/old-coder. A markdown skill that applies the same idea to
+  coding agents. We borrow ideas only, no text or code copied, and adapt them to a deterministic CLI:
+  - A human-approved SPEC (examples of must / must-not behavior) before any code is written; the Specifier output needs approval.
+  - Fail closed: a gate that did not run, or found nothing to check (no coverage file, no mutants), is a failure, never a pass.
+  - Negative controls: every gate ships with a known-bad fixture proving it can fail ("the gauntlet needs its own gauntlet").
+  - An EVIDENCE report (`gauntlet report`) rebuilt from gate output, rerunnable with one command.
+  - Candidate extra layers: property-based tests, supply-chain audit, secret scan.
+  - A fresh-context verifier agent that sees only the SPEC and the evidence.
+
+Where we differ: old-coder is instructions the agent may follow; Gauntlet is a runner with exit codes, plus CRAP and architecture
+gates and Workshop-sandboxed ephemeral agents.
 
 ## Decisions (agreed)
 - Name `gauntlet`; repo at `~/git/gauntlet`.

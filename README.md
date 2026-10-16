@@ -10,3 +10,9 @@ Agent-agnostic quality gates plus an ephemeral-agent loop. Design: [PROPOSAL.md]
 Python targets only so far; Go is next. Exit codes: 0 pass, 1 gate failed, 2 usage/config error.
 
     ./check.sh    # ruff, pyright (strict), pytest with 100% branch coverage, then gauntlet on itself
+
+## Credits
+
+Inspired by Robert C. Martin's "run the gauntlet" approach to agent-written code (interview with Matt Pocock:
+https://youtu.be/zcLPGC-tvgk) and by AmazingAng's MIT-licensed [old-coder](https://github.com/amazingang/old-coder) skill.
+Ideas only; no code or text copied. Details in [PROPOSAL.md](PROPOSAL.md).
