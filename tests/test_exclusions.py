@@ -135,3 +135,20 @@ def test_ini_files_without_the_sections_are_clean(tmp_path: Path) -> None:
     put(tmp_path, "setup.cfg", "[metadata]\nname = x\n")
     put(tmp_path, "tox.ini", "[tox]\nenvlist = py\n")
     assert config_excludes(tmp_path) == []
+
+
+def test_include_and_omit_settings_that_narrow_coverage_are_exclusions(tmp_path: Path) -> None:
+    put(
+        tmp_path,
+        "pyproject.toml",
+        '[tool.coverage.run]\ninclude = ["src/only/*"]\n[tool.coverage.report]\nomit = ["src/old/*"]\ninclude = ["src/new/*"]\n',
+    )
+    put(tmp_path, ".coveragerc", "[run]\ninclude = a/*\n[report]\nomit = b/*\ninclude = c/*\n")
+    assert config_excludes(tmp_path) == [
+        "pyproject.toml: coverage run include src/only/*",
+        "pyproject.toml: coverage report omit src/old/*",
+        "pyproject.toml: coverage report include src/new/*",
+        ".coveragerc: coverage run include a/*",
+        ".coveragerc: coverage report omit b/*",
+        ".coveragerc: coverage report include c/*",
+    ]

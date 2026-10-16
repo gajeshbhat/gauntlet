@@ -50,8 +50,8 @@ def _entry(path: Path) -> bytes:
     executable = b"x" if info.st_mode & stat.S_IXUSR else b"-"
     if stat.S_ISLNK(info.st_mode):
         return b"l" + executable + os.readlink(path).encode()
-    if stat.S_ISDIR(info.st_mode):  # a submodule: its own repository is out of scope
-        return b"d"
+    if stat.S_ISDIR(info.st_mode):  # a submodule or embedded repository: fingerprint it too
+        return b"d" + fingerprint(path).encode() if (path / ".git").exists() else b"d"  # empty: just that it is there
     return b"f" + executable + _digest(path).encode()
 
 

@@ -63,16 +63,27 @@ def _pyproject(root: Path) -> list[str]:
         raise ValueError("cannot read pyproject.toml") from None
     tool: dict[str, Any] = data.get("tool", {})
     coverage: dict[str, Any] = tool.get("coverage", {})
-    wanted = [
-        ("coverage omit", coverage.get("run", {}).get("omit", [])),
-        ("coverage exclude_lines", coverage.get("report", {}).get("exclude_lines", [])),
-        ("coverage exclude_also", coverage.get("report", {}).get("exclude_also", [])),
-        ("mutmut do_not_mutate", tool.get("mutmut", {}).get("do_not_mutate", [])),
-    ]
+    wanted = [(_label(sec, key), coverage.get(sec, {}).get(key, [])) for sec, key in COVERAGE_KEYS]
+    wanted.append(("mutmut do_not_mutate", tool.get("mutmut", {}).get("do_not_mutate", [])))
     return [f"pyproject.toml: {label} {item}" for label, items in wanted for item in items]
 
 
-COVERAGE_KEYS = (("run", "omit"), ("report", "exclude_lines"), ("report", "exclude_also"))
+COVERAGE_KEYS = (
+    ("run", "omit"),
+    ("run", "include"),
+    ("report", "omit"),
+    ("report", "include"),
+    ("report", "exclude_lines"),
+    ("report", "exclude_also"),
+)  # coverage's `source` is not listed: the runner passes --cov=<src>, which overrides it
+
+
+SHORT_LABELS = {("run", "omit"), ("report", "exclude_lines"), ("report", "exclude_also")}
+
+
+def _label(section: str, key: str) -> str:
+    """`coverage omit` for the common keys, `coverage report omit` / `coverage run include` where it is ambiguous."""
+    return f"coverage {key}" if (section, key) in SHORT_LABELS else f"coverage {section} {key}"
 
 
 def _ini(root: Path, name: str, coverage_prefix: str, mutmut_section: str | None) -> list[str]:
@@ -81,7 +92,7 @@ def _ini(root: Path, name: str, coverage_prefix: str, mutmut_section: str | None
         return []
     parser = configparser.ConfigParser(interpolation=None)
     parser.read_string(read_text(path, MAX_SOURCE_BYTES))
-    wanted = [(f"{coverage_prefix}{sec}", key, f"coverage {key}") for sec, key in COVERAGE_KEYS]
+    wanted = [(f"{coverage_prefix}{sec}", key, _label(sec, key)) for sec, key in COVERAGE_KEYS]
     if mutmut_section:
         wanted.append((mutmut_section, "do_not_mutate", "mutmut do_not_mutate"))
     return [

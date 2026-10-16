@@ -281,3 +281,24 @@ def test_an_embedded_repository_is_a_directory_entry_not_an_error(repo: Path) ->
     git(nested, "commit", "-q", "-m", "n", "--no-gpg-sign")
     git(repo, "add", "sub")
     assert len(fingerprint(repo)) == 64
+
+
+def test_changes_inside_an_embedded_repository_change_the_fingerprint(repo: Path) -> None:
+    nested = repo / "sub"
+    nested.mkdir()
+    git(nested, "init", "-q", "-b", "main")
+    (nested / "n.py").write_text("n = 1\n")
+    git(nested, "add", "-A")
+    git(nested, "commit", "-q", "-m", "n", "--no-gpg-sign")
+    git(repo, "add", "sub")
+    first = fingerprint(repo)
+    (nested / "n.py").write_text("n = 2\n")  # dirty
+    second = fingerprint(repo)
+    git(nested, "commit", "-qam", "n2", "--no-gpg-sign")  # new commit
+    assert len({first, second, fingerprint(repo)}) == 3
+
+
+def test_an_empty_submodule_directory_is_still_fingerprinted(repo: Path) -> None:
+    (repo / "sub").mkdir()
+    git(repo, "update-index", "--add", "--cacheinfo", f"160000,{'a' * 40},sub")
+    assert len(fingerprint(repo)) == 64
