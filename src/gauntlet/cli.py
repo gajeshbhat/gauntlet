@@ -321,7 +321,9 @@ def _build_run(args: argparse.Namespace, pol: Policy) -> Run:
     config_path = args.root / "gauntlet.toml"
     raw = load(config_path)
     policy.check_pin(pol, config_path)
-    art = args.artifacts or args.out or (args.root / ".gauntlet" if args.gate == "run" else args.root)
+    last_run = args.root / ".gauntlet"
+    use_last = args.gate == "run" or (last_run / provenance.MANIFEST).is_file()
+    art = args.artifacts or args.out or (last_run if use_last else args.root)
     scope = parse(args.only or [])
     return Run(args.root, art, args.source or args.root, policy.apply(raw, pol), scope, pol, args.feature)
 

@@ -806,3 +806,16 @@ def test_evidence_report_from_a_gate_has_the_real_language_hash_and_time(
     assert "- Language: python" in text
     assert hashlib.sha256((tmp_path / "gauntlet.toml").read_bytes()).hexdigest() in text
     assert re.search(r"Generated \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00 by", text)
+
+
+def test_gates_default_to_the_results_of_the_last_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = committed_py_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", sandbox_factory())
+    assert main(["run", str(root)]) == 0
+    capsys.readouterr()
+    assert main(["clean", str(root)]) == 0  # finds .gauntlet/ by itself: stamped, so it verifies
+    (root / "mod.py").write_text("def g():\n    return 2\n")
+    assert main(["clean", str(root)]) == 2
+    assert "stale" in capsys.readouterr().err
