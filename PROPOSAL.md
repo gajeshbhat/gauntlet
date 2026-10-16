@@ -52,7 +52,10 @@ Reason: tiny, readable, no build step. Upgrade path: split per-language adapters
 ## Verification
 Each gate has a self-test against a fixture repo (a deliberately complex function must fail `clean`; an import in the wrong direction must fail `arch`).
 
-## Open decisions
-1. Name (`gauntlet`?) and location (new repo under `~/git`, as here).
-2. Python single-file vs Go binary.
-3. Pilot repo (`snapcraft.io` proposed) and whether Workshop is required or optional.
+## Decisions (agreed)
+- Name `gauntlet`; repo at `~/git/gauntlet`.
+- Python 3.12 project managed by `uv`; ruff, pyright (strict), pytest with 100% branch coverage enforced by `./check.sh`.
+- Workshop is **required**: every agent runs via `workshop exec`.
+- Pilot (validates gates on real code, which fixtures cannot): upstream `canonical/lxd`.
+  Candidate issue: #19162 "Failure to parse large QMP messages" (unit-testable Go parser; unassigned, no PR).
+  LXD builds/tests run in the `lxd-test-vm` VM, so the Go adapter runs gates there while agents stay in Workshop.

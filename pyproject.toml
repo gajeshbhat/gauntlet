@@ -1,0 +1,42 @@
+[project]
+name = "gauntlet"
+version = "0.1.0"
+description = "Agent-agnostic quality gates and ephemeral-agent loop"
+authors = [
+    { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+gauntlet = "gauntlet:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8  # same ceiling the clean gate enforces on target repos
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+addopts = "--cov=gauntlet --cov-branch --cov-fail-under=100 --cov-report=term-missing"
+testpaths = ["tests"]
