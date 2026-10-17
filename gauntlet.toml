@@ -10,6 +10,7 @@ order = [
   "gauntlet.golang",
   "gauntlet.spec",
   "gauntlet.diagram",
+  "gauntlet.scaffold",
   "gauntlet.report",
   "gauntlet.clean",
   "gauntlet.arch",

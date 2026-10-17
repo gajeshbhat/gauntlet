@@ -6,6 +6,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from gauntlet import (
     provenance,
     report,
     runner,
+    scaffold,
     spec,
 )
 from gauntlet.config import Config, load
@@ -156,7 +158,7 @@ GATES: dict[str, Callable[[Run], list[GateResult]]] = {
     "spec": lambda run: [_spec(run)],
     "check": _check,
 }
-COMMANDS = ("stamp", "pin", "run", "diagram", "loop")
+COMMANDS = ("init", "stamp", "pin", "run", "diagram", "loop")
 SDK = {"python": "uv", "go": "go"}
 
 
@@ -190,6 +192,7 @@ OPTIONS: tuple[tuple[str, dict[str, Any]], ...] = (
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gauntlet")
+    parser.add_argument("--version", action="version", version=f"gauntlet {version('gauntlet')}")
     parser.add_argument("gate", choices=[*GATES, *COMMANDS])
     parser.add_argument("root", nargs="?", type=Path, default=Path("."))
     for flag, kwargs in OPTIONS:
@@ -328,7 +331,16 @@ def _build_run(args: argparse.Namespace, pol: Policy) -> Run:
     return Run(args.root, art, args.source or args.root, policy.apply(raw, pol), scope, pol, args.feature)
 
 
+def _init(args: argparse.Namespace) -> int:
+    path = scaffold.write_config(args.root)
+    print(f"wrote {path}")
+    print("next: gauntlet run .   (needs Canonical Workshop; see the README), then read EVIDENCE with --report")
+    return 0
+
+
 def _dispatch(args: argparse.Namespace) -> int:
+    if args.gate == "init":
+        return _init(args)
     pol = policy.load(args.policy, missing_ok=args.gate == "pin")
     if args.gate == "pin":
         load(args.root / "gauntlet.toml")
