@@ -57,17 +57,21 @@ class _Parser:
             self.tags = (*self.tags, *[t[1:] for t in text.split() if t.startswith("@")])
         elif text.startswith("|"):
             self.row(n, text)
-        elif ":" in text and self.heading(n, text):
-            return
-        elif (step := STEP.match(text)) is not None:
+        elif not (":" in text and self.heading(n, text)):
+            self.step_or_text(n, text)
+
+    def step_or_text(self, n: int, text: str) -> None:
+        step = STEP.match(text)
+        if step is not None:
             self.step(n, step[1], step[2])
-        else:
+        elif self.mode != "feature":  # free text under "Feature:" is the description Gherkin allows
             self.problems.append(f"line {n}: not understood: {text!r}")
 
     def heading(self, n: int, text: str) -> bool:
         head, _, rest = text.partition(":")
         rest = rest.strip()
         if head == "Feature":
+            self.mode = "feature"
             self.features += 1
             self.name = self.name or rest
             if not rest:

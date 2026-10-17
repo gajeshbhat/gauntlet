@@ -6,7 +6,7 @@ __pycache__/
 .workshop.lock
 coverage.json
 mutants/
-pilots/*/artifacts/
+pilots/**/artifacts/
 gauntlet-manifest.json
 .gauntlet/
 .gauntlet-out/

@@ -85,7 +85,7 @@ def test_and_but_inherit_the_previous_keyword() -> None:
             "Feature: a\n  @test(t.py)\n  Scenario Outline: s\n    When <a>\n    Then y\n    Examples:\n      | a |\n      | 1 | 2 |\n",
             "row 2 has 2 cells, header has 1",
         ),
-        ("Feature: a\n  gibberish\n", "line 2: not understood"),
+        ("Feature: a\n  Scenario: s\n  gibberish\n", "line 3: not understood"),
         ("Feature: a\n  Then orphan\n", "line 2: step outside a scenario"),
         ("Feature: a\n  | a |\n", "line 2: table row outside Examples"),
         (
@@ -157,3 +157,15 @@ def test_traceability_can_be_deferred_until_the_tests_exist(tmp_path: Path) -> N
             project(tmp_path, GOOD.replace("@test(tests/test_limiter.py::test_allows_two)", "")), tmp_path, trace=False
         )
     )
+
+
+def test_free_text_under_the_feature_line_is_a_description() -> None:
+    text = "Feature: f\n  As a user\n  I want things: to work\n\n  @test(a.py)\n  Scenario: s\n    When x\n    Then y\n"
+    assert parse(text).problems == ()
+
+
+def test_free_text_elsewhere_is_still_not_understood() -> None:
+    after_scenario = "Feature: f\n  @test(a.py)\n  Scenario: s\n    some prose\n    When x\n    Then y\n"
+    assert any("line 4: not understood" in p for p in parse(after_scenario).problems)
+    after_background = "Feature: f\n  Background:\n    prose here\n"
+    assert any("line 3: not understood" in p for p in parse(after_background).problems)
