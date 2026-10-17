@@ -1,32 +1,28 @@
 # Security model
 
-What gauntlet defends against, and what it does not.
+## What gauntlet defends against
 
-## Defended
-- **An agent weakening its own rules.** Limits live in your policy file outside the repo; `gauntlet.toml` can only tighten
-  them, and can be pinned by hash. The loop reads the config from the source repo, never from the agent's workspace.
-- **Silent passes.** A gate that evaluated nothing (empty coverage, scope matching nothing, no layers) is an error.
-- **Stale or swapped results.** Artifacts are hashed and bound to the source (HEAD + diff + untracked files) in a
-  manifest; edits to either are refused.
-- **Escaping the project.** Paths named by coverage data, specs or symlinks must resolve inside the project root.
-  Hostile or oversized inputs are size-capped and fail with exit 2, not a stack trace.
-- **Hiding code from the gates.** Exclusion comments are budgeted; coverage `omit`/`exclude_*` and mutmut `do_not_mutate` are
-  refused in pyproject.toml, .coveragerc, setup.cfg and tox.ini.
-- **Running target code on the host.** Gates only read artifacts. Tests, mutation runs and agents execute only in a
-  Workshop sandbox, on a private copy of the repo. The agent cannot edit the sandbox definition or the source mid-run.
-- **Commands chosen by the repo.** Commands, tool versions and output names are fixed in gauntlet; the agent command
-  comes from your policy; env vars are passed by name, never by value.
-- **Our own git calls being hijacked** by repository config, `.gitattributes` filters or environment: git is only asked
-  for names; file contents are hashed in Python, so no diff, textconv or clean/smudge filter runs.
-- **Agents landing changes directly.** The loop returns a patch; control files it touches (gauntlet.toml, CI,
-  pyproject, .workshop/...) are flagged for review first.
+| Threat | Defence |
+|---|---|
+| An agent weakening its own rules | Limits live in your policy file outside the repo; `gauntlet.toml` may only tighten them and can be pinned by hash. `loop` reads config from your repo, never from the agent's workspace. |
+| A gate passing because it checked nothing | Empty coverage, a scope matching nothing, or no layers is an error (exit 2). |
+| Stale or swapped results | Artifacts are hashed and bound to the source (HEAD plus every tracked and untracked file) in a manifest; any edit to either is refused. |
+| Reading outside the project | Paths from coverage data, specs and symlinks must resolve inside the project root; inputs are size-capped; hostile input exits 2, not with a stack trace. |
+| Hiding code from the gates | Exclusion comments are budgeted; coverage `omit`/`include`/`exclude_*` and mutmut `do_not_mutate` are refused in `pyproject.toml`, `.coveragerc`, `setup.cfg` and `tox.ini`. |
+| Running project code on your machine | Gates only read artifacts. Tests, mutation runs and agents execute only in a Workshop sandbox, on a private copy of the repo. |
+| Commands chosen by the repo | Commands, tool versions and output names are fixed in gauntlet. The agent command comes from your policy; secrets are passed by environment variable name, never by value. |
+| Git being turned against us | Git is only asked for file names; contents are hashed in Python, so no diff, textconv or clean/smudge filter from repo config or `.gitattributes` ever runs. |
+| An agent landing changes directly | `loop` returns a patch; edits to control files (`gauntlet.toml`, CI, `pyproject.toml`, `.workshop/`, ...) are flagged first. |
 
-## Not defended
-- **Narrowed mutation scope.** mutmut's `source_paths`/`paths_to_mutate` live in the repo and are not policed; compare the
-  mutant total in the evidence report with the size of the code. `pytest --cov-config` files are not parsed either.
-- **Forged numbers.** Tests that run in the sandbox can write any coverage or mutation result. The sandbox protects the
+## What it does not defend against
+
+- **Forged numbers.** Tests running in the sandbox can write any coverage or mutation result. The sandbox protects your
   host, not the measurements. Read the spec the tests encode.
-- **A hostile sandbox escape.** The Workshop user has sudo and network access inside the container; do not run
-  untrusted code with secrets in reach.
-- **Spec completeness.** Gates prove the code meets the stated constraints, not that the constraints are enough.
-- **Mutation noise.** Tool-reported survivors and kills are samples, not proofs (we saw one false LIVED in gremlins).
+- **A sandbox escape or a hostile payload.** The Workshop user has sudo and network access inside the container. Do not
+  run untrusted code with secrets in reach.
+- **A narrowed mutation scope.** mutmut's `source_paths`/`paths_to_mutate` and `pytest --cov-config` live in the repo and
+  are not policed. Compare the mutant count in the evidence report with the size of the code.
+- **An incomplete spec.** Gates show the code meets the stated constraints, not that the constraints are enough.
+- **Mutation-tool noise.** Reported kills and survivors are samples, not proofs.
+
+Report a vulnerability by opening a private security advisory on the repository.

@@ -1,0 +1,16 @@
+{
+  "name": "gauntlet",
+  "owner": {
+    "name": "Gajesh Bhat"
+  },
+  "plugins": [
+    {
+      "name": "gauntlet",
+      "source": "./",
+      "description": "Quality gates and an ephemeral-agent loop for Python and Go code written by AI agents"
+    }
+  ],
+  "metadata": {
+    "description": "Quality gates and an ephemeral-agent loop for Python and Go code written by AI agents"
+  }
+}
