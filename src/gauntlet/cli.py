@@ -43,6 +43,7 @@ ARTIFACTS = {
     "javascript": ("lcov.info",),
     "csharp": ("coverage.cobertura.xml",),
     "java": ("jacoco.xml",),
+    "rust": ("lcov.info",),
 }
 
 

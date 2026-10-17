@@ -839,6 +839,33 @@ def test_stamp_never_blesses_the_results_of_an_old_run(
     assert main(["clean", str(root), "--artifacts", str(root)]) == 0  # the fresh ones, not the old run's
 
 
+# ---- Rust: lcov with absolute container paths
+class RustSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if "--lcov" in argv:
+            lcov = "SF:/project/src/lib.rs\nDA:1,1\nDA:2,1\nend_of_record\n"
+            (self.project / ".gauntlet-out" / "lcov.info").write_text(lcov)
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_rust_coverage_from_absolute_container_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    lax = write_policy("allow_skipped_gates = true\n")
+    root = project(tmp_path, 'language = "rust"\n')
+    (root / "src").mkdir()
+    (root / "src" / "lib.rs").write_text("pub fn f(x: i32) -> i32 {\n    x + 1\n}\n")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: RustSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(root), "--policy", str(lax)]) == 0
+    out = capsys.readouterr().out
+    assert "produced lcov.info" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for rust yet" in out
+
+
 # ---- JavaScript: coverage gates work, harden is visibly skipped
 JS_SOURCE = "function f(x) {\n  return x + 1;\n}\nmodule.exports = { f };\n"
 

@@ -140,3 +140,30 @@ def test_java_tests_are_only_the_top_level_test_dirs() -> None:
         assert not re.search(java.tests, path), path
     assert not java.mutation
     assert java.suffixes == (".java",)
+
+
+RUST_HINTS = (
+    "#[coverage(off)]", "#![coverage(off)]", "#[ coverage (off) ]", "#[cfg_attr(coverage_nightly, coverage(off))]",
+    "#[no_coverage]", "// LCOV_EXCL_LINE", "// LCOV_EXCL_START", "// LCOV_EXCL_STOP", "// LCOV_EXCL_BR_LINE",
+    "#[allow(dead_code)]", "#![allow(clippy::all)]", "#[expect(unused)]", "#[cfg_attr(test, allow(unused))]",
+    "#[rustfmt::skip]", "#[rustfmt :: skip]", "#[cfg_attr(rustfmt, rustfmt::skip)]", "#[automatically_derived]",
+)  # fmt: skip
+
+
+def test_rust_pragmas_and_test_dirs() -> None:
+    rs = languages.TABLE["rust"]
+    for text in RUST_HINTS:
+        assert re.search(rs.pragma, text), text
+    for text in ("// an ordinary comment", "#[derive(Debug)]", "#[cfg(test)]", "#[test]", "// allow this"):
+        assert not re.search(rs.pragma, text), text
+    assert re.search(rs.tests, "tests/a.rs") and not re.search(rs.tests, "src/tests/a.rs")
+    assert not re.search(rs.tests, "src/test/a.rs") and not re.search(rs.tests, "src/a_test.rs")
+    assert not rs.mutation
+
+
+def test_every_suffix_is_one_lizard_reads() -> None:
+    from lizard_languages import get_reader_for  # pyright: ignore
+
+    for name, row in languages.TABLE.items():
+        for suffix in row.suffixes:
+            assert get_reader_for(f"x{suffix}"), (name, suffix)

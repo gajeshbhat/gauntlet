@@ -149,6 +149,19 @@ def test_java_steps(tmp_path: Path) -> None:
     assert collect.argv == ("cp", "target/site/jacoco/jacoco.xml", "/project/.gauntlet-out/jacoco.xml")
 
 
+def test_rust_steps(tmp_path: Path) -> None:
+    rustup, install, tests = runner.steps(Config(language="rust"), tmp_path)
+    assert rustup.argv == ("rustup", "component", "add", "llvm-tools-preview")
+    assert install.argv == (
+        "cargo", "install", "--locked", "--version", "0.6.21", "cargo-llvm-cov", "--root", "/project/.gauntlet-out/cargo"
+    )  # fmt: skip
+    assert tests.argv == (
+        "/project/.gauntlet-out/cargo/bin/cargo-llvm-cov", "llvm-cov", "--locked", "--lcov",
+        "--output-path", "/project/.gauntlet-out/lcov.info",
+    )  # fmt: skip
+    assert tests.timeout == 3600
+
+
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
 def test_python_src_must_be_a_safe_relative_path(src: str) -> None:
     with pytest.raises(ValueError, match="unsafe path"):

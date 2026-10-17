@@ -83,6 +83,22 @@ TABLE["java"] = Language(
     sdk="java",
     image="maven:3.9-eclipse-temurin-21",
 )
+TABLE["rust"] = Language(
+    suffixes=(".rs",),
+    markers=("Cargo.toml",),
+    tests=r"^tests/",  # inline `#[cfg(test)]` modules live in src/ and are measured as source
+    pragma=(
+        r"#!?\[\s*(?:coverage\s*\(\s*off|no_coverage|allow\s*\(|expect\s*\(|rustfmt\s*::\s*skip"
+        r"|automatically_derived|cfg_attr\s*\(.*(?:coverage\s*\(\s*off|no_coverage|allow\s*\(|expect\s*\("
+        r"|rustfmt\s*::\s*skip))"
+        r"|//\s*LCOV_EXCL_(?:LINE|START|STOP|BR_LINE|BR_START|BR_STOP)\b"
+    ),
+    coverage_file="lcov.info",
+    coverage_format="lcov",
+    mutation=False,
+    sdk="rust",
+    image="rust:1.93-bookworm",
+)
 NAMES = tuple(TABLE)
 
 

@@ -24,6 +24,8 @@ PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
 C8 = "c8@10.1.3"
 JACOCO = "org.jacoco:jacoco-maven-plugin:0.8.12"
+LLVM_COV = "0.6.21"
+CARGO_TOOLS = f"{IN_SANDBOX}/cargo"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
@@ -135,6 +137,23 @@ def _java_steps() -> list[Step]:
     ]
 
 
+def _rust_steps() -> list[Step]:
+    install = ("cargo", "install", "--locked", "--version", LLVM_COV, "cargo-llvm-cov", "--root", CARGO_TOOLS)
+    cov = (
+        f"{CARGO_TOOLS}/bin/cargo-llvm-cov",
+        "llvm-cov",
+        "--locked",
+        "--lcov",
+        "--output-path",
+        f"{IN_SANDBOX}/lcov.info",
+    )
+    return [
+        Step("llvm-tools", ("rustup", "component", "add", "llvm-tools-preview")),
+        Step("install-llvm-cov", install),
+        Step("tests", cov, timeout=3600),
+    ]
+
+
 def steps(cfg: Config, snap: Path) -> list[Step]:
     if cfg.language == "go":
         return _go_steps(cfg, snap)
@@ -142,6 +161,8 @@ def steps(cfg: Config, snap: Path) -> list[Step]:
         return _dotnet_steps()
     if cfg.language == "java":
         return _java_steps()
+    if cfg.language == "rust":
+        return _rust_steps()
     return _js_steps() if cfg.language == "javascript" else _python_steps(cfg)
 
 
@@ -151,6 +172,7 @@ FILES = {
     "javascript": ("lcov.info",),
     "csharp": ("coverage.cobertura.xml",),
     "java": ("jacoco.xml",),
+    "rust": ("lcov.info",),
 }  # artifacts the sandbox writes itself
 REQUIRED = {
     "python": ("coverage.json", "mutmut-results.txt"),
@@ -158,6 +180,7 @@ REQUIRED = {
     "javascript": ("lcov.info",),
     "csharp": ("coverage.cobertura.xml",),
     "java": ("jacoco.xml",),
+    "rust": ("lcov.info",),
 }
 
 
