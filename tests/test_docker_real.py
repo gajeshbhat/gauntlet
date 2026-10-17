@@ -253,3 +253,28 @@ def test_dart_project_runs_through_dart_test_and_lcov_in_a_real_container(
     assert "lib/demo.dart:8: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
     assert "lib/demo.dart:1:" not in out  # f is tested
     assert "harden: SKIPPED" in out
+
+
+GO_FILES = {
+    "go.mod": "module example.com/m\n\ngo 1.22\n",
+    "gauntlet.toml": 'language = "go"',
+    "a.go": "package m\n\nfunc F(x int) int {\n\tif x > 1 {\n\t\treturn 1\n\t}\n\treturn 0\n}\n\nfunc Risky(a int) int {\n"
+    + "".join(f"\tif a == {i} {{\n\t\treturn {i}\n\t}}\n" for i in range(1, 6))
+    + "\treturn 0\n}\n",
+    "a_test.go": 'package m\n\nimport "testing"\n\nfunc TestF(t *testing.T) {\n'
+    '\tif F(2) != 1 || F(0) != 0 {\n\t\tt.Fatal("bad")\n\t}\n}\n',
+}
+
+
+def test_go_project_runs_through_go_test_and_gremlins_in_a_real_container(
+    tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name, text in GO_FILES.items():
+        (tmp_path / name).write_text(text)
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x", "--no-gpg-sign"]):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True)
+    assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
+    out = capsys.readouterr().out
+    assert "a.go:10: Risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
+    assert "a.go:3: F" not in out
+    assert "mutation score" in out

@@ -2,18 +2,35 @@
 
 **Don't read the code an AI agent wrote. Make it run a gauntlet, and read the evidence.**
 
-gauntlet checks Python and Go projects with deterministic gates that fail loudly, and can run a Specifier → Coder → Fixer
+gauntlet checks projects in 8 languages with deterministic gates that fail loudly, and can run a Specifier → Coder → Fixer
 agent loop in a sandbox that ends in a patch you review. It works on any project; no code changes needed.
 
 | Gate | It fails when |
 |---|---|
-| `clean` | a function's CRAP score (complexity² × (1 − coverage)³ + complexity) is over the limit (default 8) |
+| `clean` | a function's CRAP score (complexity² × (1 − coverage)³ + complexity) is over the limit (default 8); a source file missing from the coverage report counts as 0% |
 | `harden` | the mutation score is under the floor (default 90%): tests let planted bugs survive |
 | `arch` | an import points outward through the layers you declare |
-| `exclusions` | code is hidden with `pragma: no cover`, `nolint`, `nosec` or coverage/mutmut excludes beyond a budget |
+| `exclusions` | code is hidden with ignore comments beyond a budget, or by build settings (coverage/mutmut config, `.c8rc`, runsettings, pom/JaCoCo, cargo config, ...) |
 | `spec` | a Gherkin spec is malformed, or a scenario has no real test behind it |
 
 Every gate fails closed: checking nothing is an error, never a pass. Results are bound to the exact source they came from.
+
+## Languages
+
+| Language | Tests and coverage in the sandbox | `harden` | Proven in a real container |
+|---|---|---|---|
+| Python | pytest + coverage.py | mutmut | yes (gauntlet runs itself) |
+| Go | `go test -coverprofile` | gremlins | yes |
+| JavaScript / TypeScript | `npm ci --ignore-scripts`, `npm test` under c8 | none yet | yes (JS) |
+| C# | `dotnet test` + coverlet (the test project must reference `coverlet.collector`) | none yet | yes |
+| Java | Maven + JaCoCo (no pom edits) | none yet | yes |
+| Rust | cargo-llvm-cov | none yet | yes |
+| C / C++ | CMake + gcov + gcovr (CMake projects only) | none yet | yes (C only) |
+| Dart | `dart test` + `coverage` (Flutter not yet; lizard reads Dart through its Java reader, so `=>` functions are not scored) | none yet | yes |
+
+Where `harden` has no tool, `run` reports it as skipped and **fails** unless your policy sets `allow_skipped_gates = true`.
+`arch` (layers) works for Python and Go; other languages exit 2 until an import reader exists. Complexity comes from
+[lizard](https://github.com/terryyin/lizard) for every language.
 
 ## Install
 
@@ -47,7 +64,7 @@ tells you what is missing. Needs Claude Code 2.1.275 or later.
 
 ```sh
 cd your-project
-gauntlet init .            # writes gauntlet.toml (Python or Go is detected; never overwrites)
+gauntlet init .            # writes gauntlet.toml (the language is detected; never overwrites)
 gauntlet run . --report EVIDENCE.md
 ```
 
@@ -77,7 +94,7 @@ agent needs an image that contains it; build one from [`examples/agent.Dockerfil
 `gauntlet.toml` in the project (strict: unknown keys are errors):
 
 ```toml
-language = "python"            # or "go"
+language = "python"            # python, go, javascript, csharp, java, rust, cpp, dart
 src = "src"                    # Python: where module names are rooted
 
 [layers]                       # optional: imports may only point down this list, outermost first
@@ -94,9 +111,10 @@ Your rules live **outside the repo**, in `~/.config/gauntlet/policy.toml` (start
 and the agent for `loop`. This is what stops an agent from editing its own thresholds. What gauntlet does and does
 **not** protect against: [SECURITY.md](SECURITY.md).
 
-Go projects: `run` works when a stock Go image (or Workshop's Go SDK) can build the project. Otherwise produce `gocyclo.txt`,
-`cover-func.txt`, `imports.txt` and `mutation.json` with your own toolchain (the error messages show the commands),
-then `gauntlet stamp .` and `gauntlet check .`.
+Go projects: `run` works when a stock Go image (or Workshop's Go SDK) can build the project. Otherwise produce `cover.out`,
+`imports.txt` and `mutation.json` with your own toolchain (the error messages show the commands), then
+`gauntlet stamp .` and `gauntlet check .`. Any language: `gauntlet check .` reads a coverage report you produced yourself
+(`coverage.json`, `cover.out`, `lcov.info`, `coverage.cobertura.xml` or `jacoco.xml`) once it is stamped.
 
 ## Develop
 

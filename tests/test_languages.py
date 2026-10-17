@@ -257,6 +257,7 @@ def test_ordinary_dart_comments_are_not_pragmas() -> None:
                 "#[cfg_attr(coverage_nightly, coverage(off))]",
                 "#[cfg_attr(",
                 "#![allow(dead_code)]",
+                '#[cfg_attr(feature = "a]", allow(dead_code))]',
             ],
             ['#[cfg_attr(feature = "x", derive(Debug))]', "#[derive(Debug)]", "#[cfg(test)]"],
         ),

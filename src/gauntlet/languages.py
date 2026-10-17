@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+ConfigScan = tuple[str, str]  # (file glob, regex a line must match; empty: the file's existence is the finding)
+
 
 @dataclass(frozen=True)
 class Language:
@@ -15,9 +17,7 @@ class Language:
     mutation: bool  # a mutation tool is wired; without one `run` reports the harden gate as skipped
     sdk: str  # the Canonical Workshop SDK
     image: str  # the default Docker image (the policy can override it per language)
-    config_scan: tuple[
-        tuple[str, str], ...
-    ] = ()  # (file glob, regex) of build settings that can hide code from coverage
+    config_scan: tuple[ConfigScan, ...] = ()  # build settings that can hide code from coverage
     parse_as: str = ""  # lizard has no reader for the suffixes: parse them with this other language's reader
 
 
@@ -66,7 +66,8 @@ TABLE["javascript"] = Language(
     config_scan=(
         (".c8rc*", ""),
         (".nycrc*", ""),
-        ("c8.config.*", ""),
+        ("*c8.config.*", ""),
+        ("*nyc.config.*", ""),
         (".mocharc*", ""),
         ("package.json", r'"(?:c8|nyc)"\s*:'),
     ),
@@ -87,6 +88,7 @@ TABLE["csharp"] = Language(
     config_scan=(
         ("*.runsettings", ""),
         ("*.testsettings", ""),
+        ("*.rsp", ""),
         ("*.csproj", _MSBUILD_HIDES),
         ("*.props", _MSBUILD_HIDES),
         ("*.targets", _MSBUILD_HIDES),
@@ -116,8 +118,8 @@ TABLE["rust"] = Language(
     tests=r"^tests/",  # inline `#[cfg(test)]` modules live in src/ and are measured as source
     pragma=(  # attributes that hide code from llvm-cov or the linters; a cfg_attr left open on its line is flagged too
         r"#\s*!?\s*\[\s*(?:coverage\s*\(\s*off|no_coverage|allow\s*\(|expect\s*\(|rustfmt\s*::\s*skip"
-        r"|automatically_derived|cfg(?:_attr)?\s*\([^\]]*coverage"
-        r"|cfg_attr\s*\((?:[^\]]*(?:allow\s*\(|expect\s*\(|rustfmt\s*::\s*skip)|[^\]]*$))"
+        r"|automatically_derived|cfg(?:_attr)?\s*\(.*coverage"
+        r"|cfg_attr\s*\((?:.*(?:allow\s*\(|expect\s*\(|rustfmt\s*::\s*skip)|(?!.*\])))"
         r"|//\s*LCOV_EXCL_(?:LINE|START|STOP|BR_LINE|BR_START|BR_STOP)\b"
     ),
     coverage_file="lcov.info",

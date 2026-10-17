@@ -190,6 +190,19 @@ def test_include_and_omit_settings_that_narrow_coverage_are_exclusions(tmp_path:
         ("rust", "Cargo.toml", "[package]", []),
         ("dart", "dart_test.yaml", "exclude_tags: slow", ["dart_test.yaml:1: exclude_tags: slow"]),
         ("cpp", "CMakeLists.txt", "project(x)", []),
+        (
+            "javascript",
+            "tools/nyc.config.js",
+            "module.exports = {}",
+            ["tools/nyc.config.js: coverage-affecting settings file"],
+        ),
+        ("csharp", "Directory.Build.rsp", "-p:X=1", ["Directory.Build.rsp: coverage-affecting settings file"]),
+        (
+            "csharp",
+            "build/hide.props",
+            "<ExcludeByFile>**</ExcludeByFile>",
+            ["build/hide.props:1: <ExcludeByFile>**</ExcludeByFile>"],
+        ),
     ],
 )
 def test_config_hints_find_settings_that_can_hide_code(

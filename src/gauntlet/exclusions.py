@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from gauntlet import languages
-from gauntlet.safefs import MAX_SOURCE_BYTES, SKIP_DIRS, inside, read_text, source_files
+from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text, source_files
 from gauntlet.scope import Scope
 
 
@@ -104,11 +104,14 @@ def config_excludes(root: Path) -> list[str]:
     )
 
 
+CONFIG_SKIP = {".git", ".venv", "venv", "node_modules", "__pycache__", ".tox"}  # not build/: repos keep settings there
+
+
 def _config_files(root: Path, glob: str) -> list[str]:
-    """Project-relative paths whose name or path matches `glob`, outside vendored and build directories."""
+    """Project-relative paths whose name or path matches `glob`, outside vendored directories."""
     found: list[str] = []
     for dirpath, dirs, names in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        dirs[:] = sorted(d for d in dirs if d not in CONFIG_SKIP)
         rels = [(Path(dirpath) / n).relative_to(root).as_posix() for n in sorted(names)]
         found += [r for r in rels if fnmatch.fnmatch(r, glob) or fnmatch.fnmatch(r, f"*/{glob}")]
     return found

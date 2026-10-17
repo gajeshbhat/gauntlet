@@ -23,6 +23,8 @@ GO = """language = "go"
 # [layers]
 # order = ["example.com/app/cmd", "example.com/app/internal/service", "example.com/app/internal/domain"]
 """
+OTHER = """language = "{language}"
+"""
 TEMPLATES = {"python": PYTHON, "go": GO}
 
 
@@ -33,7 +35,8 @@ def _template(root: Path) -> str:
     if not found:
         markers = ", ".join(m for row in languages.TABLE.values() for m in row.markers)
         raise ValueError(f"cannot tell the language of {root}: looked for {markers}")
-    return TEMPLATES[found[0]].format(src="src" if (root / "src").is_dir() else ".")
+    template = TEMPLATES.get(found[0], OTHER)
+    return template.format(language=found[0], src="src" if (root / "src").is_dir() else ".")
 
 
 def write_config(root: Path) -> Path:
