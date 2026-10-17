@@ -7,6 +7,7 @@ order = [
   "gauntlet.cli",
   "gauntlet.loop",
   "gauntlet.runner",
+  "gauntlet.backends",
   "gauntlet.golang",
   "gauntlet.spec",
   "gauntlet.diagram",
@@ -16,6 +17,7 @@ order = [
   "gauntlet.arch",
   "gauntlet.exclusions",
   "gauntlet.harden",
+  "gauntlet.docker",
   "gauntlet.sandbox",
   "gauntlet.snapshot",
   "gauntlet.policy",
@@ -25,4 +27,5 @@ order = [
   "gauntlet.crap",
   "gauntlet.results",
   "gauntlet.safefs",
+  "gauntlet.names",
 ]

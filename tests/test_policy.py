@@ -218,3 +218,40 @@ def test_each_boolean_defaults_to_false_and_each_can_be_set(write_policy: Callab
     for key in ("allow_config_excludes", "allow_unstamped", "require_pin"):
         assert getattr(policy.load(write_policy("max_exclusions = 1\n")), key) is False
         assert getattr(policy.load(write_policy(f"{key} = true\n")), key) is True
+
+
+def test_sandbox_settings_default_and_load(write_policy: Callable[[str], Path]) -> None:
+    d = policy.load(write_policy("max_rounds = 3\n"))
+    assert (d.sandbox, d.container_cli, d.docker_network, d.docker_memory, d.docker_image_agent) == (
+        "auto",
+        "docker",
+        "bridge",
+        "",
+        "",
+    )
+    assert d.docker_image_python == "ghcr.io/astral-sh/uv:python3.12-bookworm"
+    assert d.docker_image_go == "golang:1.27"
+    text = 'sandbox = "docker"\ncontainer_cli = "podman"\ndocker_network = "none"\ndocker_memory = "4g"\ndocker_image_go = "golang:1.26"\ndocker_image_agent = "me/agent:1"\n'
+    p = policy.load(write_policy(text))
+    assert (p.sandbox, p.container_cli, p.docker_network, p.docker_memory) == ("docker", "podman", "none", "4g")
+    assert (p.docker_image_go, p.docker_image_agent) == ("golang:1.26", "me/agent:1")
+    assert policy.load(write_policy(policy.dump(p))) == p
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ('sandbox = "vm"\n', r"sandbox must be one of auto, workshop, docker"),
+        ('container_cli = "lxc"\n', r"container_cli must be one of docker, podman"),
+        ('docker_network = "host"\n', r"docker_network must be one of bridge, none"),
+        ('docker_memory = "lots"\n', r"docker_memory must look like 512m or 4g"),
+        ("docker_memory = 4\n", r"docker_memory must be a string"),
+        ('docker_image_python = "-v /:/x"\n', r"docker_image_python must be a container image name"),
+        ('docker_image_go = "a b"\n', r"docker_image_go must be a container image name"),
+        ('docker_image_agent = "--privileged"\n', r"docker_image_agent must be a container image name"),
+    ],
+)
+def test_bad_sandbox_settings_are_errors(write_policy: Callable[[str], Path], text: str, message: str) -> None:
+    path = write_policy(text)
+    with pytest.raises(ValueError, match=f"^{path}: {message}"):
+        policy.load(path)

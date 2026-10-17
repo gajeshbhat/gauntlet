@@ -6,5 +6,5 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pyright
 uv run pytest -q
-uv run gauntlet stamp .
-uv run gauntlet check . --only src/ --policy policy.ci.toml
+uv run gauntlet stamp . --artifacts .
+uv run gauntlet check . --artifacts . --only src/ --policy policy.ci.toml

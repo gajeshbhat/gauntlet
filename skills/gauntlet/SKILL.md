@@ -8,8 +8,9 @@ into a repository, and never edit a repo's `gauntlet.toml` to make a gate pass.
 
 ## Before the first use
 1. `command -v gauntlet || uv tool install git+https://github.com/gajeshbhat/gauntlet` (private repo: use `git+ssh://git@github.com/gajeshbhat/gauntlet`).
-2. `run` and `loop` execute project code, so they need Canonical Workshop: `command -v workshop || sudo snap install workshop --classic`
-   (tell the user; do not run `sudo` yourself).
+2. `run` and `loop` execute project code, so they need a sandbox: Canonical Workshop on Linux
+   (`sudo snap install workshop --classic`) or Docker/Podman on Linux, macOS and Windows. Check `command -v workshop docker`;
+   tell the user what to install (never run `sudo` yourself). With Docker, `loop` also needs `docker_image_agent` in the policy.
 3. No `gauntlet.toml` yet: `gauntlet init .` writes a starter one for Python or Go.
 
 ## Use
