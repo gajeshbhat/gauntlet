@@ -1,6 +1,7 @@
 """Runs real containers. Opt in with GAUNTLET_DOCKER_TESTS=1 (needs Docker and network to pull the image)."""
 
 import os
+import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -223,4 +224,32 @@ def test_cpp_project_runs_through_cmake_and_gcovr_in_a_real_container(
     out = capsys.readouterr().out
     assert "src/demo.c:5: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
     assert "src/demo.c:1: f" not in out
+    assert "harden: SKIPPED" in out
+
+
+DART_FILES = {
+    "pubspec.yaml": "name: demo\nenvironment:\n  sdk: ^3.9.0\ndev_dependencies:\n  test: ^1.25.0\n",
+    "gauntlet.toml": 'language = "dart"',
+    "lib/demo.dart": "int f(int x) {\n  if (x > 1) {\n    return 1;\n  }\n  return 0;\n}\n\n"
+    + "int risky(int a) {\n"
+    + "".join(f"  if (a == {i}) {{ return {i}; }}\n" for i in range(1, 6))
+    + "  return 0;\n}\n",
+    "test/demo_test.dart": "import 'package:demo/demo.dart';\nimport 'package:test/test.dart';\n\n"
+    "void main() {\n  test('f', () {\n    expect(f(2), 1);\n    expect(f(0), 0);\n  });\n}\n",
+}
+
+
+def test_dart_project_runs_through_dart_test_and_lcov_in_a_real_container(
+    tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name, text in DART_FILES.items():
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_text(text)
+    shutil.copy(Path(__file__).parent / "fixtures" / "dart.pubspec.lock", tmp_path / "pubspec.lock")
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x", "--no-gpg-sign"]):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True)
+    assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
+    out = capsys.readouterr().out
+    assert "lib/demo.dart:8: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
+    assert "lib/demo.dart:1:" not in out  # f is tested
     assert "harden: SKIPPED" in out

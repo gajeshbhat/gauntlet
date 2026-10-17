@@ -361,3 +361,16 @@ def test_cpp_steps_are_fixed_pinned_and_ignore_the_repos_gcovr_config(tmp_path: 
     assert coverage.argv[:5] == ("python3", "-m", "gcovr", "--config", "/project/.gauntlet-out/gcovr.cfg")
     assert coverage.argv[-2:] == ("--lcov", "/project/.gauntlet-out/lcov.info")
     assert dict(coverage.env) == {"PYTHONPATH": "/project/.gauntlet-out/py"}
+
+
+def test_dart_steps(tmp_path: Path) -> None:
+    get, activate, tests, report = runner.steps(Config(language="dart"), tmp_path)
+    assert get.argv == ("dart", "pub", "get", "--enforce-lockfile")  # the lockfile decides; nothing is re-resolved
+    assert activate.argv == ("dart", "pub", "global", "activate", "coverage", "1.15.0")
+    assert tests.argv == ("dart", "test", "--coverage=/project/.gauntlet-out/raw")
+    assert tests.timeout == 3600 and report.argv[:5] == ("dart", "pub", "global", "run", "coverage:format_coverage")
+    assert report.argv[5:] == (
+        "--lcov", "--in=/project/.gauntlet-out/raw", "--out=/project/.gauntlet-out/lcov.info",
+        "--report-on=lib", "--report-on=bin", "--packages=.dart_tool/package_config.json",
+    )  # fmt: skip
+    assert "--check-ignore" not in report.argv  # coverage:ignore comments do not hide code from the gate

@@ -32,6 +32,7 @@ PIP_URL = (
 )
 PIP_SHA256 = "3790624780082365f47549d032f3770eeb2b1e8bd1f7b2e02dace1afa361b4ed"
 CPP_TOOLS = "cmake==4.4.4 gcovr==8.7"
+DART_COVERAGE = "1.15.0"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
@@ -191,6 +192,30 @@ def _cpp_steps() -> list[Step]:
     ]  # fmt: skip
 
 
+def _dart_steps() -> list[Step]:
+    raw = f"{IN_SANDBOX}/raw"
+    pub = ("dart", "pub", "global")
+    return [
+        Step("install", ("dart", "pub", "get", "--enforce-lockfile")),  # lockfile only; nothing is re-resolved
+        Step("coverage tool", (*pub, "activate", "coverage", DART_COVERAGE)),
+        Step("tests", ("dart", "test", f"--coverage={raw}"), timeout=3600),
+        Step(
+            "report",
+            (
+                *pub,
+                "run",
+                "coverage:format_coverage",
+                "--lcov",
+                f"--in={raw}",
+                f"--out={IN_SANDBOX}/lcov.info",
+                "--report-on=lib",
+                "--report-on=bin",
+                "--packages=.dart_tool/package_config.json",
+            ),
+        ),  # fmt: skip
+    ]
+
+
 def steps(cfg: Config, snap: Path) -> list[Step]:
     if cfg.language == "go":
         return _go_steps(cfg, snap)
@@ -202,6 +227,8 @@ def steps(cfg: Config, snap: Path) -> list[Step]:
         return _rust_steps()
     if cfg.language == "cpp":
         return _cpp_steps()
+    if cfg.language == "dart":
+        return _dart_steps()
     return _js_steps() if cfg.language == "javascript" else _python_steps(cfg)
 
 
@@ -213,6 +240,7 @@ FILES = {
     "java": ("jacoco.xml",),
     "rust": ("lcov.info",),
     "cpp": ("lcov.info",),
+    "dart": ("lcov.info",),
 }  # artifacts the sandbox writes itself
 REQUIRED = {
     "python": ("coverage.json", "mutmut-results.txt"),
@@ -222,6 +250,7 @@ REQUIRED = {
     "java": ("jacoco.xml",),
     "rust": ("lcov.info",),
     "cpp": ("lcov.info",),
+    "dart": ("lcov.info",),
 }
 
 

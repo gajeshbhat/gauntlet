@@ -45,6 +45,7 @@ ARTIFACTS = {
     "java": ("jacoco.xml",),
     "rust": ("lcov.info",),
     "cpp": ("lcov.info",),
+    "dart": ("lcov.info",),
 }
 
 

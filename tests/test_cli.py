@@ -1006,3 +1006,32 @@ def test_run_checks_cpp_coverage_and_says_harden_was_skipped(
     assert "produced lcov.info" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
     assert "harden: SKIPPED, no mutation tool is wired for cpp yet" in out
+
+
+# ---- Dart: the same, with the unreadable-file rule visible end to end
+DART_SOURCE = "int f(int x) {\n  return x + 1;\n}\n"
+
+
+class DartSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if "coverage:format_coverage" in argv:
+            text = "SF:/project/lib/a.dart\nDA:1,1\nDA:2,1\nend_of_record\n"
+            (self.project / ".gauntlet-out" / "lcov.info").write_text(text)
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_dart_coverage_and_names_code_the_reader_could_not_see(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = project(tmp_path, 'language = "dart"\n')
+    (root / "lib").mkdir()
+    (root / "lib" / "a.dart").write_text(DART_SOURCE)
+    (root / "lib" / "b.dart").write_text("int one() => 1;\n")
+    for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-q", "-m", "x", "--no-gpg-sign")):
+        git(root, *args)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: DartSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(root)]) == 1
+    out = capsys.readouterr().out
+    assert "produced lcov.info" in out
+    assert "lib/b.dart:1: (unread code) CRAP inf > 8 (complexity 0, coverage 0%)" in out
+    assert "harden: SKIPPED, no mutation tool is wired for dart yet" in out

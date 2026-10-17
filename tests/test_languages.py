@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+import lizard_languages  # pyright: ignore[reportMissingTypeStubs]
 import pytest
 
 from gauntlet import languages, linecov
@@ -167,7 +168,7 @@ def test_every_suffix_is_one_lizard_reads() -> None:
 
     for name, row in languages.TABLE.items():
         for suffix in row.suffixes:
-            assert get_reader_for(f"x{suffix}"), (name, suffix)
+            assert get_reader_for(f"x.{row.parse_as}" if row.parse_as else f"x{suffix}"), (name, suffix)
 
 
 @pytest.mark.parametrize(
@@ -197,3 +198,48 @@ def test_cpp_test_dirs_are_top_level_only_and_suffixes_are_lizard_known() -> Non
     assert not re.search(cpp.tests, "src/test/a.c") and not re.search(cpp.tests, "src/a_test.cpp")
     for suffix in cpp.suffixes:
         assert [f.name for f in function_findings("x" + suffix, "int f(int x) { return x; }\n", None)] == ["f"], suffix
+
+
+def _lizard_reads(filename: str) -> bool:
+    return lizard_languages.get_reader_for(filename) is not None  # pyright: ignore[reportUnknownMemberType]
+
+
+@pytest.mark.parametrize("name", list(languages.TABLE))
+def test_lizard_reads_every_suffix_directly_or_through_the_named_reader(name: str) -> None:
+    row = languages.TABLE[name]
+    for suffix in row.suffixes:
+        assert _lizard_reads(f"x.{row.parse_as}" if row.parse_as else f"x{suffix}"), suffix
+
+
+def test_dart_row_and_test_dirs() -> None:
+    dart = languages.TABLE["dart"]
+    assert (dart.suffixes, dart.markers, dart.coverage_format, dart.mutation) == (
+        (".dart",), ("pubspec.yaml",), "lcov", False
+    )  # fmt: skip
+    assert re.search(dart.tests, "test/a_test.dart")
+    for path in ("lib/test/a.dart", "lib/a_test.dart", "tests/a.dart", "test.dart"):
+        assert not re.search(dart.tests, path), path
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "x(); // coverage:ignore-line",
+        "// coverage:ignore-start",
+        "// coverage:ignore-end",
+        "// coverage:ignore-file",
+        "int a = b!; // ignore: unnecessary_non_null_assertion",
+        "// ignore_for_file: unused_element",
+        "// dart format off",
+        "// dart format on",
+        "//coverage:ignore-line",
+        "/// ignore: x",
+    ],
+)
+def test_every_dart_ignore_hint_is_a_pragma(text: str) -> None:
+    assert re.search(languages.TABLE["dart"].pragma, text), text
+
+
+def test_ordinary_dart_comments_are_not_pragmas() -> None:
+    for text in ("// coverage is good", "// we ignore nothing", "// format the dart"):
+        assert not re.search(languages.TABLE["dart"].pragma, text), text

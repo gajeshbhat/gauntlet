@@ -1,4 +1,5 @@
 from dataclasses import replace
+from math import inf
 from pathlib import Path
 
 import pytest
@@ -203,3 +204,80 @@ def test_a_test_looking_name_inside_the_source_tree_is_still_checked(tmp_path: P
 def test_a_report_matching_no_source_file_is_an_error_not_a_pass(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="mentions no source file"):
         check(project(tmp_path), {}, PY, 8, Scope())
+
+
+# ---- Dart: read by lizard's Java reader. What that gets wrong is pinned here so a change is noticed.
+DART = TABLE["dart"]
+
+
+DART_CLASS = (
+    "class A {\n"  # 1
+    "  int m(int? x) {\n"  # 2
+    "    final y = x ?? 0;\n"
+    "    return x?.abs() ?? y;\n"
+    "  }\n"  # 5
+    "  int arrow(int x) => x > 1 ? 1 : 2;\n"  # 6
+    "  Future<int> g(List<int> xs) async {\n"
+    "    for (final a in xs) { if (a > 1 && a < 5) { return a; } }\n"
+    "    try { return 1; } catch (e) { return 2; }\n"
+    "  }\n"  # 10
+    "}\n"
+    "int top(int a) {\n"
+    "  return a > 1 ? 1 : 0;\n"
+    "}\n"
+)
+
+
+def dart_findings(source: str, hits: dict[int, int] | None = None) -> list[Finding]:
+    return function_findings("lib/a.dart", source, hits, DART.parse_as)
+
+
+def test_dart_methods_and_functions_are_measured_through_the_java_reader() -> None:
+    found = {f.name: (f.line, f.complexity) for f in dart_findings(DART_CLASS, {})}
+    assert found["A::g"] == (7, 5)  # for, if, &&, catch
+    assert found["A::top"] == (12, 2)  # ternary; the class scope is never closed, so a top-level name is misattributed
+
+
+def test_dart_arrow_functions_are_not_seen() -> None:
+    assert "A::arrow" not in {f.name for f in dart_findings(DART_CLASS, {})}
+    assert dart_findings("int one() => 1;\n", {1: 0}) != []  # alone, the file is flagged instead of passing
+
+
+def test_dart_null_aware_operators_and_nullable_types_inflate_complexity() -> None:
+    (m,) = (f for f in dart_findings(DART_CLASS, {}) if f.name == "A::m")
+    assert m.complexity == 6  # really 1: over-counting only ever fails closed
+
+
+def test_dart_code_with_no_function_found_is_not_clean_unless_every_line_ran() -> None:
+    src = "int one() => 1;\nint two() => 2;\n"
+    (absent,) = dart_findings(src, None)
+    assert (absent.name, absent.line, absent.coverage, absent.crap) == ("(unread code)", 1, 0.0, inf)
+    (partial,) = dart_findings(src, {1: 1, 2: 0})
+    assert (partial.line, partial.coverage) == (2, 0.5)
+    assert dart_findings(src, {1: 1, 2: 1}) == []
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "",
+        "\n\n",
+        "// only a comment\n",
+        "/* block\n comment */\n",
+        "library a;\nimport 'b.dart';\nexport 'c.dart';\npart 'd.dart';\n",
+    ],
+)
+def test_dart_files_with_no_code_are_clean_even_when_the_report_never_names_them(src: str) -> None:
+    assert dart_findings(src, None) == []
+
+
+def test_python_stub_files_with_no_functions_stay_clean() -> None:
+    assert function_findings("stub.py", "X = 1\nclass A: ...\n", None) == []
+
+
+def test_dart_file_with_no_function_is_an_offender_through_check(tmp_path: Path) -> None:
+    project(tmp_path, "int one() => 1;\n", "lib/a.dart")
+    project(tmp_path, "int two() {\n  return 2;\n}\n", "lib/b.dart")
+    result = check(tmp_path, {"lib/b.dart": {1: 1, 2: 1}}, DART, 8, Scope())
+    assert [(p, f.name) for p, f in result.offenders] == [("lib/a.dart", "(unread code)")]
+    assert result.evaluated == 2

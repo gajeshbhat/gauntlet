@@ -15,6 +15,7 @@ class Language:
     mutation: bool  # a mutation tool is wired; without one `run` reports the harden gate as skipped
     sdk: str  # the Canonical Workshop SDK
     image: str  # the default Docker image (the policy can override it per language)
+    parse_as: str = ""  # lizard has no reader for the suffixes: parse them with this other language's reader
 
 
 TABLE: dict[str, Language] = {
@@ -112,6 +113,20 @@ TABLE["cpp"] = Language(
     mutation=False,
     sdk="cpp",
     image="gcc:14.3-bookworm",
+)
+TABLE["dart"] = Language(
+    suffixes=(".dart",),
+    markers=("pubspec.yaml",),
+    tests=r"^test/",  # top-level only: dart test never builds lib/ or bin/, and a name inside lib/ cannot opt out
+    pragma=(  # coverage's ignore comments, the analyzer's ignore comments, and dart format's switch
+        r"//\s*(?:coverage:ignore-(?:line|start|end|file)|ignore(?:_for_file)?:|dart\s+format\s+(?:off|on))"
+    ),
+    coverage_file="lcov.info",
+    coverage_format="lcov",
+    mutation=False,
+    sdk="dart",
+    image="dart:3.9.4",
+    parse_as="java",
 )
 NAMES = tuple(TABLE)
 
