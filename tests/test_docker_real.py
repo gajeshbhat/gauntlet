@@ -186,7 +186,9 @@ JAVA_FILES = {
     "    if (x > 1) { return 1; }\n    return 0;\n  }\n"
     "  public int risky(int a) {\n"
     + "".join(f"    if (a == {i}) {{ return {i}; }}\n" for i in range(1, 6))
-    + "    return 0;\n  }\n}\n",
+    + "    return 0;\n  }\n"
+    "  @DoNotMutate public int hidden(int a) {\n    if (a > 2) { return 1; }\n    return 0;\n  }\n}\n",
+    "src/main/java/com/x/DoNotMutate.java": "package com.x;\npublic @interface DoNotMutate {}\n",
     "src/test/java/com/x/ATest.java": "package com.x;\nimport static org.junit.jupiter.api.Assertions.assertEquals;\n"
     "import org.junit.jupiter.api.Test;\nclass ATest {\n  @Test void f() {\n"
     "    assertEquals(1, new A().f(2));\n    assertEquals(0, new A().f(0));\n  }\n}\n",
@@ -204,10 +206,11 @@ def test_java_project_runs_through_jacoco_and_pit_in_a_real_container(
     assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
     out = capsys.readouterr().out
     assert "src/main/java/com/x/A.java:7: A::risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
-    assert "mutation score 15.4% < 90%" in out  # f is tested (2 of 13 killed); risky is never run
+    assert "mutation score" in out and "< 90%" in out  # f is tested; risky and hidden are never run
     assert "src/main/java/com/x/A.java:4: ConditionalsBoundaryMutator in f: SURVIVED" in out
     assert "src/main/java/com/x/A.java:8: " in out
     assert "NO_COVERAGE" in out
+    assert "src/main/java/com/x/A.java:16: " in out  # @DoNotMutate does not hide `hidden` from the gate
 
 
 CPP_FILES = {

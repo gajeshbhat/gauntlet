@@ -197,6 +197,7 @@ def _java_steps() -> list[Step]:
     pit = (
         f"-DoutputFormats=XML -DtimestampedReports=false -Dmutators=DEFAULTS -DadditionalClasspathElements={junit5}"
         " -DexcludedClasses= -DexcludedMethods= -DexcludedTestClasses= -DwithHistory=false -DavoidCallsTo="
+        " -Dfeatures=-FANN"  # -FANN: an @DoNotMutate annotation hides nothing from the gate
     ).split()
     mvn = ("mvn", "-B", "-ntp", repo)
     return [
@@ -335,14 +336,27 @@ def output_tail(done: ExecResult) -> str:
     return " | ".join(part for part in (done.stderr.strip(), done.stdout.strip()) if part)[-2000:]
 
 
-def _run_steps(box: Sandbox, plan: list[Step], stale: str | None = None) -> dict[str, bytes]:
-    """Run the plan. `stale` (the mutation report's path in the sandbox) is removed by the sandbox itself right before
-    the mutation step: a file the tests left behind can never stand in for the report of a mutation run that crashed
-    or timed out, and the host never touches a path the tests could have turned into a symlink."""
+INTERMEDIATES = {  # what the copy steps after a mutation run read, as the tool leaves it
+    "java": ("target/pit-reports",),
+    "csharp": (f"{IN_SANDBOX}/stryker",),
+    "rust": (MUTANTS_OUT,),
+}
+
+
+def _stale(language: str) -> tuple[str, ...]:
+    tool = mutation.TOOLS.get(language)
+    return (f"{IN_SANDBOX}/{tool.artifact}", *INTERMEDIATES.get(language, ())) if tool else ()
+
+
+def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> dict[str, bytes]:
+    """Run the plan. `stale` (the mutation report and the intermediate files the copy steps read) is removed by the
+    sandbox itself right before the mutation step: a file the tests left behind can never stand in for the report of a
+    mutation run that crashed or timed out, and the host never touches a path the tests could have turned into a
+    symlink."""
     captured: dict[str, bytes] = {}
     for step in plan:
         if stale and step.name == "mutation":
-            removal = box.exec(["rm", "-f", "--", stale], {}, 60)
+            removal = box.exec(["rm", "-rf", "--", *stale], {}, 60)
             if removal.code != 0:
                 raise ValueError(f"could not clear the old mutation report: {output_tail(removal)}")
         done = box.exec(step.argv, dict(step.env), step.timeout)
@@ -390,8 +404,7 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         box = make_sandbox(snap)
         box.ensure()
         try:
-            tool = mutation.TOOLS.get(cfg.language)
-            captured = _run_steps(box, steps(cfg, snap), f"{IN_SANDBOX}/{tool.artifact}" if tool else None)
+            captured = _run_steps(box, steps(cfg, snap), _stale(cfg.language))
         finally:
             box.remove()
         found = _collect(snap, cfg.language, captured)

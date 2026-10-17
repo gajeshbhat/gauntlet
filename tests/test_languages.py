@@ -68,6 +68,9 @@ def test_javascript_pragmas_and_test_dirs() -> None:
         "// node:coverage ignore next",
         "// node:coverage disable",
         "// Stryker disable next-line all",
+        "// STRYKER DISABLE all",
+        "//stryker disable-next-line",
+        "//Stryker\tdisable all",
         "/* Stryker disable all */",
         "//Stryker disable-next-line EqualityOperator: why",
     ):
@@ -99,6 +102,8 @@ CSHARP_HINTS = (
     "// codecov ignore",
     "// Stryker disable once all",
     "//Stryker disable All : reason",
+    "// STRYKER RESTORE all",
+    "//stryker disable",
     "// Stryker restore all",
 )
 
@@ -136,6 +141,8 @@ def test_java_pragmas_cover_every_hint_the_pinned_jacoco_and_linters_honour() ->
         "// @formatter:off",
         "//@formatter:off",
         "@DoNotMutate",
+        "@CoverageIgnore",
+        "  @com.x.CoverageIgnore",
         "  @com.x.DoNotMutate",
     ):
         assert re.search(java.pragma, text), text
