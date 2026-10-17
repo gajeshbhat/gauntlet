@@ -4,6 +4,7 @@ Nothing the repository contains chooses what runs: commands, tool versions and o
 Target code (its tests, mutation runs) executes only in the sandbox; its outputs are copied out and stamped on the host.
 """
 
+import json
 import re
 import tempfile
 from collections.abc import Callable
@@ -11,6 +12,7 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
+from gauntlet import languages, mutation
 from gauntlet.config import Config
 from gauntlet.provenance import excluded, fingerprint, stamp
 from gauntlet.safefs import MAX_ARTIFACT_BYTES
@@ -24,8 +26,15 @@ UV = ("uv", "run", "--project", "/project")
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
 C8 = "c8@10.1.3"
+STRYKER = "@stryker-mutator/core@9.6.1"  # the command test runner is built in: no plugins to install
 JACOCO = "org.jacoco:jacoco-maven-plugin:0.8.12"
+PITEST = "org.pitest:pitest-maven:1.17.4"
+PIT_JUNIT5 = "org.pitest:pitest-junit5-plugin:1.2.1"
+PIT_REPORT = "target/pit-reports/mutations.xml"
+DEPENDENCY = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1"
 LLVM_COV = "0.6.21"
+CARGO_MUTANTS = "27.1.0"
+MUTANTS_OUT = f"{IN_SANDBOX}/mutants"
 CARGO_TOOLS = f"{IN_SANDBOX}/cargo"
 PIP_URL = (
     "https://files.pythonhosted.org/packages/ef/7d/500c9ad20238fcfcb4cb9243eede163594d7020ce87bd9610c9e02771876"
@@ -33,6 +42,8 @@ PIP_URL = (
 )
 PIP_SHA256 = "3790624780082365f47549d032f3770eeb2b1e8bd1f7b2e02dace1afa361b4ed"
 DART_COVERAGE = "1.15.0"
+STRYKER_NET = "4.8.1"
+STRYKER_CONFIG = f"{IN_SANDBOX}/stryker-config.json"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
@@ -107,15 +118,55 @@ def _go_steps(cfg: Config, snap: Path) -> list[Step]:
     ]
 
 
+def _stryker_config() -> str:
+    """Stryker's settings, ours alone (passed by path, so a repo's stryker.conf.* is never read). What gets mutated
+    follows the language row: its suffixes, minus node_modules, our output and the top-level test directories."""
+    suffixes = ",".join(s.lstrip(".") for s in languages.TABLE["javascript"].suffixes)
+    skip = ("**/node_modules", OUT_DIR, "tests", "test", "__tests__")
+    return json.dumps(
+        {
+            "testRunner": "command",
+            "commandRunner": {"command": "npm test"},
+            "coverageAnalysis": "off",
+            "reporters": ["json"],
+            "jsonReporter": {"fileName": f"{IN_SANDBOX}/stryker.json"},
+            "mutate": [f"**/*.{{{suffixes}}}", *(f"!{d}/**" for d in skip)],
+            "ignorePatterns": [OUT_DIR],
+            "tempDirName": f"{IN_SANDBOX}/stryker-tmp",
+        }
+    )
+
+
 def _js_steps() -> list[Step]:
     report = f"--reports-dir={IN_SANDBOX}"
+    tool, conf = f"{IN_SANDBOX}/stryker", f"{IN_SANDBOX}/stryker.conf.json"
+    install = ("npm", "install", "--prefix", tool, "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", STRYKER)
     return [
         Step("install", ("npm", "ci", "--ignore-scripts")),  # lockfile only; dependency scripts never run
         Step("tests", ("npx", "--yes", C8, "--reporter=lcovonly", report, "npm", "test"), timeout=3600),
+        Step("install-stryker", install),
+        Step("stryker-config", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", _stryker_config(), conf)),
+        Step("mutation", ("node", f"{tool}/node_modules/.bin/stryker", "run", conf), timeout=7200, must_pass=False),
     ]
 
 
 COPY_REPORT = 'cp "$1"/results/*/coverage.cobertura.xml "$1"/coverage.cobertura.xml'  # one test project per run
+
+
+def _stryker_steps(env: tuple[tuple[str, str], ...]) -> list[Step]:
+    """Stryker.NET reads only our own config file, so a repo's stryker-config.json cannot narrow the mutation."""
+    tool = f"{IN_SANDBOX}/tools"
+    out = f"{IN_SANDBOX}/stryker"
+    write = 'echo \'{"stryker-config":{}}\' > "$1"'
+    run = (f"{tool}/dotnet-stryker", "--config-file", STRYKER_CONFIG, "--mutate", "**/*.cs")
+    install = ("dotnet", "tool", "install", "--tool-path", tool, "dotnet-stryker", "--version", STRYKER_NET)
+    return [
+        Step("install-stryker", install, env=env),
+        Step("stryker-config", ("sh", "-c", write, "sh", STRYKER_CONFIG)),
+        Step("mutation", (*run, "--reporter", "json", "--output", out), timeout=7200, must_pass=False, env=env),
+        Step("mutation-report", ("cp", f"{out}/reports/mutation-report.json", f"{IN_SANDBOX}/stryker-report.json"),
+             must_pass=False),
+    ]  # fmt: skip
 
 
 def _dotnet_steps() -> list[Step]:
@@ -133,19 +184,35 @@ def _dotnet_steps() -> list[Step]:
             env=env,
         ),
         Step("report", ("sh", "-c", COPY_REPORT, "sh", IN_SANDBOX)),
+        *_stryker_steps(env),
     ]
 
 
 def _java_steps() -> list[Step]:
-    repo = f"-Dmaven.repo.local={IN_SANDBOX}/m2"  # no writable HOME for every uid
+    m2 = f"{IN_SANDBOX}/m2"
+    repo = f"-Dmaven.repo.local={m2}"  # no writable HOME for every uid
+    junit5 = f"{m2}/org/pitest/pitest-junit5-plugin/1.2.1/pitest-junit5-plugin-1.2.1.jar"
+    # PIT is called by its goal, so the pom cannot add the JUnit 5 plugin: fetch the jar and put it on the classpath.
+    # Properties stand where the pom is silent; a <configuration> in the pom would win (the exclusions gate reports it).
+    pit = (
+        f"-DoutputFormats=XML -DtimestampedReports=false -Dmutators=DEFAULTS -DadditionalClasspathElements={junit5}"
+        " -DexcludedClasses= -DexcludedMethods= -DexcludedTestClasses= -DwithHistory=false -DavoidCallsTo="
+    ).split()
+    mvn = ("mvn", "-B", "-ntp", repo)
     return [
-        Step("tests", ("mvn", "-B", "-ntp", repo, f"{JACOCO}:prepare-agent", "test", f"{JACOCO}:report"), timeout=3600),
+        Step("tests", (*mvn, f"{JACOCO}:prepare-agent", "test", f"{JACOCO}:report"), timeout=3600),
         Step("collect", ("cp", "target/site/jacoco/jacoco.xml", f"{IN_SANDBOX}/jacoco.xml")),
+        Step("pit-junit5", (*mvn, f"{DEPENDENCY}:get", f"-Dartifact={PIT_JUNIT5}", "-Dtransitive=false")),
+        Step("mutation", (*mvn, f"{PITEST}:mutationCoverage", *pit), timeout=7200, must_pass=False),
+        Step("mutation-collect", ("cp", PIT_REPORT, f"{IN_SANDBOX}/mutations.xml"), must_pass=False),
     ]
 
 
+def _cargo_install(crate: str, version: str) -> tuple[str, ...]:
+    return ("cargo", "install", "--locked", "--version", version, crate, "--root", CARGO_TOOLS)
+
+
 def _rust_steps() -> list[Step]:
-    install = ("cargo", "install", "--locked", "--version", LLVM_COV, "cargo-llvm-cov", "--root", CARGO_TOOLS)
     cov = (
         f"{CARGO_TOOLS}/bin/cargo-llvm-cov",
         "llvm-cov",
@@ -154,10 +221,16 @@ def _rust_steps() -> list[Step]:
         "--output-path",
         f"{IN_SANDBOX}/lcov.info",
     )
+    mutants = (f"{CARGO_TOOLS}/bin/cargo-mutants", "mutants", "--no-config", "--output", MUTANTS_OUT)
+    report = ("cp", f"{MUTANTS_OUT}/mutants.out/outcomes.json", f"{IN_SANDBOX}/mutants-outcomes.json")
     return [
         Step("llvm-tools", ("rustup", "component", "add", "llvm-tools-preview")),
-        Step("install-llvm-cov", install),
+        Step("install-llvm-cov", _cargo_install("cargo-llvm-cov", LLVM_COV)),
         Step("tests", cov, timeout=3600),
+        Step("install-mutants", _cargo_install("cargo-mutants", CARGO_MUTANTS)),
+        # --no-config: the repository's .cargo/mutants.toml cannot narrow what is mutated
+        Step("mutation", mutants, timeout=7200, must_pass=False),
+        Step("mutation-report", report, must_pass=False),
     ]
 
 
@@ -238,20 +311,20 @@ def steps(cfg: Config, snap: Path) -> list[Step]:
 FILES = {
     "python": ("coverage.json",),
     "go": ("cover.out", "mutation.json"),
-    "javascript": ("lcov.info",),
-    "csharp": ("coverage.cobertura.xml",),
-    "java": ("jacoco.xml",),
-    "rust": ("lcov.info",),
+    "javascript": ("lcov.info", "stryker.json"),
+    "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
+    "java": ("jacoco.xml", "mutations.xml"),
+    "rust": ("lcov.info", "mutants-outcomes.json"),
     "cpp": ("lcov.info",),
     "dart": ("lcov.info",),
 }  # artifacts the sandbox writes itself
 REQUIRED = {
     "python": ("coverage.json", "mutmut-results.txt"),
     "go": ("cover.out", "imports.txt"),
-    "javascript": ("lcov.info",),
-    "csharp": ("coverage.cobertura.xml",),
+    "javascript": ("lcov.info", "stryker.json"),
+    "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
     "java": ("jacoco.xml",),
-    "rust": ("lcov.info",),
+    "rust": ("lcov.info", "mutants-outcomes.json"),
     "cpp": ("lcov.info",),
     "dart": ("lcov.info",),
 }
@@ -262,9 +335,16 @@ def output_tail(done: ExecResult) -> str:
     return " | ".join(part for part in (done.stderr.strip(), done.stdout.strip()) if part)[-2000:]
 
 
-def _run_steps(box: Sandbox, plan: list[Step]) -> dict[str, bytes]:
+def _run_steps(box: Sandbox, plan: list[Step], stale: str | None = None) -> dict[str, bytes]:
+    """Run the plan. `stale` (the mutation report's path in the sandbox) is removed by the sandbox itself right before
+    the mutation step: a file the tests left behind can never stand in for the report of a mutation run that crashed
+    or timed out, and the host never touches a path the tests could have turned into a symlink."""
     captured: dict[str, bytes] = {}
     for step in plan:
+        if stale and step.name == "mutation":
+            removal = box.exec(["rm", "-f", "--", stale], {}, 60)
+            if removal.code != 0:
+                raise ValueError(f"could not clear the old mutation report: {output_tail(removal)}")
         done = box.exec(step.argv, dict(step.env), step.timeout)
         if done.code != 0 and step.must_pass:
             raise ValueError(f"step {step.name!r} failed (exit {done.code}): {output_tail(done)}")
@@ -283,6 +363,8 @@ def _read_artifact(path: Path) -> bytes | None:
 
 
 def _collect(snap: Path, language: str, captured: dict[str, bytes]) -> dict[str, bytes]:
+    if (snap / OUT_DIR).is_symlink():  # the tests swapped the output directory for a link to somewhere on the host
+        raise ValueError(f"{OUT_DIR} is a symlink")
     found = dict(captured)
     for name in FILES[language]:
         data = _read_artifact(snap / OUT_DIR / name)
@@ -308,7 +390,8 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         box = make_sandbox(snap)
         box.ensure()
         try:
-            captured = _run_steps(box, steps(cfg, snap))
+            tool = mutation.TOOLS.get(cfg.language)
+            captured = _run_steps(box, steps(cfg, snap), f"{IN_SANDBOX}/{tool.artifact}" if tool else None)
         finally:
             box.remove()
         found = _collect(snap, cfg.language, captured)

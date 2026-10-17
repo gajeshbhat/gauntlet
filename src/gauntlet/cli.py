@@ -17,10 +17,10 @@ from gauntlet import (
     diagram,
     exclusions,
     golang,
-    harden,
     languages,
     linecov,
     loop,
+    mutation,
     policy,
     provenance,
     report,
@@ -31,19 +31,18 @@ from gauntlet import (
 from gauntlet.config import Config, load
 from gauntlet.policy import Policy
 from gauntlet.results import GateResult
-from gauntlet.safefs import read_text
+from gauntlet.safefs import read_artifact, read_text
 from gauntlet.sandbox import Sandbox
 from gauntlet.scope import Scope, parse
 
 IMPORTS_HOW = "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."
-MUTMUT_HOW = "mutmut run && mutmut results --all true > mutmut-results.txt (or: gauntlet run)"
 ARTIFACTS = {
     "python": ("coverage.json", "mutmut-results.txt"),
     "go": ("cover.out", "imports.txt", "mutation.json"),
-    "javascript": ("lcov.info",),
-    "csharp": ("coverage.cobertura.xml",),
-    "java": ("jacoco.xml",),
-    "rust": ("lcov.info",),
+    "javascript": ("lcov.info", "stryker.json"),
+    "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
+    "java": ("jacoco.xml", "mutations.xml"),
+    "rust": ("lcov.info", "mutants-outcomes.json"),
     "cpp": ("lcov.info",),
     "dart": ("lcov.info",),
 }
@@ -74,7 +73,7 @@ def _arch_result(run: Run) -> arch.ArchResult:
         raise ValueError(f"arch has no import reader for {cfg.language} yet")
     if cfg.language == "go":
         _trusted(run, ["imports.txt"])
-        result = golang.arch_check(golang.read(run.art, "imports.txt", IMPORTS_HOW), cfg.layers)
+        result = golang.arch_check(read_artifact(run.art, "imports.txt", IMPORTS_HOW), cfg.layers)
     else:
         result = arch.check(run.root / cfg.src, cfg.layers)
     if result.modules == 0:
@@ -97,7 +96,7 @@ def _arch(run: Run) -> GateResult:
 def _clean_result(run: Run) -> clean.CleanResult:
     language = languages.get(run.cfg.language)
     _trusted(run, [language.coverage_file])
-    text = golang.read(
+    text = read_artifact(
         run.art, language.coverage_file, f"gauntlet run, or your test runner's {language.coverage_format} report"
     )
     lines = linecov.parse(language.coverage_format, text)
@@ -119,7 +118,7 @@ def _clean(run: Run) -> GateResult:
 
 def _harden_or_skip(run: Run) -> GateResult:
     """For `run` and `loop`: no wired mutation tool is a failure, unless the operator's policy accepts it."""
-    if languages.get(run.cfg.language).mutation:
+    if run.cfg.language in mutation.TOOLS:
         return _harden(run)
     ok = run.policy.allow_skipped_gates
     note = "" if ok else " (set allow_skipped_gates = true in your policy to accept)"
@@ -128,15 +127,11 @@ def _harden_or_skip(run: Run) -> GateResult:
 
 def _harden(run: Run) -> GateResult:
     cfg = run.cfg
-    if not languages.get(cfg.language).mutation:
+    tool = mutation.TOOLS.get(cfg.language)
+    if tool is None:
         raise ValueError(f"harden is not available for {cfg.language} yet")
-    if cfg.language == "go":
-        _trusted(run, ["mutation.json"])
-        text = golang.read(run.art, "mutation.json", "gremlins unleash -o mutation.json .")
-        m = golang.harden_check(text, run.scope, cfg.mutation_dir)
-    else:
-        _trusted(run, ["mutmut-results.txt"])
-        m = harden.check(golang.read(run.art, "mutmut-results.txt", MUTMUT_HOW))
+    _trusted(run, [tool.artifact])
+    m = tool.read(read_artifact(run.art, tool.artifact, tool.how), run.scope, cfg)
     ok = m.pct >= cfg.mutation_min
     summary = f"mutation score {m.pct:.1f}% {'>=' if ok else '<'} {cfg.mutation_min}%"
     return GateResult("harden", ok, summary, tuple(m.survivors), {"score": m.pct, "caught": m.caught, "total": m.total})

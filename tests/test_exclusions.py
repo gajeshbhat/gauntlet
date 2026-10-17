@@ -165,6 +165,15 @@ def test_include_and_omit_settings_that_narrow_coverage_are_exclusions(tmp_path:
             ['package.json:2: "c8": {"exclude": ["a"]}'],
         ),
         ("javascript", "package.json", '{"name": "x"}', []),
+        ("javascript", "stryker.conf.json", "{}", ["stryker.conf.json: coverage-affecting settings file"]),
+        ("javascript", "stryker.conf.mjs", "export default {}", ["stryker.conf.mjs: coverage-affecting settings file"]),
+        ("javascript", ".strykerrc.json", "{}", [".strykerrc.json: coverage-affecting settings file"]),
+        (
+            "javascript",
+            "package.json",
+            '{\n  "stryker": {"mutate": []}\n}',
+            ['package.json:2: "stryker": {"mutate": []}'],
+        ),
         (
             "csharp",
             "app/Tests.runsettings",
@@ -186,6 +195,8 @@ def test_include_and_omit_settings_that_narrow_coverage_are_exclusions(tmp_path:
         ),
         ("java", ".mvn/maven.config", "-DskipTests", [".mvn/maven.config: coverage-affecting settings file"]),
         ("rust", ".cargo/config.toml", "[build]", [".cargo/config.toml: coverage-affecting settings file"]),
+        ("rust", "mutants.toml", "x", ["mutants.toml: coverage-affecting settings file"]),
+        ("rust", ".cargo/mutants.toml", "x", [".cargo/mutants.toml: coverage-affecting settings file"]),
         ("rust", "rust-toolchain.toml", "nightly", ["rust-toolchain.toml: coverage-affecting settings file"]),
         ("rust", "Cargo.toml", "[package]", []),
         ("dart", "dart_test.yaml", "exclude_tags: slow", ["dart_test.yaml:1: exclude_tags: slow"]),
@@ -195,6 +206,13 @@ def test_include_and_omit_settings_that_narrow_coverage_are_exclusions(tmp_path:
             "tools/nyc.config.js",
             "module.exports = {}",
             ["tools/nyc.config.js: coverage-affecting settings file"],
+        ),
+        ("csharp", "stryker-config.json", "{}", ["stryker-config.json: coverage-affecting settings file"]),
+        (
+            "csharp",
+            "tests/App/.config/stryker-config.yaml",
+            "mutate: []",
+            ["tests/App/.config/stryker-config.yaml: coverage-affecting settings file"],
         ),
         ("csharp", "Directory.Build.rsp", "-p:X=1", ["Directory.Build.rsp: coverage-affecting settings file"]),
         (

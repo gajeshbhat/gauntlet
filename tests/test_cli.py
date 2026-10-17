@@ -845,13 +845,15 @@ class RustSandbox(RunSandbox):
         if "--lcov" in argv:
             lcov = "SF:/project/src/lib.rs\nDA:1,1\nDA:2,1\nend_of_record\n"
             (self.project / ".gauntlet-out" / "lcov.info").write_text(lcov)
+        if "--no-config" in argv:
+            report = '{"total_mutants": 1, "outcomes": [{"scenario": {"Mutant": {"file": "src/lib.rs", "replacement": "0", "genre": "FnValue", "span": {"start": {"line": 2}}}}, "summary": "CaughtMutant"}]}'  # noqa: E501
+            (self.project / ".gauntlet-out" / "mutants-outcomes.json").write_text(report)
         return ExecResult(0, "", "")
 
 
 def test_run_checks_rust_coverage_from_absolute_container_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
 ) -> None:
-    lax = write_policy("allow_skipped_gates = true\n")
     root = project(tmp_path, 'language = "rust"\n')
     (root / "src").mkdir()
     (root / "src" / "lib.rs").write_text("pub fn f(x: i32) -> i32 {\n    x + 1\n}\n")
@@ -859,14 +861,15 @@ def test_run_checks_rust_coverage_from_absolute_container_paths(
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
     monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: RustSandbox(project))  # type: ignore[misc]  # noqa: ARG005
-    assert main(["run", str(root), "--policy", str(lax)]) == 0
+    assert main(["run", str(root)]) == 0
     out = capsys.readouterr().out
-    assert "produced lcov.info" in out
+    assert "produced lcov.info, mutants-outcomes.json" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
-    assert "harden: SKIPPED, no mutation tool is wired for rust yet" in out
+    assert "mutation score 100.0% >= 90%" in out
+    assert "SKIPPED" not in out
 
 
-# ---- JavaScript: coverage gates work, harden is visibly skipped
+# ---- JavaScript: coverage gates and Stryker harden
 JS_SOURCE = "function f(x) {\n  return x + 1;\n}\nmodule.exports = { f };\n"
 
 
@@ -874,6 +877,11 @@ class JsSandbox(RunSandbox):
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
         if "c8@10.1.3" in argv:
             (self.project / ".gauntlet-out" / "lcov.info").write_text("SF:index.js\nDA:1,1\nDA:2,1\nend_of_record\n")
+        if "run" in argv:  # the stubbed Stryker run
+            muts = [{"mutatorName": "ArithmeticOperator", "status": s, "location": {"start": {"line": 2}}}
+                    for s in ("Killed", "Survived")]  # fmt: skip
+            report = json.dumps({"files": {"index.js": {"mutants": muts}}})
+            (self.project / ".gauntlet-out" / "stryker.json").write_text(report)
         return ExecResult(0, "", "")
 
 
@@ -886,26 +894,25 @@ def committed_js_project(root: Path, toml: str = 'language = "javascript"\n') ->
     return root
 
 
-def test_run_checks_javascript_coverage_and_says_harden_was_skipped(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+def test_run_checks_javascript_coverage_and_scores_the_stryker_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
 ) -> None:
-    lax = write_policy("allow_skipped_gates = true\n")
     root = committed_js_project(tmp_path)
     monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: JsSandbox(project))  # type: ignore[misc]  # noqa: ARG005
-    assert main(["run", str(root)]) == 1  # a skipped gate is a failure unless the operator's policy accepts it
-    assert "allow_skipped_gates = true" in capsys.readouterr().out
-    assert main(["run", str(root), "--policy", str(lax)]) == 0
+    assert main(["run", str(root)]) == 1
     out = capsys.readouterr().out
-    assert "produced lcov.info" in out
+    assert "produced lcov.info, stryker.json" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
-    assert "harden: SKIPPED, no mutation tool is wired for javascript yet" in out
+    assert "mutation score 50.0% < 90%" in out
+    assert "index.js:2: ArithmeticOperator Survived" in out
+    assert "SKIPPED" not in out
 
 
 def test_harden_asked_for_directly_is_an_error_where_no_tool_is_wired(
     tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
 ) -> None:
-    assert cli_run("harden", project(tmp_path, 'language = "javascript"\n')) == 2
-    assert "harden is not available for javascript yet" in capsys.readouterr().err
+    assert cli_run("harden", project(tmp_path, 'language = "cpp"\n')) == 2
+    assert "harden is not available for cpp yet" in capsys.readouterr().err
 
 
 def test_arch_with_layers_is_an_error_where_no_import_reader_exists(
@@ -916,7 +923,7 @@ def test_arch_with_layers_is_an_error_where_no_import_reader_exists(
     assert "arch has no import reader for javascript yet" in capsys.readouterr().err
 
 
-# ---- C#: coverage gates work, harden is visibly skipped
+# ---- C#: coverage gates and Stryker.NET mutation
 CS_SOURCE = "namespace Demo;\npublic static class A\n{\n    public static int F(int x)\n    {\n        return x + 1;\n    }\n}\n"
 CS_COBERTURA = (
     "<coverage><sources><source>/</source></sources>"  # as coverlet writes it in the container
@@ -925,14 +932,27 @@ CS_COBERTURA = (
 )
 
 
+CS_STRYKER = json.dumps(
+    {
+        "files": {
+            "/project/src/A.cs": {
+                "mutants": [{"mutatorName": "Math", "status": "Killed", "location": {"start": {"line": 6}}}]
+            }
+        }
+    }
+)
+
+
 class CsSandbox(RunSandbox):
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
-        if argv[0] == "sh":  # the step that moves the report out of its results/<guid>/ directory
+        if argv[0] == "sh" and argv[3:] == ("sh", "/project/.gauntlet-out"):  # moves the report out of results/<guid>/
             (self.project / ".gauntlet-out" / "coverage.cobertura.xml").write_text(CS_COBERTURA)
+        if argv[0] == "cp":
+            (self.project / ".gauntlet-out" / "stryker-report.json").write_text(CS_STRYKER)
         return ExecResult(0, "", "")
 
 
-def test_run_checks_csharp_coverage(
+def test_run_checks_csharp_coverage_and_runs_harden(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
 ) -> None:
     root = project(tmp_path, 'language = "csharp"\n')
@@ -942,14 +962,14 @@ def test_run_checks_csharp_coverage(
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
     monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: CsSandbox(project))  # type: ignore[misc]  # noqa: ARG005
-    assert main(["run", str(root), "--policy", str(write_policy("allow_skipped_gates = true\n"))]) == 0
+    assert main(["run", str(root), "--policy", str(write_policy(""))]) == 0
     out = capsys.readouterr().out
-    assert "produced coverage.cobertura.xml" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
-    assert "harden: SKIPPED, no mutation tool is wired for csharp yet" in out
+    assert "produced coverage.cobertura.xml, stryker-report.json" in out
+    assert "mutation score 100.0% >=" in out
 
 
-# ---- Java: JaCoCo XML, harden skipped
+# ---- Java: JaCoCo XML and PIT
 JAVA_SOURCE = "package com.x;\npublic class A {\n  int f(int x) {\n    return x + 1;\n  }\n}\n"
 JACOCO_XML = (
     '<report name="r"><package name="com/x"><sourcefile name="A.java">'
@@ -957,14 +977,19 @@ JACOCO_XML = (
 )
 
 
+PIT_REPORT = (Path(__file__).parent / "fixtures" / "pit-mutations.xml").read_text()
+
+
 class JavaSandbox(RunSandbox):
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
-        if argv[0] == "cp":
+        if argv[:2] == ("cp", "target/site/jacoco/jacoco.xml"):
             (self.project / ".gauntlet-out" / "jacoco.xml").write_text(JACOCO_XML)
+        if argv[:2] == ("cp", "target/pit-reports/mutations.xml"):
+            (self.project / ".gauntlet-out" / "mutations.xml").write_text(PIT_REPORT)
         return ExecResult(0, "", "")
 
 
-def test_run_checks_java_coverage_and_says_harden_was_skipped(
+def test_run_checks_java_coverage_and_scores_pit_mutants(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
 ) -> None:
     root = project(tmp_path, 'language = "java"\n')
@@ -974,12 +999,13 @@ def test_run_checks_java_coverage_and_says_harden_was_skipped(
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
     monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: JavaSandbox(project))  # type: ignore[misc]  # noqa: ARG005
-    lax = write_policy("allow_skipped_gates = true\n")
-    assert main(["run", str(root), "--policy", str(lax)]) == 0
+    assert main(["run", str(root), "--policy", str(write_policy(""))]) == 1
     out = capsys.readouterr().out
-    assert "produced jacoco.xml" in out
+    assert "produced jacoco.xml, mutations.xml" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
-    assert "harden: SKIPPED, no mutation tool is wired for java yet" in out
+    assert "mutation score 15.4% < 90%" in out
+    assert "src/main/java/com/x/A.java:4: ConditionalsBoundaryMutator in f: SURVIVED" in out
+    assert "SKIPPED" not in out
 
 
 # ---- C and C++: coverage gates work, harden is visibly skipped
