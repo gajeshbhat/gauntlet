@@ -13,12 +13,20 @@ from pathlib import Path
 from typing import Any
 
 from gauntlet.config import Config
+from gauntlet.names import IMAGE, MEMORY
 
 BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin")
 INTS = ("crap_ceiling", "mutation_floor", "max_exclusions")
 RANGES = {"agent_timeout": (1, 86_400), "max_rounds": (1, 20)}
 LISTS = ("agent_command", "agent_env")
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+CHOICES = {
+    "sandbox": ("auto", "workshop", "docker"),
+    "container_cli": ("docker", "podman"),
+    "docker_network": ("bridge", "none"),
+}
+IMAGES = ("docker_image_python", "docker_image_go", "docker_image_agent")  # agent may be empty (unset)
+STRINGS = ("docker_memory",)
 
 
 @dataclass(frozen=True)
@@ -34,6 +42,15 @@ class Policy:
     agent_env: tuple[str, ...] = ()  # names of environment variables passed through to it (never their values)
     agent_timeout: int = 1800
     max_rounds: int = 3  # fixer rounds before the loop gives up
+    sandbox: str = (
+        "auto"  # workshop (Linux), docker (Linux, macOS, Windows), or auto: workshop if installed, else docker
+    )
+    container_cli: str = "docker"  # or podman
+    docker_network: str = "bridge"  # none cuts the container off (dependencies and agents then cannot download)
+    docker_memory: str = ""  # e.g. 4g; empty means no limit
+    docker_image_python: str = "ghcr.io/astral-sh/uv:python3.12-bookworm"
+    docker_image_go: str = "golang:1.27"
+    docker_image_agent: str = ""  # an image with your coding agent and the toolchain; see examples/agent.Dockerfile
 
 
 def default_path() -> Path:
@@ -46,13 +63,14 @@ def _bad_int(value: Any) -> bool:
 
 
 def _check_values(path: Path, data: dict[str, Any]) -> None:
-    unknown = sorted(set(data) - {*BOOLS, *INTS, *RANGES, *LISTS, "pins"})
+    unknown = sorted(set(data) - {*BOOLS, *INTS, *RANGES, *LISTS, *CHOICES, *IMAGES, *STRINGS, "pins"})
     if unknown:
         raise ValueError(f"{path}: unknown key(s) {', '.join(unknown)}")
     _check_ints(path, data)
     _check_bools(path, data)
     _check_ranges(path, data)
     _check_lists(path, data)
+    _check_strings(path, data)
 
 
 def _check_ints(path: Path, data: dict[str, Any]) -> None:
@@ -88,6 +106,34 @@ def _check_lists(path: Path, data: dict[str, Any]) -> None:
         raise ValueError(f"{path}: agent_env must be a list of environment variable names")
 
 
+def _check_choices(path: Path, data: dict[str, Any]) -> None:
+    for key, allowed in CHOICES.items():
+        if data.get(key, allowed[0]) not in allowed:
+            raise ValueError(f"{path}: {key} must be one of {', '.join(allowed)}")
+
+
+def _check_memory(path: Path, data: dict[str, Any]) -> None:
+    memory = data.get("docker_memory", "")
+    if not isinstance(memory, str):
+        raise ValueError(f"{path}: docker_memory must be a string")
+    if memory and not MEMORY.match(memory):
+        raise ValueError(f"{path}: docker_memory must look like 512m or 4g")
+
+
+def _check_images(path: Path, data: dict[str, Any]) -> None:
+    for key in IMAGES:
+        value = data.get(key, "x")
+        unset_ok = key == "docker_image_agent" and value == ""
+        if not isinstance(value, str) or not (IMAGE.match(value) or unset_ok):
+            raise ValueError(f"{path}: {key} must be a container image name")
+
+
+def _check_strings(path: Path, data: dict[str, Any]) -> None:
+    _check_choices(path, data)
+    _check_memory(path, data)
+    _check_images(path, data)
+
+
 def _pins(path: Path, data: dict[str, Any]) -> dict[str, str]:
     raw = data.get("pins", {})
     if not isinstance(raw, dict) or not all(isinstance(v, str) and v.startswith("sha256:") for v in raw.values()):  # pyright: ignore[reportUnknownVariableType]
@@ -110,6 +156,13 @@ def _checked(path: Path, data: dict[str, Any]) -> Policy:
         agent_env=tuple(data.get("agent_env", ())),
         agent_timeout=int(data.get("agent_timeout", d.agent_timeout)),
         max_rounds=int(data.get("max_rounds", d.max_rounds)),
+        sandbox=data.get("sandbox", d.sandbox),
+        container_cli=data.get("container_cli", d.container_cli),
+        docker_network=data.get("docker_network", d.docker_network),
+        docker_memory=data.get("docker_memory", d.docker_memory),
+        docker_image_python=data.get("docker_image_python", d.docker_image_python),
+        docker_image_go=data.get("docker_image_go", d.docker_image_go),
+        docker_image_agent=data.get("docker_image_agent", d.docker_image_agent),
     )
 
 
@@ -127,6 +180,7 @@ def dump(p: Policy) -> str:
     lines += [f"{k} = {str(getattr(p, k)).lower()}" for k in BOOLS]
     lines += [f"{k} = {json.dumps(list(getattr(p, k)))}" for k in LISTS if getattr(p, k)]
     lines += [f"{k} = {getattr(p, k)}" for k in RANGES]
+    lines += [f"{k} = {json.dumps(getattr(p, k))}" for k in (*CHOICES, *STRINGS, *IMAGES)]
     lines += ["", "[pins]", *[f"{json.dumps(k)} = {json.dumps(v)}" for k, v in sorted(p.pins.items())]]
     return "\n".join(lines) + "\n"
 

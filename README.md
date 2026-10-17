@@ -17,8 +17,17 @@ Every gate fails closed: checking nothing is an error, never a pass. Results are
 
 ## Install
 
-You need `git`, [`uv`](https://docs.astral.sh/uv/), and, for `run` and `loop` (they execute project code),
-[Canonical Workshop](https://snapcraft.io/workshop): `sudo snap install workshop --classic`.
+You need `git` and [`uv`](https://docs.astral.sh/uv/). `run` and `loop` execute project code, so they also need a sandbox:
+
+| Platform | Sandbox | Install |
+|---|---|---|
+| Ubuntu / Linux | [Canonical Workshop](https://snapcraft.io/workshop) (LXD) | `sudo snap install workshop --classic` |
+| Linux, macOS, Windows | Docker (or Podman) | [Docker Desktop](https://docs.docker.com/get-docker/), Colima, or Docker Engine |
+
+gauntlet picks Workshop if it is installed, else Docker; set `sandbox = "docker"` in your policy to force one.
+On macOS and Windows, Docker Desktop and Colima run containers inside a VM, which is your isolation boundary; for more
+isolation on Linux, run Docker inside a Multipass or Lima VM. Reading results with `check`, `clean`, `arch` and the
+other gates needs no sandbox at all.
 
 ```sh
 uv tool install git+https://github.com/gajeshbhat/gauntlet    # the CLI (private repo: git+ssh://git@github.com/gajeshbhat/gauntlet)
@@ -42,7 +51,7 @@ gauntlet init .            # writes gauntlet.toml (Python or Go is detected; nev
 gauntlet run . --report EVIDENCE.md
 ```
 
-`run` snapshots your tree, runs tests with coverage and mutation testing **inside a Workshop sandbox**, copies the
+`run` snapshots your tree, runs tests with coverage and mutation testing **inside a sandbox**, copies the
 results out, stamps them, and evaluates every gate. Exit codes: `0` pass, `1` a gate failed, `2` refused or error,
 `3` spec awaiting your approval.
 
@@ -60,7 +69,8 @@ Options: `--only PATH[:LO-HI]` or `DIR/` limits `clean`, `harden` and `exclusion
 changed lines); `--report FILE`, `--json FILE`, `--artifacts DIR`, `--source DIR`, `--policy FILE`.
 
 The agent loop never touches your tree. The agent command comes from your policy, its token is passed by variable name,
-and the patch flags edits to control files (CI, `gauntlet.toml`, ...) for you to review first.
+and the patch flags edits to control files (CI, `gauntlet.toml`, ...) for you to review first. With the Docker backend the
+agent needs an image that contains it; build one from [`examples/agent.Dockerfile`](examples/agent.Dockerfile).
 
 ## Configuration
 
@@ -84,7 +94,7 @@ Your rules live **outside the repo**, in `~/.config/gauntlet/policy.toml` (start
 and the agent for `loop`. This is what stops an agent from editing its own thresholds. What gauntlet does and does
 **not** protect against: [SECURITY.md](SECURITY.md).
 
-Go projects: `run` works when a stock Go sandbox can build the project. Otherwise produce `gocyclo.txt`,
+Go projects: `run` works when a stock Go image (or Workshop's Go SDK) can build the project. Otherwise produce `gocyclo.txt`,
 `cover-func.txt`, `imports.txt` and `mutation.json` with your own toolchain (the error messages show the commands),
 then `gauntlet stamp .` and `gauntlet check .`.
 
@@ -94,6 +104,10 @@ then `gauntlet stamp .` and `gauntlet check .`.
 git clone git@github.com:gajeshbhat/gauntlet.git && cd gauntlet
 ./check.sh     # ruff, pyright (strict), pytest at 100% branch coverage, then gauntlet checks itself
 ```
+
+## Licence
+
+[MIT](LICENSE).
 
 ## Credits
 
