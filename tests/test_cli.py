@@ -919,7 +919,8 @@ def test_arch_with_layers_is_an_error_where_no_import_reader_exists(
 # ---- C#: coverage gates work, harden is visibly skipped
 CS_SOURCE = "namespace Demo;\npublic static class A\n{\n    public static int F(int x)\n    {\n        return x + 1;\n    }\n}\n"
 CS_COBERTURA = (
-    '<coverage><packages><package><classes><class filename="project/src/A.cs"><lines>'
+    "<coverage><sources><source>/</source></sources>"  # as coverlet writes it in the container
+    '<packages><package><classes><class filename="project/src/A.cs"><lines>'
     '<line number="6" hits="1"/></lines></class></classes></package></packages></coverage>'
 )
 

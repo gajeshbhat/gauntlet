@@ -9,6 +9,8 @@ import xml.etree.ElementTree as ET  # noqa: N817
 from collections import defaultdict
 from collections.abc import Callable
 
+from gauntlet.safefs import SKIP_DIRS
+
 MAX_LINES = 5_000_000  # line entries one report may expand to
 Lines = dict[str, dict[int, int]]
 GO_BLOCK = re.compile(r"^(?P<file>.+):(?P<a>\d+)\.\d+,(?P<b>\d+)\.\d+ \d+ (?P<count>\d+)$")
@@ -55,7 +57,7 @@ def lcov(text: str) -> Lines:
             current = lines.setdefault(raw[3:], {})
         elif raw.startswith("DA:"):
             number, hits, *_ = raw[3:].split(",")
-            current[int(number)] = int(hits)
+            current[int(number)] = max(current.get(int(number), 0), int(hits))  # any run that reached the line counts
     return lines
 
 
@@ -69,11 +71,16 @@ def _xml(fmt: str, text: str) -> ET.Element:
 
 
 def cobertura(text: str) -> Lines:
+    root = _xml("cobertura", text)
+    sources = [(el.text or "").strip() for el in root.iter("source")]
+    base = sources[0].rstrip("/") + "/" if len(sources) == 1 and sources[0].startswith("/") else ""
     lines: Lines = {}
-    for cls in _xml("cobertura", text).iter("class"):
-        target = lines.setdefault(cls.attrib["filename"], {})
+    for cls in root.iter("class"):
+        name = cls.attrib["filename"]
+        target = lines.setdefault(name if name.startswith("/") else base + name, {})
         for line in cls.iter("line"):
-            target[int(line.attrib["number"])] = int(line.attrib["hits"])
+            number, hits = int(line.attrib["number"]), int(line.attrib["hits"])
+            target[number] = min(target.get(number, hits), hits)  # two classes on one line: the unrun one decides
     return lines
 
 
@@ -112,12 +119,32 @@ def parse(fmt: str, text: str) -> Lines:
         raise _bad(fmt) from None
 
 
-def locate(key: str, files: list[str]) -> str | None:
-    """The source file a coverage path names. Reports are relative to different roots, so match by path suffix."""
+def _clean_key(key: str) -> tuple[str, bool]:
+    """The report path made project-relative, and whether it came from a host root outside the container."""
+    foreign_root = key.startswith("/") and not key.startswith("/project/")
     key = key.removeprefix("/project/").lstrip("/")
     if ".." in key.split("/"):
         raise ValueError(f"{key!r} escapes the project root")
-    found = [f for f in files if f == key or f.endswith("/" + key) or key.endswith("/" + f)]
-    if len(found) > 1:
-        raise ValueError(f"coverage path {key!r} matches more than one file: {', '.join(sorted(found))}")
-    return found[0] if found else None
+    return key, foreign_root
+
+
+def _longest_under_prefix(key: str, files: list[str]) -> str | None:
+    """The project file that ends `key` when the report put extra leading directories before it."""
+    if any(part in SKIP_DIRS for part in key.split("/")):  # never credit a dependency's coverage to our file
+        return None
+    return max((f for f in files if key.endswith("/" + f)), key=len, default=None)  # mod/cmd/main.go is cmd/main.go
+
+
+def locate(key: str, files: list[str], prefixed: bool = False) -> str | None:
+    """The source file a coverage path names. Reports are relative to different roots, so match by path suffix.
+
+    `prefixed`: the report may put extra leading directories before the project path (a Go module path)."""
+    key, foreign_root = _clean_key(key)
+    if key in files:
+        return key
+    shorter = [f for f in files if f.endswith("/" + key)]
+    if len(shorter) > 1:
+        raise ValueError(f"coverage path {key!r} matches more than one file: {', '.join(sorted(shorter))}")
+    if shorter:
+        return shorter[0]
+    return _longest_under_prefix(key, files) if prefixed or foreign_root else None

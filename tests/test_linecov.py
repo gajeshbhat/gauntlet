@@ -105,7 +105,6 @@ def test_empty_reports_are_empty_not_errors() -> None:
     ("key", "files", "expected"),
     [
         ("src/a.py", ["src/a.py", "src/b.py"], "src/a.py"),
-        ("example.com/m/pkg/a.go", ["pkg/a.go", "other/a.go"], "pkg/a.go"),
         ("com/x/Foo.java", ["src/main/java/com/x/Foo.java"], "src/main/java/com/x/Foo.java"),
         ("/project/src/b.js", ["src/b.js"], "src/b.js"),
         ("/home/me/proj/src/b.js", ["src/b.js"], "src/b.js"),
@@ -140,3 +139,50 @@ def test_go_profile_caps_the_total_across_blocks() -> None:
     blocks = "".join(f"a.go:1.1,{3_000_000}.2 1 1\n" for _ in range(2))
     with pytest.raises(ValueError, match="implausible block"):
         linecov.gocover("mode: set\n" + blocks)
+
+
+def test_a_go_module_prefix_is_ignored_and_the_longest_path_wins() -> None:
+    files = ["main.go", "cmd/tool/main.go"]
+    assert linecov.locate("example.com/m/cmd/tool/main.go", files, prefixed=True) == "cmd/tool/main.go"
+    assert linecov.locate("example.com/m/main.go", files, prefixed=True) == "main.go"
+    assert linecov.locate("example.com/m/pkg/a.go", ["pkg/a.go", "other/a.go"], prefixed=True) == "pkg/a.go"
+
+
+def test_extra_leading_directories_are_only_accepted_where_a_report_legitimately_has_them() -> None:
+    assert linecov.locate("extra/index.js", ["index.js"]) is None  # a relative path with a prefix: not ours
+    assert linecov.locate("/home/me/proj/index.js", ["index.js"]) == "index.js"  # a host path outside the container
+    assert linecov.locate("/home/me/proj/node_modules/foo/index.js", ["index.js"]) is None  # a dependency
+
+
+def test_lcov_keeps_the_best_hit_count_when_a_line_is_reported_twice() -> None:
+    text = "SF:a.c\nDA:3,0\nend_of_record\nSF:a.c\nDA:3,2\nDA:3,0\nend_of_record\n"
+    assert linecov.parse("lcov", text) == {"a.c": {3: 2}}
+
+
+def test_cobertura_keeps_the_unrun_count_when_two_classes_report_one_line() -> None:
+    xml = (
+        "<coverage><packages><package><classes>"
+        '<class filename="/project/A.cs"><lines><line number="4" hits="3"/></lines></class>'
+        '<class filename="/project/A.cs"><lines><line number="4" hits="0"/><line number="5" hits="1"/></lines></class>'
+        "</classes></package></packages></coverage>"
+    )
+    assert linecov.parse("cobertura", xml) == {"/project/A.cs": {4: 0, 5: 1}}
+
+
+def test_cobertura_filenames_are_resolved_against_the_single_source_root() -> None:
+    xml = (
+        "<coverage><sources><source>/</source></sources><packages><package><classes>"
+        '<class filename="project/src/A.cs"><lines><line number="6" hits="1"/></lines></class>'
+        '<class filename="/abs/B.cs"><lines><line number="1" hits="0"/></lines></class>'
+        "</classes></package></packages></coverage>"
+    )
+    assert linecov.parse("cobertura", xml) == {"/project/src/A.cs": {6: 1}, "/abs/B.cs": {1: 0}}
+
+
+def test_cobertura_with_several_sources_leaves_filenames_as_written() -> None:
+    xml = (
+        "<coverage><sources><source>/a</source><source>/b</source></sources><packages><package><classes>"
+        '<class filename="x/A.cs"><lines><line number="6" hits="1"/></lines></class>'
+        "</classes></package></packages></coverage>"
+    )
+    assert linecov.parse("cobertura", xml) == {"x/A.cs": {6: 1}}

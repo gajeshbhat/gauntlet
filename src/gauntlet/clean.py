@@ -36,7 +36,7 @@ class CleanResult:
     offenders: list[tuple[str, Finding]]
 
 
-DIRECTIVE = re.compile(r"\s*(?:library|import|export|part)\b[^;]*;\s*$")
+DIRECTIVE = re.compile(r"\s*(?:library|import|export|part)\s+['\"\w][^;]*;\s*$")
 TOKEN = re.compile(  # strings stay (they may hold "//"); comments go, keeping their line breaks
     r"""('''|\"\"\").*?\1|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|//[^\n]*|/\*.*?\*/""", re.DOTALL
 )
@@ -49,16 +49,29 @@ def _code_lines(source: str) -> list[int]:
     return [n for n, line in enumerate(bare.splitlines(), 1) if line.strip() and not DIRECTIVE.match(line)]
 
 
+def _runs(numbers: list[int]) -> list[list[int]]:
+    """Consecutive line numbers grouped, so each stretch of unread code is judged against a line-ranged scope alone."""
+    runs: list[list[int]] = []
+    for n in sorted(numbers):
+        if runs and n == runs[-1][-1] + 1:
+            runs[-1].append(n)
+        else:
+            runs.append([n])
+    return runs
+
+
+def _unread_findings(lines: list[int], coverage: float) -> list[Finding]:
+    return [Finding(UNREAD, run[0], 0, coverage, inf) for run in _runs(lines)]
+
+
 def _unread(source: str, hits: dict[int, int] | None, seen: set[int]) -> list[Finding]:
     """Code the reader did not attribute to any function (`seen` holds the lines it did) must not pass unseen.
 
-    Measured file: executable lines outside every function that never ran. Unmeasured file with no function found:
-    any code at all."""
+    Measured file: executable lines outside every function that never ran. Unmeasured file: any code outside them."""
     if hits is None:
-        code = _code_lines(source) if not seen else []
-        return [Finding(UNREAD, code[0], 0, 0.0, inf)] if code else []
-    missed = sorted(n for n, count in hits.items() if count == 0 and n not in seen)
-    return [Finding(UNREAD, missed[0], 0, 1 - len(missed) / len(hits), inf)] if missed else []
+        return _unread_findings([n for n in _code_lines(source) if n not in seen], 0.0)
+    missed = [n for n, count in hits.items() if count == 0 and n not in seen]
+    return _unread_findings(missed, 1 - len(missed) / len(hits) if hits else 1.0)
 
 
 def _functions(filename: str, source: str, parse_as: str) -> list[Any]:
@@ -98,9 +111,9 @@ def _measure(
     return [f for f in found if scope.contains(rel, f.line)]
 
 
-def _measured(lines: linecov.Lines, files: list[str]) -> linecov.Lines:
+def _measured(lines: linecov.Lines, files: list[str], prefixed: bool) -> linecov.Lines:
     """The coverage report keyed by project-relative source path; a report that names none of them is wrong."""
-    found = {rel: hits for key, hits in lines.items() if (rel := linecov.locate(key, files)) is not None}
+    found = {rel: hits for key, hits in lines.items() if (rel := linecov.locate(key, files, prefixed)) is not None}
     if not found:
         raise ValueError("the coverage report mentions no source file of this project: wrong report or empty tests")
     return found
@@ -115,7 +128,7 @@ def check(
     max_bytes: int = MAX_SOURCE_BYTES,
 ) -> CleanResult:
     files = source_files(root, language.suffixes)
-    measured = _measured(lines, files)
+    measured = _measured(lines, files, language.coverage_format == "gocover")
     evaluated = 0
     offenders: list[tuple[str, Finding]] = []
     for rel in (f for f in files if not re.search(language.tests, f)):

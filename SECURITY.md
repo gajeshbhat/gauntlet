@@ -23,8 +23,11 @@
   root-equivalent for whoever can use it. Do not run untrusted code with secrets in reach.
 - **Hidden code outside the patterns.** Settings or hints gauntlet does not know about (an unusual build file, a hint inside
   a multi-line construct) still hide code; the pragma patterns match line by line. Dart `=>` functions are not scored.
-- **Unpinned transitive dependencies.** Tool versions are pinned and C++ tools are hash-locked, but `npm ci`, Maven, NuGet,
-  `cargo` and `dart pub get` resolve the project's own dependencies as the project says (Go/JS/Dart use lockfiles).
+- **Unpinned transitive dependencies.** Tool versions are pinned and the C++ tools are hash-locked, but the other coverage
+  tools (c8, cargo-llvm-cov, Dart `coverage`, coverlet, JaCoCo) pull their own dependencies unhashed, and the project's
+  dependencies resolve as the project says (npm, Cargo, Dart use lockfiles; Maven and NuGet do not).
+- **Code outside functions.** CRAP scores functions. Top-level statements (scripts, module bodies) are not scored, except
+  in Dart where unrun lines outside any function are flagged.
 - **A narrowed mutation scope.** mutmut's `source_paths`/`paths_to_mutate` and `pytest --cov-config` live in the repo and
   are not policed. Compare the mutant count in the evidence report with the size of the code.
 - **An incomplete spec.** Gates show the code meets the stated constraints, not that the constraints are enough.

@@ -311,3 +311,21 @@ def test_dart_directives_must_be_whole_statements_to_be_ignored() -> None:
     assert function_findings("a.dart", "import 'a.dart';\nexport 'b.dart';\nlibrary x;\n", None, parse_as="java") == []
     (unread,) = function_findings("a.dart", "import 'a.dart'; var x = 1;\n", None, parse_as="java")
     assert unread.name == "(unread code)"
+
+
+def test_dart_unread_code_is_reported_per_stretch_so_a_line_scope_sees_the_new_one() -> None:
+    src = "var a = 1;\n" + "var pad = 0;\n" * 8 + "var hidden = 2;\nint f() {\n  return 1;\n}\n"
+    hits = {1: 0, 10: 0, 12: 1, 13: 1}
+    unread = [f for f in function_findings("a.dart", src, hits, parse_as="java") if f.name == "(unread code)"]
+    assert [f.line for f in unread] == [1, 10]
+
+
+def test_dart_unmeasured_file_with_one_small_function_still_has_its_other_code_judged() -> None:
+    src = "int f() {\n  return 1;\n}\nvar hidden = 2;\n"
+    unread = [f for f in function_findings("a.dart", src, None, parse_as="java") if f.name == "(unread code)"]
+    assert [f.line for f in unread] == [4]
+
+
+def test_dart_statements_that_merely_start_with_a_directive_word_are_code() -> None:
+    (unread,) = function_findings("a.dart", "part.process(1);\n", None, parse_as="java")
+    assert unread.line == 1
