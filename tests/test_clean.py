@@ -281,3 +281,33 @@ def test_dart_file_with_no_function_is_an_offender_through_check(tmp_path: Path)
     result = check(tmp_path, {"lib/b.dart": {1: 1, 2: 1}}, DART, 8, Scope())
     assert [(p, f.name) for p, f in result.offenders] == [("lib/a.dart", "(unread code)")]
     assert result.evaluated == 2
+
+
+def test_a_function_with_branches_but_no_measured_lines_counts_as_uncovered(tmp_path: Path) -> None:
+    project(tmp_path, SIMPLE + "\n" + BRANCHY.replace("g", "h", 1))
+    hits = {1: 1, 2: 1}  # the branchy function has no lines in the report: hidden, not trivially covered
+    ((_, f),) = check(tmp_path, {"mod.py": hits}, PY, 8, Scope()).offenders
+    assert (f.name, f.coverage) == ("h", 0.0)
+    assert check(tmp_path, {"mod.py": hits}, PY, 8, Scope()).evaluated == 2
+
+
+DART_ARROW = "int one() => 1;\nclass A {\n  int m(int x) {\n    return x;\n  }\n}\n"
+
+
+def test_dart_lines_outside_every_parsed_function_that_never_ran_are_unread_code() -> None:
+    hits = {1: 0, 4: 1}  # `one` is an arrow function the reader cannot see; its line never ran
+    fns = function_findings("a.dart", DART_ARROW, hits, parse_as="java")
+    assert [f.name for f in fns if f.name == "(unread code)"] == ["(unread code)"]
+    assert function_findings("a.dart", DART_ARROW, {1: 1, 4: 1}, parse_as="java")[-1].name != "(unread code)"
+
+
+def test_dart_comment_markers_inside_strings_do_not_hide_code() -> None:
+    src = "final a = 'x // y';\nfinal b = \"/* z\";\nfinal c = 1; // done\n"
+    ((unread,),) = [function_findings("a.dart", src, None, parse_as="java")]
+    assert (unread.name, unread.line) == ("(unread code)", 1)
+
+
+def test_dart_directives_must_be_whole_statements_to_be_ignored() -> None:
+    assert function_findings("a.dart", "import 'a.dart';\nexport 'b.dart';\nlibrary x;\n", None, parse_as="java") == []
+    (unread,) = function_findings("a.dart", "import 'a.dart'; var x = 1;\n", None, parse_as="java")
+    assert unread.name == "(unread code)"

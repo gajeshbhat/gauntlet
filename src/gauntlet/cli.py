@@ -144,7 +144,10 @@ def _harden(run: Run) -> GateResult:
 
 def _exclusions(run: Run) -> GateResult:
     pragmas = exclusions.pragmas(run.source, run.cfg.language, run.scope)
-    configured = exclusions.config_excludes(run.source) if run.cfg.language == "python" else []
+    if run.cfg.language == "python":
+        configured = exclusions.config_excludes(run.source)
+    else:
+        configured = exclusions.config_hints(run.source, run.cfg.language)
     ok = len(pragmas) <= run.policy.max_exclusions and (run.policy.allow_config_excludes or not configured)
     summary = (
         f"exclusions: {len(pragmas)} comment(s) (budget {run.policy.max_exclusions}), "

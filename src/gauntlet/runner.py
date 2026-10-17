@@ -8,6 +8,7 @@ import re
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 
 from gauntlet.config import Config
@@ -31,7 +32,6 @@ PIP_URL = (
     "/pip-24.3.1-py3-none-any.whl"
 )
 PIP_SHA256 = "3790624780082365f47549d032f3770eeb2b1e8bd1f7b2e02dace1afa361b4ed"
-CPP_TOOLS = "cmake==4.4.4 gcovr==8.7"
 DART_COVERAGE = "1.15.0"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
@@ -162,12 +162,15 @@ def _rust_steps() -> list[Step]:
 
 
 def _cpp_install() -> str:
-    """The image has gcc and python3 but no pip, cmake or gcovr: bootstrap a hash-checked pip, then the pinned tools."""
+    """The image has gcc and python3 but no pip, cmake or gcovr: bootstrap a hash-checked pip, then install the
+    hash-locked tools (data/cpp-requirements.txt). `-P` keeps the repository's own modules off sys.path."""
+    lock = (files("gauntlet") / "data" / "cpp-requirements.txt").read_text()
     return (
         f"set -eu; D={IN_SANDBOX}; curl -fsSL {PIP_URL} -o $D/pip.whl; "
         f'echo "{PIP_SHA256}  $D/pip.whl" | sha256sum -c -; '
-        "PYTHONPATH=$D/pip.whl python3 -m pip install -q --no-cache-dir --only-binary=:all: "
-        f"--target $D/py {CPP_TOOLS}; "
+        f"cat > $D/requirements.txt <<'LOCK'\n{lock}LOCK\n"
+        "PYTHONPATH=$D/pip.whl python3 -P -m pip install -q --no-cache-dir --only-binary=:all: --require-hashes "
+        "--no-deps --target $D/py -r $D/requirements.txt; "
         ": > $D/gcovr.cfg"  # an empty config: the repository's own gcovr.cfg is never read
     )
 
@@ -184,7 +187,7 @@ def _cpp_steps() -> list[Step]:
         Step(
             "coverage",
             (
-                "python3", "-m", "gcovr", "--config", f"{IN_SANDBOX}/gcovr.cfg", "--root", "/project",
+                "python3", "-P", "-m", "gcovr", "--config", f"{IN_SANDBOX}/gcovr.cfg", "--root", "/project",
                 "--object-directory", build, "--exclude", rf"{OUT_DIR}/", "--lcov", f"{IN_SANDBOX}/lcov.info",
             ),
             env=env,

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from gauntlet.exclusions import config_excludes, pragmas
+from gauntlet.exclusions import config_excludes, config_hints, pragmas
 from gauntlet.scope import Scope, parse
 
 
@@ -152,3 +152,55 @@ def test_include_and_omit_settings_that_narrow_coverage_are_exclusions(tmp_path:
         ".coveragerc: coverage report omit b/*",
         ".coveragerc: coverage report include c/*",
     ]
+
+
+@pytest.mark.parametrize(
+    ("language", "name", "text", "expected"),
+    [
+        ("javascript", ".c8rc.json", "{}", [".c8rc.json: coverage-affecting settings file"]),
+        (
+            "javascript",
+            "package.json",
+            '{\n  "c8": {"exclude": ["a"]}\n}',
+            ['package.json:2: "c8": {"exclude": ["a"]}'],
+        ),
+        ("javascript", "package.json", '{"name": "x"}', []),
+        (
+            "csharp",
+            "app/Tests.runsettings",
+            "<RunSettings/>",
+            ["app/Tests.runsettings: coverage-affecting settings file"],
+        ),
+        (
+            "csharp",
+            "src/A.csproj",
+            "<TreatAsLocalProperty>RunSettingsFilePath</TreatAsLocalProperty>",
+            ["src/A.csproj:1: <TreatAsLocalProperty>RunSettingsFilePath</TreatAsLocalProperty>"],
+        ),
+        ("csharp", "src/A.csproj", '<PackageReference Include="coverlet.collector" />', []),
+        (
+            "java",
+            "pom.xml",
+            "<plugin>jacoco-maven-plugin</plugin>",
+            ["pom.xml:1: <plugin>jacoco-maven-plugin</plugin>"],
+        ),
+        ("java", ".mvn/maven.config", "-DskipTests", [".mvn/maven.config: coverage-affecting settings file"]),
+        ("rust", ".cargo/config.toml", "[build]", [".cargo/config.toml: coverage-affecting settings file"]),
+        ("rust", "rust-toolchain.toml", "nightly", ["rust-toolchain.toml: coverage-affecting settings file"]),
+        ("rust", "Cargo.toml", "[package]", []),
+        ("dart", "dart_test.yaml", "exclude_tags: slow", ["dart_test.yaml:1: exclude_tags: slow"]),
+        ("cpp", "CMakeLists.txt", "project(x)", []),
+    ],
+)
+def test_config_hints_find_settings_that_can_hide_code(
+    tmp_path: Path, language: str, name: str, text: str, expected: list[str]
+) -> None:
+    (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / name).write_text(text)
+    assert config_hints(tmp_path, language) == expected
+
+
+def test_config_hints_skip_vendored_directories(tmp_path: Path) -> None:
+    (tmp_path / "node_modules" / "dep").mkdir(parents=True)
+    (tmp_path / "node_modules" / "dep" / ".c8rc.json").write_text("{}")
+    assert config_hints(tmp_path, "javascript") == []

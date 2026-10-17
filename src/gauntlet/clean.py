@@ -36,23 +36,28 @@ class CleanResult:
     offenders: list[tuple[str, Finding]]
 
 
-DIRECTIVE = re.compile(r"\s*(?:library|import|export|part)\b")
+DIRECTIVE = re.compile(r"\s*(?:library|import|export|part)\b[^;]*;\s*$")
+TOKEN = re.compile(  # strings stay (they may hold "//"); comments go, keeping their line breaks
+    r"""('''|\"\"\").*?\1|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|//[^\n]*|/\*.*?\*/""", re.DOTALL
+)
 UNREAD = "(unread code)"
 
 
 def _code_lines(source: str) -> list[int]:
-    """Line numbers holding anything but comments, blanks and import/export directives."""
-    bare = re.sub(r"/\*.*?\*/", lambda m: "\n" * m[0].count("\n"), source, flags=re.DOTALL)
-    lines = [re.sub(r"//.*", "", line) for line in bare.splitlines()]
-    return [n for n, line in enumerate(lines, 1) if line.strip() and not DIRECTIVE.match(line)]
+    """Line numbers holding anything but comments, blanks and whole import/export directives."""
+    bare = TOKEN.sub(lambda m: "\n" * m[0].count("\n") if m[0].startswith(("//", "/*")) else m[0], source)
+    return [n for n, line in enumerate(bare.splitlines(), 1) if line.strip() and not DIRECTIVE.match(line)]
 
 
-def _unread(source: str, hits: dict[int, int] | None) -> list[Finding]:
-    """A file the reader found no function in must not pass unseen: code that never ran in it is an offender."""
+def _unread(source: str, hits: dict[int, int] | None, seen: set[int]) -> list[Finding]:
+    """Code the reader did not attribute to any function (`seen` holds the lines it did) must not pass unseen.
+
+    Measured file: executable lines outside every function that never ran. Unmeasured file with no function found:
+    any code at all."""
     if hits is None:
-        code = _code_lines(source)
+        code = _code_lines(source) if not seen else []
         return [Finding(UNREAD, code[0], 0, 0.0, inf)] if code else []
-    missed = sorted(n for n, count in hits.items() if count == 0)
+    missed = sorted(n for n, count in hits.items() if count == 0 and n not in seen)
     return [Finding(UNREAD, missed[0], 0, 1 - len(missed) / len(hits), inf)] if missed else []
 
 
@@ -67,8 +72,8 @@ def _functions(filename: str, source: str, parse_as: str) -> list[Any]:
 def _finding(fn: Any, hits: dict[int, int] | None) -> Finding:  # noqa: ANN401
     executable = [n for n in range(fn.start_line, fn.end_line + 1) if hits is None or n in hits]
     covered = 0 if hits is None else sum(hits[n] > 0 for n in executable)
-    coverage = covered / len(executable) if executable else 1.0
     complexity = int(fn.cyclomatic_complexity)
+    coverage = covered / len(executable) if executable else float(complexity == 1)  # branches but no lines: hidden
     return Finding(str(fn.name), int(fn.start_line), complexity, coverage, crap_score(complexity, coverage))
 
 
@@ -77,11 +82,13 @@ def function_findings(filename: str, source: str, hits: dict[int, int] | None, p
 
     `hits` of None means the coverage report never mentions the file: nothing exercised it, so it counts as 0%.
     `parse_as` names another language whose lizard reader reads this file; its approximations fail closed:
-    a file in which no function is found is judged as one unread block (see `_unread`)."""
+    lines the reader attributes to no function are judged as one unread block (see `_unread`)."""
     functions = _functions(filename, source, parse_as)
-    if parse_as and not functions:
-        return _unread(source, hits)
-    return [_finding(fn, hits) for fn in functions]
+    found = [_finding(fn, hits) for fn in functions]
+    if not parse_as:
+        return found
+    seen = {n for fn in functions for n in range(fn.start_line, fn.end_line + 1)}
+    return found + _unread(source, hits, seen)
 
 
 def _measure(

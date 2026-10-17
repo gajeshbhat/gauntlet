@@ -354,11 +354,13 @@ def test_cpp_steps_are_fixed_pinned_and_ignore_the_repos_gcovr_config(tmp_path: 
     install, configure, build, tests, coverage = runner.steps(Config(language="cpp"), tmp_path)
     assert install.argv[:2] == ("sh", "-c")
     assert "sha256sum -c -" in install.argv[2] and runner.PIP_SHA256 in install.argv[2]
-    assert "cmake==4.4.4 gcovr==8.7" in install.argv[2]
+    script = install.argv[2]
+    assert "--require-hashes" in script and "--no-deps" in script and "python3 -P -m pip" in script
+    assert "cmake==4.4.4" in script and "gcovr==8.7" in script and "--hash=sha256:" in script
     assert "--coverage" in " ".join(configure.argv) and configure.argv[0] == "/project/.gauntlet-out/py/bin/cmake"
     assert build.argv[1:] == ("--build", "/project/.gauntlet-out/build")
     assert tests.argv[0] == "/project/.gauntlet-out/py/bin/ctest" and tests.timeout == 3600
-    assert coverage.argv[:5] == ("python3", "-m", "gcovr", "--config", "/project/.gauntlet-out/gcovr.cfg")
+    assert coverage.argv[:6] == ("python3", "-P", "-m", "gcovr", "--config", "/project/.gauntlet-out/gcovr.cfg")
     assert coverage.argv[-2:] == ("--lcov", "/project/.gauntlet-out/lcov.info")
     assert dict(coverage.env) == {"PYTHONPATH": "/project/.gauntlet-out/py"}
 
@@ -374,3 +376,12 @@ def test_dart_steps(tmp_path: Path) -> None:
         "--report-on=lib", "--report-on=bin", "--packages=.dart_tool/package_config.json",
     )  # fmt: skip
     assert "--check-ignore" not in report.argv  # coverage:ignore comments do not hide code from the gate
+
+
+def test_the_cpp_lock_pins_every_requirement_with_hashes() -> None:
+    from importlib.resources import files
+
+    lock = (files("gauntlet") / "data" / "cpp-requirements.txt").read_text()
+    entries = [line for line in lock.splitlines() if line and not line.startswith((" ", "#"))]
+    assert entries and all("==" in line for line in entries)
+    assert lock.count("--hash=sha256:") >= len(entries)

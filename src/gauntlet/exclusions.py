@@ -1,7 +1,9 @@
 """Things that make code invisible to the gates: exclusion comments and exclusion settings in the repo's own config."""
 
 import configparser
+import fnmatch
 import io
+import os
 import re
 import tokenize
 import tomllib
@@ -9,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from gauntlet import languages
-from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text, source_files
+from gauntlet.safefs import MAX_SOURCE_BYTES, SKIP_DIRS, inside, read_text, source_files
 from gauntlet.scope import Scope
 
 
@@ -100,3 +102,27 @@ def config_excludes(root: Path) -> list[str]:
         + _ini(root, "setup.cfg", "coverage:", "mutmut")
         + _ini(root, "tox.ini", "coverage:", None)
     )
+
+
+def _config_files(root: Path, glob: str) -> list[str]:
+    """Project-relative paths whose name or path matches `glob`, outside vendored and build directories."""
+    found: list[str] = []
+    for dirpath, dirs, names in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        rels = [(Path(dirpath) / n).relative_to(root).as_posix() for n in sorted(names)]
+        found += [r for r in rels if fnmatch.fnmatch(r, glob) or fnmatch.fnmatch(r, f"*/{glob}")]
+    return found
+
+
+def config_hints(root: Path, language: str, max_bytes: int = MAX_SOURCE_BYTES) -> list[str]:
+    """Build settings of the project that can hide code from the language's coverage tool (the pyproject part for
+    Python lives in `config_excludes`). A glob with no pattern flags the file's existence."""
+    out: list[str] = []
+    for glob, pattern in languages.get(language).config_scan:
+        for rel in _config_files(root, glob):
+            if not pattern:
+                out.append(f"{rel}: coverage-affecting settings file")
+                continue
+            lines = read_text(inside(root, rel), max_bytes).splitlines()
+            out += [f"{rel}:{n}: {line.strip()}" for n, line in enumerate(lines, 1) if re.search(pattern, line)]
+    return out

@@ -15,8 +15,16 @@ class Language:
     mutation: bool  # a mutation tool is wired; without one `run` reports the harden gate as skipped
     sdk: str  # the Canonical Workshop SDK
     image: str  # the default Docker image (the policy can override it per language)
+    config_scan: tuple[
+        tuple[str, str], ...
+    ] = ()  # (file glob, regex) of build settings that can hide code from coverage
     parse_as: str = ""  # lizard has no reader for the suffixes: parse them with this other language's reader
 
+
+_MSBUILD_HIDES = (  # project settings that steer or filter coverlet, or that a repo uses to override our own
+    r"RunSettingsFilePath|VSTestSetting|VSTestCLIRunSettings|TreatAsLocalProperty|ExcludeByFile|ExcludeByAttribute"
+    r"|<Exclude>|<Include>|IncludeTestAssembly|SkipAutoProps"
+)
 
 TABLE: dict[str, Language] = {
     "python": Language(
@@ -55,6 +63,13 @@ TABLE["javascript"] = Language(
     mutation=False,
     sdk="node",
     image="node:22-bookworm",
+    config_scan=(
+        (".c8rc*", ""),
+        (".nycrc*", ""),
+        ("c8.config.*", ""),
+        (".mocharc*", ""),
+        ("package.json", r'"(?:c8|nyc)"\s*:'),
+    ),
 )
 TABLE["csharp"] = Language(
     suffixes=(".cs",),
@@ -69,6 +84,13 @@ TABLE["csharp"] = Language(
     mutation=False,
     sdk="dotnet",
     image="mcr.microsoft.com/dotnet/sdk:8.0.426",
+    config_scan=(
+        ("*.runsettings", ""),
+        ("*.testsettings", ""),
+        ("*.csproj", _MSBUILD_HIDES),
+        ("*.props", _MSBUILD_HIDES),
+        ("*.targets", _MSBUILD_HIDES),
+    ),
 )
 TABLE["java"] = Language(
     suffixes=(".java",),
@@ -83,15 +105,19 @@ TABLE["java"] = Language(
     mutation=False,
     sdk="java",
     image="maven:3.9-eclipse-temurin-21",
+    config_scan=(  # the pom's own JaCoCo/Surefire settings and source layout, and Maven's project-level overrides
+        ("pom.xml", r"jacoco|sourceDirectory|testSourceDirectory|skipTests|maven\.test\.skip|testFailureIgnore"),
+        (".mvn/*", ""),
+    ),
 )
 TABLE["rust"] = Language(
     suffixes=(".rs",),
     markers=("Cargo.toml",),
     tests=r"^tests/",  # inline `#[cfg(test)]` modules live in src/ and are measured as source
-    pragma=(
-        r"#!?\[\s*(?:coverage\s*\(\s*off|no_coverage|allow\s*\(|expect\s*\(|rustfmt\s*::\s*skip"
-        r"|automatically_derived|cfg_attr\s*\(.*(?:coverage\s*\(\s*off|no_coverage|allow\s*\(|expect\s*\("
-        r"|rustfmt\s*::\s*skip))"
+    pragma=(  # attributes that hide code from llvm-cov or the linters; a cfg_attr left open on its line is flagged too
+        r"#\s*!?\s*\[\s*(?:coverage\s*\(\s*off|no_coverage|allow\s*\(|expect\s*\(|rustfmt\s*::\s*skip"
+        r"|automatically_derived|cfg(?:_attr)?\s*\([^\]]*coverage"
+        r"|cfg_attr\s*\((?:[^\]]*(?:allow\s*\(|expect\s*\(|rustfmt\s*::\s*skip)|[^\]]*$))"
         r"|//\s*LCOV_EXCL_(?:LINE|START|STOP|BR_LINE|BR_START|BR_STOP)\b"
     ),
     coverage_file="lcov.info",
@@ -99,13 +125,18 @@ TABLE["rust"] = Language(
     mutation=False,
     sdk="rust",
     image="rust:1.93-bookworm",
+    config_scan=(  # repo-level cargo and toolchain settings change how the measured build is compiled
+        (".cargo/config*", ""),
+        ("rust-toolchain*", ""),
+        ("Cargo.toml", r"rustflags|check-cfg"),
+    ),
 )
 TABLE["cpp"] = Language(
     suffixes=(".c", ".h", ".cc", ".cpp", ".cxx", ".hpp"),
     markers=("CMakeLists.txt", "Makefile", "meson.build"),
     tests=r"^tests?/",  # only the top-level test dir: a name inside the source tree cannot opt out
     pragma=(
-        r"\b(?:LCOV|GCOVR)_EXCL_(?:LINE|START|STOP|BR_LINE|BR_START|BR_STOP)\b|\bNOLINT"
+        r"\b[GL]COVR?_EXCL_(?:LINE|START|STOP|BR_LINE|BR_START|BR_STOP|BR_SOURCE|FUNCTION)\b|\bNOLINT"
         r"|#\s*pragma\s+GCC\s+diagnostic\b|__attribute__\s*\(\(\s*no_(?:profile_)?instrument_function\b"
     ),
     coverage_file="lcov.info",
@@ -126,6 +157,7 @@ TABLE["dart"] = Language(
     mutation=False,
     sdk="dart",
     image="dart:3.9.4",
+    config_scan=(("dart_test.yaml", r"exclude|skip"),),
     parse_as="java",
 )
 NAMES = tuple(TABLE)

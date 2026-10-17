@@ -243,3 +243,28 @@ def test_every_dart_ignore_hint_is_a_pragma(text: str) -> None:
 def test_ordinary_dart_comments_are_not_pragmas() -> None:
     for text in ("// coverage is good", "// we ignore nothing", "// format the dart"):
         assert not re.search(languages.TABLE["dart"].pragma, text), text
+
+
+@pytest.mark.parametrize(
+    ("language", "hidden", "plain"),
+    [
+        ("cpp", ["x; // GCOV_EXCL_LINE", "// LCOVR_EXCL_START", "// GCOVR_EXCL_BR_SOURCE"], ["int gcov_excl = 1;"]),
+        (
+            "rust",
+            [
+                "# [coverage(off)]",
+                "#[cfg(not(coverage))]",
+                "#[cfg_attr(coverage_nightly, coverage(off))]",
+                "#[cfg_attr(",
+                "#![allow(dead_code)]",
+            ],
+            ['#[cfg_attr(feature = "x", derive(Debug))]', "#[derive(Debug)]", "#[cfg(test)]"],
+        ),
+    ],
+)
+def test_pragmas_cover_every_spelling_the_tool_honours(language: str, hidden: list[str], plain: list[str]) -> None:
+    pattern = languages.TABLE[language].pragma
+    for text in hidden:
+        assert re.search(pattern, text), text
+    for text in plain:
+        assert not re.search(pattern, text), text
