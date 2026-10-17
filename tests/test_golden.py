@@ -53,14 +53,11 @@ def test_python_steps_in_full() -> None:
 
 def test_go_steps_in_full(tmp_path: Path) -> None:
     env = (("GOBIN", "/project/.gauntlet-out/bin"), ("GOFLAGS", "-buildvcs=false"))
-    c = "-coverprofile=/project/.gauntlet-out/c.out"
+    c = "-coverprofile=/project/.gauntlet-out/cover.out"
     list_format = '{{.ImportPath}} {{join .Imports " "}}'
     assert runner.steps(Config("go", packages=("./a/...", "./b/")), tmp_path) == [
-        Step("install-gocyclo", ("go", "install", "github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0"), None, 1800, True, env),
         Step("install-gremlins", ("go", "install", "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"), None, 1800, True, env),
         Step("tests", ("go", "test", "-count=1", c, "./a/...", "./b/"), None, 3600, True, env),
-        Step("cover-func", ("go", "tool", "cover", "-func=/project/.gauntlet-out/c.out"), "cover-func.txt", 1800, True, ()),
-        Step("complexity", ("/project/.gauntlet-out/bin/gocyclo", "."), "gocyclo.txt", 1800, True, ()),
         Step("imports", ("go", "list", "-e", "-f", list_format, "./a/...", "./b/"), "imports.txt", 1800, True, env),
         Step(
             "mutation",

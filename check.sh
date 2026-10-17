@@ -8,3 +8,4 @@ uv run pyright
 uv run pytest -q
 uv run gauntlet stamp . --artifacts .
 uv run gauntlet check . --artifacts . --only src/ --policy policy.ci.toml
+uv run gauntlet spec . --feature specs/languages.feature --policy policy.ci.toml

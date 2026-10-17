@@ -14,10 +14,18 @@ from gauntlet.policy import Policy
 from gauntlet.sandbox import ExecResult
 
 BRANCHY = "def g(x):\n" + "".join(f"    if x == {i}:\n        return {i}\n" for i in range(1, 8)) + "    return 0\n"
-GOCYCLO = "18 device DiskMount lxd/device/disk.go:28:1\n6 device Small lxd/device/disk.go:95:1\n"
-COVER = (
-    "example.com/m/lxd/device/disk.go:28:\t\tDiskMount\t\t0.0%\n"
-    "example.com/m/lxd/device/disk.go:95:\t\tSmall\t\t100.0%\n"
+
+
+def _go_branches(name: str, count: int) -> list[str]:
+    body = [line for i in range(count) for line in (f"\tif x == {i} {{", f"\t\treturn {i}", "\t}")]
+    return [f"func {name}(x int) int {{", *body, "\treturn 0", "}"]
+
+
+GO_SOURCE = "\n".join(
+    ["package device", *[""] * 26, *_go_branches("DiskMount", 17), *[""] * 13, *_go_branches("Small", 5)]
+)
+GO_COVER = (
+    "mode: set\nexample.com/m/lxd/device/disk.go:28.1,81.2 1 0\nexample.com/m/lxd/device/disk.go:95.1,112.2 1 1\n"
 )
 Out = pytest.CaptureFixture[str]
 
@@ -39,8 +47,9 @@ def py_project(root: Path, toml: str = 'language = "python"\n', covered: bool = 
 
 def go_project(root: Path, extra: str = "") -> Path:
     project(root, 'language = "go"\n[layers]\norder = ["m/web", "m/domain"]\n' + extra)
-    (root / "gocyclo.txt").write_text(GOCYCLO)
-    (root / "cover-func.txt").write_text(COVER)
+    (root / "lxd" / "device").mkdir(parents=True)
+    (root / "lxd" / "device" / "disk.go").write_text(GO_SOURCE + "\n")
+    (root / "cover.out").write_text(GO_COVER)
     (root / "imports.txt").write_text("m/domain m/web\n")
     return root
 
@@ -85,7 +94,7 @@ def test_malformed_input_is_a_clean_error(tmp_path: Path, capsys: Out, cli_run: 
     py_project(tmp_path)
     (tmp_path / "coverage.json").write_text("{}")
     assert cli_run("clean", tmp_path) == 2
-    assert "malformed input, missing 'files'" in capsys.readouterr().err
+    assert "cannot read coveragepy report" in capsys.readouterr().err
 
 
 # ---- arch
@@ -143,7 +152,10 @@ def test_clean_passes_when_functions_are_covered(tmp_path: Path, cli_run: Callab
 def test_clean_without_coverage_exits_2(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
     project(tmp_path, 'language = "python"\n')
     assert cli_run("clean", tmp_path) == 2
-    assert "--cov-report=json" in capsys.readouterr().err
+    assert (
+        "coverage.json not found; produce it with: gauntlet run, or your test runner's coveragepy report"
+        in capsys.readouterr().err
+    )
 
 
 def test_clean_with_empty_coverage_is_an_error_not_a_pass(
@@ -152,7 +164,7 @@ def test_clean_with_empty_coverage_is_an_error_not_a_pass(
     py_project(tmp_path)
     (tmp_path / "coverage.json").write_text('{"files": {}}')
     assert cli_run("clean", tmp_path) == 2
-    assert "no functions were evaluated" in capsys.readouterr().err
+    assert "mentions no source file of this project" in capsys.readouterr().err
 
 
 def test_clean_scope_that_matches_nothing_is_an_error(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
@@ -178,7 +190,11 @@ def test_go_clean_scope_can_exclude_the_offender(tmp_path: Path, cli_run: Callab
 def test_go_missing_artifact_says_how_to_make_it(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
     project(tmp_path, 'language = "go"\n')
     assert cli_run("clean", tmp_path) == 2
-    assert capsys.readouterr().err.strip().endswith("produce it with: gocyclo ./...")
+    assert (
+        capsys.readouterr()
+        .err.strip()
+        .endswith("cover.out not found; produce it with: gauntlet run, or your test runner's gocover report")
+    )
 
 
 def test_artifacts_can_live_elsewhere(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
@@ -186,7 +202,7 @@ def test_artifacts_can_live_elsewhere(tmp_path: Path, capsys: Out, cli_run: Call
     art.mkdir()
     root.mkdir()
     go_project(root)
-    for name in ("gocyclo.txt", "cover-func.txt", "imports.txt"):
+    for name in ("cover.out", "imports.txt"):
         (art / name).write_text((root / name).read_text())
         (root / name).unlink()
     assert cli_run("clean", root, "--artifacts", art) == 1
@@ -377,10 +393,9 @@ def committed_go_project(root: Path) -> Path:
 @pytest.mark.parametrize(
     ("gate", "stamped", "uncovered"),
     [
-        ("clean", ["gocyclo.txt", "imports.txt"], "cover-func.txt"),
-        ("clean", ["cover-func.txt", "imports.txt"], "gocyclo.txt"),
-        ("arch", ["gocyclo.txt", "cover-func.txt"], "imports.txt"),
-        ("harden", ["gocyclo.txt", "imports.txt"], "mutation.json"),
+        ("clean", ["imports.txt", "mutation.json"], "cover.out"),
+        ("arch", ["cover.out", "mutation.json"], "imports.txt"),
+        ("harden", ["cover.out", "imports.txt"], "mutation.json"),
     ],
 )
 def test_go_gates_refuse_artifacts_the_manifest_does_not_cover(
@@ -397,7 +412,7 @@ def test_go_gates_refuse_artifacts_the_manifest_does_not_cover(
 @pytest.mark.parametrize(
     ("gate", "missing", "how"),
     [
-        ("clean", "cover-func.txt", "go test -coverprofile=c.out ./... && go tool cover -func=c.out"),
+        ("clean", "cover.out", "gauntlet run, or your test runner's gocover report"),
         ("arch", "imports.txt", "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."),
         ("harden", "mutation.json", "gremlins unleash -o mutation.json ."),
     ],
@@ -443,7 +458,7 @@ def test_json_has_every_field(tmp_path: Path, cli_run: Callable[..., int]) -> No
 def test_stamp_lists_what_it_stamped(tmp_path: Path, capsys: Out) -> None:
     root = committed_go_project(tmp_path)
     assert main(["stamp", str(root)]) == 0
-    assert capsys.readouterr().out == "stamped gocyclo.txt, cover-func.txt, imports.txt, mutation.json\n"
+    assert capsys.readouterr().out == "stamped cover.out, imports.txt, mutation.json\n"
 
 
 def test_check_fails_when_any_gate_fails(tmp_path: Path, cli_run: Callable[..., int]) -> None:
@@ -822,3 +837,202 @@ def test_stamp_never_blesses_the_results_of_an_old_run(
     assert "stamped coverage.json" in capsys.readouterr().out
     assert (root / "gauntlet-manifest.json").exists()
     assert main(["clean", str(root), "--artifacts", str(root)]) == 0  # the fresh ones, not the old run's
+
+
+# ---- Rust: lcov with absolute container paths
+class RustSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if "--lcov" in argv:
+            lcov = "SF:/project/src/lib.rs\nDA:1,1\nDA:2,1\nend_of_record\n"
+            (self.project / ".gauntlet-out" / "lcov.info").write_text(lcov)
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_rust_coverage_from_absolute_container_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    lax = write_policy("allow_skipped_gates = true\n")
+    root = project(tmp_path, 'language = "rust"\n')
+    (root / "src").mkdir()
+    (root / "src" / "lib.rs").write_text("pub fn f(x: i32) -> i32 {\n    x + 1\n}\n")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: RustSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(root), "--policy", str(lax)]) == 0
+    out = capsys.readouterr().out
+    assert "produced lcov.info" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for rust yet" in out
+
+
+# ---- JavaScript: coverage gates work, harden is visibly skipped
+JS_SOURCE = "function f(x) {\n  return x + 1;\n}\nmodule.exports = { f };\n"
+
+
+class JsSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if "c8@10.1.3" in argv:
+            (self.project / ".gauntlet-out" / "lcov.info").write_text("SF:index.js\nDA:1,1\nDA:2,1\nend_of_record\n")
+        return ExecResult(0, "", "")
+
+
+def committed_js_project(root: Path, toml: str = 'language = "javascript"\n') -> Path:
+    project(root, toml)
+    (root / "index.js").write_text(JS_SOURCE)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
+    return root
+
+
+def test_run_checks_javascript_coverage_and_says_harden_was_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    lax = write_policy("allow_skipped_gates = true\n")
+    root = committed_js_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: JsSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(root)]) == 1  # a skipped gate is a failure unless the operator's policy accepts it
+    assert "allow_skipped_gates = true" in capsys.readouterr().out
+    assert main(["run", str(root), "--policy", str(lax)]) == 0
+    out = capsys.readouterr().out
+    assert "produced lcov.info" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for javascript yet" in out
+
+
+def test_harden_asked_for_directly_is_an_error_where_no_tool_is_wired(
+    tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
+) -> None:
+    assert cli_run("harden", project(tmp_path, 'language = "javascript"\n')) == 2
+    assert "harden is not available for javascript yet" in capsys.readouterr().err
+
+
+def test_arch_with_layers_is_an_error_where_no_import_reader_exists(
+    tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
+) -> None:
+    root = project(tmp_path, 'language = "javascript"\n[layers]\norder = ["a", "b"]\n')
+    assert cli_run("arch", root) == 2
+    assert "arch has no import reader for javascript yet" in capsys.readouterr().err
+
+
+# ---- C#: coverage gates work, harden is visibly skipped
+CS_SOURCE = "namespace Demo;\npublic static class A\n{\n    public static int F(int x)\n    {\n        return x + 1;\n    }\n}\n"
+CS_COBERTURA = (
+    "<coverage><sources><source>/</source></sources>"  # as coverlet writes it in the container
+    '<packages><package><classes><class filename="project/src/A.cs"><lines>'
+    '<line number="6" hits="1"/></lines></class></classes></package></packages></coverage>'
+)
+
+
+class CsSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if argv[0] == "sh":  # the step that moves the report out of its results/<guid>/ directory
+            (self.project / ".gauntlet-out" / "coverage.cobertura.xml").write_text(CS_COBERTURA)
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_csharp_coverage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    root = project(tmp_path, 'language = "csharp"\n')
+    (root / "src").mkdir()
+    (root / "src" / "A.cs").write_text(CS_SOURCE)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: CsSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(root), "--policy", str(write_policy("allow_skipped_gates = true\n"))]) == 0
+    out = capsys.readouterr().out
+    assert "produced coverage.cobertura.xml" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for csharp yet" in out
+
+
+# ---- Java: JaCoCo XML, harden skipped
+JAVA_SOURCE = "package com.x;\npublic class A {\n  int f(int x) {\n    return x + 1;\n  }\n}\n"
+JACOCO_XML = (
+    '<report name="r"><package name="com/x"><sourcefile name="A.java">'
+    '<line nr="4" mi="0" ci="1" mb="0" cb="0"/></sourcefile></package></report>'
+)
+
+
+class JavaSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if argv[0] == "cp":
+            (self.project / ".gauntlet-out" / "jacoco.xml").write_text(JACOCO_XML)
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_java_coverage_and_says_harden_was_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    root = project(tmp_path, 'language = "java"\n')
+    (root / "src/main/java/com/x").mkdir(parents=True)
+    (root / "src/main/java/com/x/A.java").write_text(JAVA_SOURCE)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: JavaSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    lax = write_policy("allow_skipped_gates = true\n")
+    assert main(["run", str(root), "--policy", str(lax)]) == 0
+    out = capsys.readouterr().out
+    assert "produced jacoco.xml" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for java yet" in out
+
+
+# ---- C and C++: coverage gates work, harden is visibly skipped
+class CppSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if "gcovr" in argv:
+            (self.project / ".gauntlet-out" / "lcov.info").write_text(
+                "SF:/project/a.c\nDA:1,1\nDA:2,1\nend_of_record\n"
+            )
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_cpp_coverage_and_says_harden_was_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    lax = write_policy("allow_skipped_gates = true\n")
+    project(tmp_path, 'language = "cpp"\n')
+    (tmp_path / "a.c").write_text("int f(int x) {\n  return x + 1;\n}\n")
+    for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-q", "-m", "x", "--no-gpg-sign")):
+        git(tmp_path, *args)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: CppSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(tmp_path)]) == 1  # a skipped gate fails unless the operator's policy accepts it
+    assert main(["run", str(tmp_path), "--policy", str(lax)]) == 0
+    out = capsys.readouterr().out
+    assert "produced lcov.info" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for cpp yet" in out
+
+
+# ---- Dart: the same, with the unreadable-file rule visible end to end
+DART_SOURCE = "int f(int x) {\n  return x + 1;\n}\n"
+
+
+class DartSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if "coverage:format_coverage" in argv:
+            text = "SF:/project/lib/a.dart\nDA:1,1\nDA:2,1\nend_of_record\n"
+            (self.project / ".gauntlet-out" / "lcov.info").write_text(text)
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_dart_coverage_and_names_code_the_reader_could_not_see(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = project(tmp_path, 'language = "dart"\n')
+    (root / "lib").mkdir()
+    (root / "lib" / "a.dart").write_text(DART_SOURCE)
+    (root / "lib" / "b.dart").write_text("int one() => 1;\n")
+    for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-q", "-m", "x", "--no-gpg-sign")):
+        git(root, *args)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: DartSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(root)]) == 1
+    out = capsys.readouterr().out
+    assert "produced lcov.info" in out
+    assert "lib/b.dart:1: (unread code) CRAP inf > 8 (complexity 0, coverage 0%)" in out
+    assert "harden: SKIPPED, no mutation tool is wired for dart yet" in out

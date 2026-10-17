@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from gauntlet import languages
+
 PYTHON = """language = "python"
 src = "{src}"
 
@@ -21,19 +23,20 @@ GO = """language = "go"
 # [layers]
 # order = ["example.com/app/cmd", "example.com/app/internal/service", "example.com/app/internal/domain"]
 """
-PYTHON_MARKERS = ("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt")
+OTHER = """language = "{language}"
+"""
+TEMPLATES = {"python": PYTHON, "go": GO}
 
 
 def _template(root: Path) -> str:
-    python = any((root / m).exists() for m in PYTHON_MARKERS)
-    go = (root / "go.mod").exists()
-    if python and go:
-        raise ValueError("both pyproject.toml and go.mod found; write gauntlet.toml yourself")
-    if go:
-        return GO
-    if python:
-        return PYTHON.format(src="src" if (root / "src").is_dir() else ".")
-    raise ValueError(f"cannot tell the language of {root}: no pyproject.toml, requirements.txt or go.mod")
+    found = languages.detect(root)
+    if len(found) > 1:
+        raise ValueError(f"found {' and '.join(found)}; write gauntlet.toml yourself")
+    if not found:
+        markers = ", ".join(m for row in languages.TABLE.values() for m in row.markers)
+        raise ValueError(f"cannot tell the language of {root}: looked for {markers}")
+    template = TEMPLATES.get(found[0], OTHER)
+    return template.format(language=found[0], src="src" if (root / "src").is_dir() else ".")
 
 
 def write_config(root: Path) -> Path:

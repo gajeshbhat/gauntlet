@@ -105,12 +105,9 @@ def test_go_steps(tmp_path: Path) -> None:
         (tmp_path / "lxd" / "device" / name).write_text("package device\n")
     cfg = Config(language="go", packages=("./lxd/device/",), mutation_dir="lxd/device", mutate_only=("disk.go",))
     steps = {s.name: s for s in runner.steps(cfg, tmp_path)}
-    assert steps["install-gocyclo"].argv == ("go", "install", "github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0")
     assert steps["install-gremlins"].argv == ("go", "install", "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0")
-    assert steps["tests"].argv[:4] == ("go", "test", "-count=1", "-coverprofile=/project/.gauntlet-out/c.out")
+    assert steps["tests"].argv[:4] == ("go", "test", "-count=1", "-coverprofile=/project/.gauntlet-out/cover.out")
     assert steps["tests"].argv[-1] == "./lxd/device/"
-    assert steps["cover-func"].capture == "cover-func.txt"
-    assert steps["complexity"].argv == ("/project/.gauntlet-out/bin/gocyclo", ".")
     assert steps["imports"].argv[-1] == "./lxd/device/"
     mutation = steps["mutation"].argv
     assert mutation[:2] == ("/project/.gauntlet-out/bin/gremlins", "unleash")
@@ -118,6 +115,51 @@ def test_go_steps(tmp_path: Path) -> None:
     assert mutation[-3:] == ("-o", "/project/.gauntlet-out/mutation.json", "lxd/device")
     assert steps["mutation"].must_pass is False
     assert dict(steps["tests"].env) == {"GOBIN": "/project/.gauntlet-out/bin", "GOFLAGS": "-buildvcs=false"}
+
+
+def test_javascript_steps(tmp_path: Path) -> None:
+    install, tests = runner.steps(Config(language="javascript"), tmp_path)
+    assert install.argv == ("npm", "ci", "--ignore-scripts")
+    assert tests.argv == (
+        "npx", "--yes", "c8@10.1.3", "--reporter=lcovonly", "--reports-dir=/project/.gauntlet-out", "npm", "test"
+    )  # fmt: skip
+    assert tests.timeout == 3600
+
+
+def test_csharp_steps(tmp_path: Path) -> None:
+    tests, report = runner.steps(Config(language="csharp"), tmp_path)
+    assert tests.argv == (
+        "dotnet", "test", "--collect", "XPlat Code Coverage",
+        "--results-directory", "/project/.gauntlet-out/results", "-p:RunSettingsFilePath=",
+    )  # fmt: skip  # an empty RunSettingsFilePath: a repo's own .runsettings cannot add exclusions
+    assert tests.timeout == 3600
+    assert dict(tests.env) == {"XDG_RUNTIME_DIR": "/tmp", "DOTNET_CLI_TELEMETRY_OPTOUT": "1", "DOTNET_NOLOGO": "1"}
+    assert report.argv[:2] == ("sh", "-c") and report.argv[3:] == ("sh", "/project/.gauntlet-out")
+    assert report.argv[2] == runner.COPY_REPORT
+
+
+def test_java_steps(tmp_path: Path) -> None:
+    tests, collect = runner.steps(Config(language="java"), tmp_path)
+    jacoco = "org.jacoco:jacoco-maven-plugin:0.8.12"
+    assert tests.argv == (
+        "mvn", "-B", "-ntp", "-Dmaven.repo.local=/project/.gauntlet-out/m2", f"{jacoco}:prepare-agent", "test",
+        f"{jacoco}:report",
+    )  # fmt: skip
+    assert tests.timeout == 3600
+    assert collect.argv == ("cp", "target/site/jacoco/jacoco.xml", "/project/.gauntlet-out/jacoco.xml")
+
+
+def test_rust_steps(tmp_path: Path) -> None:
+    rustup, install, tests = runner.steps(Config(language="rust"), tmp_path)
+    assert rustup.argv == ("rustup", "component", "add", "llvm-tools-preview")
+    assert install.argv == (
+        "cargo", "install", "--locked", "--version", "0.6.21", "cargo-llvm-cov", "--root", "/project/.gauntlet-out/cargo"
+    )  # fmt: skip
+    assert tests.argv == (
+        "/project/.gauntlet-out/cargo/bin/cargo-llvm-cov", "llvm-cov", "--locked", "--lcov",
+        "--output-path", "/project/.gauntlet-out/lcov.info",
+    )  # fmt: skip
+    assert tests.timeout == 3600
 
 
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
@@ -209,20 +251,16 @@ def test_go_pipeline_collects_captured_and_written_artifacts(repo: Path, tmp_pat
     def go_behaviour(argv: Sequence[str], project: Path) -> ExecResult:
         out = project / runner.OUT_DIR
         if argv[:2] == ["go", "test"]:
-            (out / "c.out").write_text("mode: set\n")
-        if "-func=/project/.gauntlet-out/c.out" in argv:
-            return ExecResult(0, "cover\n", "")
+            (out / "cover.out").write_text("mode: set\n")
         if argv[:2] == [f"{runner.IN_SANDBOX}/bin/gremlins", "unleash"]:
             (out / "mutation.json").write_text('{"files": []}')
-        if argv[0].endswith("gocyclo") and len(argv) == 2:
-            return ExecResult(0, "1 p f a.go:1:1\n", "")
         if argv[:2] == ["go", "list"]:
             return ExecResult(0, "m/a fmt\n", "")
         return ExecResult(0, "", "")
 
     factory, _ = make(go_behaviour)
     names = runner.produce(repo, Config(language="go"), tmp_path / "out", factory)
-    assert names == ["cover-func.txt", "gocyclo.txt", "imports.txt", "mutation.json"]
+    assert names == ["cover.out", "imports.txt", "mutation.json"]
     assert (tmp_path / "out" / "imports.txt").read_text() == "m/a fmt\n"
 
 
@@ -243,10 +281,8 @@ def test_oversized_captured_output_is_refused(repo: Path, tmp_path: Path, monkey
 
 def test_steps_receive_their_timeouts_and_environment(repo: Path, tmp_path: Path) -> None:
     def go_ok(argv: Sequence[str], project: Path) -> ExecResult:
-        if "-func=/project/.gauntlet-out/c.out" in argv:
-            return ExecResult(0, "x\n", "")
-        if argv[0].endswith("gocyclo") and len(argv) == 2:
-            return ExecResult(0, "y\n", "")
+        if argv[:2] == ["go", "test"]:
+            (project / runner.OUT_DIR / "cover.out").write_text("mode: set\n")
         if argv[:2] == ["go", "list"]:
             return ExecResult(0, "z\n", "")
         return ExecResult(0, "", "")
@@ -256,11 +292,10 @@ def test_steps_receive_their_timeouts_and_environment(repo: Path, tmp_path: Path
     calls = made[0].calls
     assert [(c[0][1] if c[0][0] == "go" else c[0][0].split("/")[-1], c[2]) for c in calls][:3] == [
         ("install", 1800),
-        ("install", 1800),
         ("test", 3600),
+        ("list", 1800),
     ]
     assert calls[0][1] == {"GOBIN": "/project/.gauntlet-out/bin", "GOFLAGS": "-buildvcs=false"}
-    assert calls[3][1] == {}  # cover-func needs no environment
     assert calls[-1][2] == 7200  # mutation
 
 
@@ -313,3 +348,40 @@ def test_a_step_with_output_but_no_capture_name_stores_nothing(repo: Path, tmp_p
     names = runner.produce(repo, Config(language="python"), tmp_path / "out", noisy)
     assert names == ["coverage.json", "mutmut-results.txt"]
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["coverage.json", MANIFEST, "mutmut-results.txt"]
+
+
+def test_cpp_steps_are_fixed_pinned_and_ignore_the_repos_gcovr_config(tmp_path: Path) -> None:
+    install, configure, build, tests, coverage = runner.steps(Config(language="cpp"), tmp_path)
+    assert install.argv[:2] == ("sh", "-c")
+    assert "sha256sum -c -" in install.argv[2] and runner.PIP_SHA256 in install.argv[2]
+    script = install.argv[2]
+    assert "--require-hashes" in script and "--no-deps" in script and "python3 -P -m pip" in script
+    assert "cmake==4.4.4" in script and "gcovr==8.7" in script and "--hash=sha256:" in script
+    assert "--coverage" in " ".join(configure.argv) and configure.argv[0] == "/project/.gauntlet-out/py/bin/cmake"
+    assert build.argv[1:] == ("--build", "/project/.gauntlet-out/build")
+    assert tests.argv[0] == "/project/.gauntlet-out/py/bin/ctest" and tests.timeout == 3600
+    assert coverage.argv[:6] == ("python3", "-P", "-m", "gcovr", "--config", "/project/.gauntlet-out/gcovr.cfg")
+    assert coverage.argv[-2:] == ("--lcov", "/project/.gauntlet-out/lcov.info")
+    assert dict(coverage.env) == {"PYTHONPATH": "/project/.gauntlet-out/py"}
+
+
+def test_dart_steps(tmp_path: Path) -> None:
+    get, activate, tests, report = runner.steps(Config(language="dart"), tmp_path)
+    assert get.argv == ("dart", "pub", "get", "--enforce-lockfile")  # the lockfile decides; nothing is re-resolved
+    assert activate.argv == ("dart", "pub", "global", "activate", "coverage", "1.15.0")
+    assert tests.argv == ("dart", "test", "--coverage=/project/.gauntlet-out/raw")
+    assert tests.timeout == 3600 and report.argv[:5] == ("dart", "pub", "global", "run", "coverage:format_coverage")
+    assert report.argv[5:] == (
+        "--lcov", "--in=/project/.gauntlet-out/raw", "--out=/project/.gauntlet-out/lcov.info",
+        "--report-on=lib", "--report-on=bin", "--packages=.dart_tool/package_config.json",
+    )  # fmt: skip
+    assert "--check-ignore" not in report.argv  # coverage:ignore comments do not hide code from the gate
+
+
+def test_the_cpp_lock_pins_every_requirement_with_hashes() -> None:
+    from importlib.resources import files
+
+    lock = (files("gauntlet") / "data" / "cpp-requirements.txt").read_text()
+    entries = [line for line in lock.splitlines() if line and not line.startswith((" ", "#"))]
+    assert entries and all("==" in line for line in entries)
+    assert lock.count("--hash=sha256:") >= len(entries)

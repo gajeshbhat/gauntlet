@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from gauntlet import scaffold
+from gauntlet import languages, scaffold
 from gauntlet.cli import main
 from gauntlet.config import load
 
@@ -36,7 +36,7 @@ def test_go_project(tmp_path: Path) -> None:
 def test_both_languages_is_ambiguous(tmp_path: Path) -> None:
     (tmp_path / "go.mod").write_text("module m\n")
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-    with pytest.raises(ValueError, match="both pyproject.toml and go.mod"):
+    with pytest.raises(ValueError, match="found python and go; write gauntlet.toml yourself"):
         scaffold.write_config(tmp_path)
     assert not (tmp_path / "gauntlet.toml").exists()
 
@@ -83,3 +83,9 @@ def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
         main(["--version"])
     assert e.value.code == 0
     assert capsys.readouterr().out == f"gauntlet {version('gauntlet')}\n"
+
+
+@pytest.mark.parametrize("language", [n for n in languages.NAMES if n not in ("python", "go")])
+def test_init_writes_a_config_for_every_other_language(tmp_path: Path, language: str) -> None:
+    (tmp_path / languages.TABLE[language].markers[0].replace("*", "app")).write_text("")
+    assert load(scaffold.write_config(tmp_path)).language == language

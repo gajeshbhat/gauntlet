@@ -4,6 +4,7 @@ crap_ceiling = 8            # a function's CRAP score (complexity^2 x (1-coverag
 mutation_floor = 90         # minimum mutation score, percent
 max_exclusions = 10         # budget of `pragma: no cover|no mutate`, `nolint`, `nosec` comments
 allow_config_excludes = false  # coverage omit/include/exclude_*, mutmut do_not_mutate in the repo config
+allow_skipped_gates = false   # accept a skipped harden gate for languages with no mutation tool yet
 allow_unstamped = false     # accept artifacts that were not produced from the current source
 require_pin = false         # refuse a gauntlet.toml you have not pinned with `gauntlet pin`
 
@@ -19,8 +20,9 @@ require_pin = false         # refuse a gauntlet.toml you have not pinned with `g
 # container_cli = "docker"        # or "podman"
 # docker_network = "bridge"       # "none" cuts the container off (dependencies and agents then cannot download)
 # docker_memory = "4g"            # empty: no limit
-# docker_image_python = "ghcr.io/astral-sh/uv:python3.12-bookworm"
-# docker_image_go = "golang:1.27"
 # docker_image_agent = "gauntlet-agent"   # build it from examples/agent.Dockerfile
+# [docker_images]                 # override the default image of a language
+# python = "ghcr.io/astral-sh/uv:python3.12-bookworm"
+# go = "golang:1.27"
 
 [pins]

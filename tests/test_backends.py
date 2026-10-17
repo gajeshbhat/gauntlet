@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from gauntlet import backends
+from gauntlet import backends, languages
 from gauntlet.config import Config
 from gauntlet.docker import DockerSandbox
 from gauntlet.policy import Policy
@@ -51,13 +51,13 @@ def test_gate_sandbox_on_workshop(tmp_path: Path) -> None:
 
 
 def test_gate_sandbox_on_docker_uses_the_language_image_and_policy_settings(tmp_path: Path) -> None:
-    pol = Policy(sandbox="docker", docker_network="none", docker_memory="2g", docker_image_go="golang:9")
+    pol = Policy(sandbox="docker", docker_network="none", docker_memory="2g", docker_images={"go": "golang:9"})
     box = backends.gate_sandbox(tmp_path, Config("go"), pol, which("docker"))
     assert isinstance(box, DockerSandbox)
     assert (box.image, box.network, box.memory, box.cli) == ("golang:9", "none", "2g", "docker")
     py = backends.gate_sandbox(tmp_path, Config("python"), Policy(sandbox="docker"), which("docker"))
     assert isinstance(py, DockerSandbox)
-    assert py.image == Policy().docker_image_python
+    assert py.image == languages.TABLE["python"].image
 
 
 def test_agent_sandbox_on_workshop_adds_claude_code(tmp_path: Path) -> None:

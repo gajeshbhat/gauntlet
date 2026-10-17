@@ -8,6 +8,7 @@ import re
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 
 from gauntlet.config import Config
@@ -22,7 +23,16 @@ GOBIN = f"{IN_SANDBOX}/bin"
 UV = ("uv", "run", "--project", "/project")
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
-GOCYCLO = "github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0"
+C8 = "c8@10.1.3"
+JACOCO = "org.jacoco:jacoco-maven-plugin:0.8.12"
+LLVM_COV = "0.6.21"
+CARGO_TOOLS = f"{IN_SANDBOX}/cargo"
+PIP_URL = (
+    "https://files.pythonhosted.org/packages/ef/7d/500c9ad20238fcfcb4cb9243eede163594d7020ce87bd9610c9e02771876"
+    "/pip-24.3.1-py3-none-any.whl"
+)
+PIP_SHA256 = "3790624780082365f47549d032f3770eeb2b1e8bd1f7b2e02dace1afa361b4ed"
+DART_COVERAGE = "1.15.0"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
@@ -75,13 +85,10 @@ def _go_steps(cfg: Config, snap: Path) -> list[Step]:
     packages = tuple(_safe_package(p) for p in cfg.packages)
     mutation_dir = _safe_path(cfg.mutation_dir or ".")
     env = (("GOBIN", GOBIN), ("GOFLAGS", "-buildvcs=false"))
-    profile = f"{IN_SANDBOX}/c.out"
+    profile = f"{IN_SANDBOX}/cover.out"
     return [
-        Step("install-gocyclo", ("go", "install", GOCYCLO), env=env),
         Step("install-gremlins", ("go", "install", GREMLINS), env=env),
         Step("tests", ("go", "test", "-count=1", f"-coverprofile={profile}", *packages), timeout=3600, env=env),
-        Step("cover-func", ("go", "tool", "cover", f"-func={profile}"), "cover-func.txt"),
-        Step("complexity", (f"{GOBIN}/gocyclo", "."), "gocyclo.txt"),
         Step("imports", ("go", "list", "-e", "-f", LIST_FORMAT, *packages), "imports.txt", env=env),
         Step(
             "mutation",
@@ -100,12 +107,154 @@ def _go_steps(cfg: Config, snap: Path) -> list[Step]:
     ]
 
 
+def _js_steps() -> list[Step]:
+    report = f"--reports-dir={IN_SANDBOX}"
+    return [
+        Step("install", ("npm", "ci", "--ignore-scripts")),  # lockfile only; dependency scripts never run
+        Step("tests", ("npx", "--yes", C8, "--reporter=lcovonly", report, "npm", "test"), timeout=3600),
+    ]
+
+
+COPY_REPORT = 'cp "$1"/results/*/coverage.cobertura.xml "$1"/coverage.cobertura.xml'  # one test project per run
+
+
+def _dotnet_steps() -> list[Step]:
+    # coverlet.collector comes from the test project's own references; an empty RunSettingsFilePath keeps a repo's
+    # .runsettings (and the exclusions it could carry) out. XDG_RUNTIME_DIR: .NET named mutexes fail for a uid with
+    # no passwd entry without it.
+    env = (("XDG_RUNTIME_DIR", "/tmp"), ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"), ("DOTNET_NOLOGO", "1"))
+    results = f"{IN_SANDBOX}/results"
+    return [
+        Step(
+            "tests",
+            ("dotnet", "test", "--collect", "XPlat Code Coverage", "--results-directory", results)
+            + ("-p:RunSettingsFilePath=",),
+            timeout=3600,
+            env=env,
+        ),
+        Step("report", ("sh", "-c", COPY_REPORT, "sh", IN_SANDBOX)),
+    ]
+
+
+def _java_steps() -> list[Step]:
+    repo = f"-Dmaven.repo.local={IN_SANDBOX}/m2"  # no writable HOME for every uid
+    return [
+        Step("tests", ("mvn", "-B", "-ntp", repo, f"{JACOCO}:prepare-agent", "test", f"{JACOCO}:report"), timeout=3600),
+        Step("collect", ("cp", "target/site/jacoco/jacoco.xml", f"{IN_SANDBOX}/jacoco.xml")),
+    ]
+
+
+def _rust_steps() -> list[Step]:
+    install = ("cargo", "install", "--locked", "--version", LLVM_COV, "cargo-llvm-cov", "--root", CARGO_TOOLS)
+    cov = (
+        f"{CARGO_TOOLS}/bin/cargo-llvm-cov",
+        "llvm-cov",
+        "--locked",
+        "--lcov",
+        "--output-path",
+        f"{IN_SANDBOX}/lcov.info",
+    )
+    return [
+        Step("llvm-tools", ("rustup", "component", "add", "llvm-tools-preview")),
+        Step("install-llvm-cov", install),
+        Step("tests", cov, timeout=3600),
+    ]
+
+
+def _cpp_install() -> str:
+    """The image has gcc and python3 but no pip, cmake or gcovr: bootstrap a hash-checked pip, then install the
+    hash-locked tools (data/cpp-requirements.txt). `-P` keeps the repository's own modules off sys.path."""
+    lock = (files("gauntlet") / "data" / "cpp-requirements.txt").read_text()
+    return (
+        f"set -eu; D={IN_SANDBOX}; curl -fsSL {PIP_URL} -o $D/pip.whl; "
+        f'echo "{PIP_SHA256}  $D/pip.whl" | sha256sum -c -; '
+        f"cat > $D/requirements.txt <<'LOCK'\n{lock}LOCK\n"
+        "PYTHONPATH=$D/pip.whl python3 -P -m pip install -q --no-cache-dir --only-binary=:all: --require-hashes "
+        "--no-deps --target $D/py -r $D/requirements.txt; "
+        ": > $D/gcovr.cfg"  # an empty config: the repository's own gcovr.cfg is never read
+    )
+
+
+def _cpp_steps() -> list[Step]:
+    py, build = f"{IN_SANDBOX}/py", f"{IN_SANDBOX}/build"
+    env = (("PYTHONPATH", py),)
+    flags = [f"-DCMAKE_{kind}_FLAGS=--coverage" for kind in ("C", "CXX", "EXE_LINKER")]
+    return [
+        Step("install", ("sh", "-c", _cpp_install())),
+        Step("configure", (f"{py}/bin/cmake", "-S", ".", "-B", build, "-DCMAKE_BUILD_TYPE=Debug", *flags), env=env),
+        Step("build", (f"{py}/bin/cmake", "--build", build), timeout=3600, env=env),
+        Step("tests", (f"{py}/bin/ctest", "--test-dir", build, "--output-on-failure"), timeout=3600, env=env),
+        Step(
+            "coverage",
+            (
+                "python3", "-P", "-m", "gcovr", "--config", f"{IN_SANDBOX}/gcovr.cfg", "--root", "/project",
+                "--object-directory", build, "--exclude", rf"{OUT_DIR}/", "--lcov", f"{IN_SANDBOX}/lcov.info",
+            ),
+            env=env,
+        ),
+    ]  # fmt: skip
+
+
+def _dart_steps() -> list[Step]:
+    raw = f"{IN_SANDBOX}/raw"
+    pub = ("dart", "pub", "global")
+    return [
+        Step("install", ("dart", "pub", "get", "--enforce-lockfile")),  # lockfile only; nothing is re-resolved
+        Step("coverage tool", (*pub, "activate", "coverage", DART_COVERAGE)),
+        Step("tests", ("dart", "test", f"--coverage={raw}"), timeout=3600),
+        Step(
+            "report",
+            (
+                *pub,
+                "run",
+                "coverage:format_coverage",
+                "--lcov",
+                f"--in={raw}",
+                f"--out={IN_SANDBOX}/lcov.info",
+                "--report-on=lib",
+                "--report-on=bin",
+                "--packages=.dart_tool/package_config.json",
+            ),
+        ),  # fmt: skip
+    ]
+
+
 def steps(cfg: Config, snap: Path) -> list[Step]:
-    return _go_steps(cfg, snap) if cfg.language == "go" else _python_steps(cfg)
+    if cfg.language == "go":
+        return _go_steps(cfg, snap)
+    if cfg.language == "csharp":
+        return _dotnet_steps()
+    if cfg.language == "java":
+        return _java_steps()
+    if cfg.language == "rust":
+        return _rust_steps()
+    if cfg.language == "cpp":
+        return _cpp_steps()
+    if cfg.language == "dart":
+        return _dart_steps()
+    return _js_steps() if cfg.language == "javascript" else _python_steps(cfg)
 
 
-FILES = {"python": ("coverage.json",), "go": ("mutation.json",)}  # artifacts the sandbox writes itself
-REQUIRED = {"python": ("coverage.json", "mutmut-results.txt"), "go": ("cover-func.txt", "gocyclo.txt", "imports.txt")}
+FILES = {
+    "python": ("coverage.json",),
+    "go": ("cover.out", "mutation.json"),
+    "javascript": ("lcov.info",),
+    "csharp": ("coverage.cobertura.xml",),
+    "java": ("jacoco.xml",),
+    "rust": ("lcov.info",),
+    "cpp": ("lcov.info",),
+    "dart": ("lcov.info",),
+}  # artifacts the sandbox writes itself
+REQUIRED = {
+    "python": ("coverage.json", "mutmut-results.txt"),
+    "go": ("cover.out", "imports.txt"),
+    "javascript": ("lcov.info",),
+    "csharp": ("coverage.cobertura.xml",),
+    "java": ("jacoco.xml",),
+    "rust": ("lcov.info",),
+    "cpp": ("lcov.info",),
+    "dart": ("lcov.info",),
+}
 
 
 def output_tail(done: ExecResult) -> str:

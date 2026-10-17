@@ -1,6 +1,6 @@
 ---
 name: gauntlet
-description: Prove that code written by an AI agent works, instead of reading it. Runs CRAP (complexity x coverage), mutation, architecture, exclusion-budget and spec gates on a Python or Go project in a Workshop sandbox, and can run a Specifier/Coder/Fixer agent loop that ends in a patch for the user to review. Use when the user says "gauntlet", "prove this works", "run the quality gates", or wants a spec-first agent workflow.
+description: Prove that code written by an AI agent works, instead of reading it. Runs CRAP (complexity x coverage), mutation, architecture, exclusion-budget and spec gates on a Python, Go, JavaScript/TypeScript, C#, Java, Rust, C/C++ or Dart project in a sandbox (Workshop or Docker), and can run a Specifier/Coder/Fixer agent loop that ends in a patch for the user to review. Use when the user says "gauntlet", "prove this works", "run the quality gates", or wants a spec-first agent workflow.
 argument-hint: [init|run|check|loop] [path]
 ---
 Work from the project root. The rules the user set live in `~/.config/gauntlet/policy.toml`: never edit it, never copy it
@@ -11,7 +11,7 @@ into a repository, and never edit a repo's `gauntlet.toml` to make a gate pass.
 2. `run` and `loop` execute project code, so they need a sandbox: Canonical Workshop on Linux
    (`sudo snap install workshop --classic`) or Docker/Podman on Linux, macOS and Windows. Check `command -v workshop docker`;
    tell the user what to install (never run `sudo` yourself). With Docker, `loop` also needs `docker_image_agent` in the policy.
-3. No `gauntlet.toml` yet: `gauntlet init .` writes a starter one for Python or Go.
+3. No `gauntlet.toml` yet: `gauntlet init .` writes a starter one (the language is detected).
 
 ## Use
 - Prove a change: `gauntlet run .` (tests, coverage and mutation in a sandbox, then every gate; results in `.gauntlet/`).
@@ -25,6 +25,9 @@ into a repository, and never edit a repo's `gauntlet.toml` to make a gate pass.
   2. `gauntlet loop . --spec <approved.feature>` implements it and writes `.gauntlet-loop/loop.patch` and `EVIDENCE.md`.
   The agent needs the user's `agent_command` in the policy and `CLAUDE_CODE_OAUTH_TOKEN` in the environment of that one
   command (from `claude setup-token`); never print or store the token.
+- Languages without a mutation tool (everything but Python and Go) show `harden: SKIPPED` and fail unless the user's
+  policy sets `allow_skipped_gates = true`; tell the user, never set it yourself. Build settings that hide code from coverage
+  (`.c8rc`, runsettings, pom/JaCoCo, cargo config, ...) are reported by the exclusions gate; never add them to pass.
 - Report gate output verbatim. Do not describe a failure as a pass.
 
 The user reviews the patch (control files such as CI and `gauntlet.toml` first) and applies it.

@@ -18,6 +18,8 @@ from gauntlet import (
     exclusions,
     golang,
     harden,
+    languages,
+    linecov,
     loop,
     policy,
     provenance,
@@ -35,10 +37,15 @@ from gauntlet.scope import Scope, parse
 
 IMPORTS_HOW = "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."
 MUTMUT_HOW = "mutmut run && mutmut results --all true > mutmut-results.txt (or: gauntlet run)"
-COVER_HOW = "go test -coverprofile=c.out ./... && go tool cover -func=c.out"
 ARTIFACTS = {
     "python": ("coverage.json", "mutmut-results.txt"),
-    "go": ("gocyclo.txt", "cover-func.txt", "imports.txt", "mutation.json"),
+    "go": ("cover.out", "imports.txt", "mutation.json"),
+    "javascript": ("lcov.info",),
+    "csharp": ("coverage.cobertura.xml",),
+    "java": ("jacoco.xml",),
+    "rust": ("lcov.info",),
+    "cpp": ("lcov.info",),
+    "dart": ("lcov.info",),
 }
 
 
@@ -63,6 +70,8 @@ def _arch_result(run: Run) -> arch.ArchResult:
     cfg = run.cfg
     if not cfg.layers:
         raise ValueError("no layers configured: add [layers] order to gauntlet.toml")
+    if cfg.language not in ("python", "go"):
+        raise ValueError(f"arch has no import reader for {cfg.language} yet")
     if cfg.language == "go":
         _trusted(run, ["imports.txt"])
         result = golang.arch_check(golang.read(run.art, "imports.txt", IMPORTS_HOW), cfg.layers)
@@ -86,17 +95,13 @@ def _arch(run: Run) -> GateResult:
 
 
 def _clean_result(run: Run) -> clean.CleanResult:
-    cfg = run.cfg
-    if cfg.language == "go":
-        _trusted(run, ["gocyclo.txt", "cover-func.txt"])
-        return golang.clean_check(
-            golang.read(run.art, "gocyclo.txt", "gocyclo ./..."),
-            golang.read(run.art, "cover-func.txt", COVER_HOW),
-            cfg.crap_max,
-            run.scope,
-        )
-    _trusted(run, ["coverage.json"])
-    return clean.check(run.root, run.art / "coverage.json", cfg.crap_max, run.scope)
+    language = languages.get(run.cfg.language)
+    _trusted(run, [language.coverage_file])
+    text = golang.read(
+        run.art, language.coverage_file, f"gauntlet run, or your test runner's {language.coverage_format} report"
+    )
+    lines = linecov.parse(language.coverage_format, text)
+    return clean.check(run.root, lines, language, run.cfg.crap_max, run.scope)
 
 
 def _clean(run: Run) -> GateResult:
@@ -112,8 +117,19 @@ def _clean(run: Run) -> GateResult:
     return GateResult("clean", not found, summary, found, {"functions": result.evaluated, "over": len(found)})
 
 
+def _harden_or_skip(run: Run) -> GateResult:
+    """For `run` and `loop`: no wired mutation tool is a failure, unless the operator's policy accepts it."""
+    if languages.get(run.cfg.language).mutation:
+        return _harden(run)
+    ok = run.policy.allow_skipped_gates
+    note = "" if ok else " (set allow_skipped_gates = true in your policy to accept)"
+    return GateResult("harden", ok, f"harden: SKIPPED, no mutation tool is wired for {run.cfg.language} yet{note}")
+
+
 def _harden(run: Run) -> GateResult:
     cfg = run.cfg
+    if not languages.get(cfg.language).mutation:
+        raise ValueError(f"harden is not available for {cfg.language} yet")
     if cfg.language == "go":
         _trusted(run, ["mutation.json"])
         text = golang.read(run.art, "mutation.json", "gremlins unleash -o mutation.json .")
@@ -128,7 +144,10 @@ def _harden(run: Run) -> GateResult:
 
 def _exclusions(run: Run) -> GateResult:
     pragmas = exclusions.pragmas(run.source, run.cfg.language, run.scope)
-    configured = exclusions.config_excludes(run.source) if run.cfg.language == "python" else []
+    if run.cfg.language == "python":
+        configured = exclusions.config_excludes(run.source)
+    else:
+        configured = exclusions.config_hints(run.source, run.cfg.language)
     ok = len(pragmas) <= run.policy.max_exclusions and (run.policy.allow_config_excludes or not configured)
     summary = (
         f"exclusions: {len(pragmas)} comment(s) (budget {run.policy.max_exclusions}), "
@@ -236,14 +255,14 @@ def _stamp(run: Run) -> int:
 def _run_pipeline(run: Run) -> list[GateResult]:
     names = runner.produce(run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
     print(f"produced {', '.join(names)}")
-    return [*_check(run), _harden(run)]
+    return [*_check(run), _harden_or_skip(run)]
 
 
 def _evaluator(run: Run, workspace: Path, out: Path, approved: Path) -> Callable[[], list[GateResult]]:
     def evaluate() -> list[GateResult]:
         sub = replace(run, root=workspace, source=workspace, art=out / "artifacts", feature=approved)
         runner.produce(workspace, run.cfg, sub.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
-        return [*_check(sub), _harden(sub), _spec(sub)]
+        return [*_check(sub), _harden_or_skip(sub), _spec(sub)]
 
     return evaluate
 
