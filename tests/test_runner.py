@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from gauntlet import runner
+from gauntlet import mutation, runner
 from gauntlet.config import Config
 from gauntlet.provenance import MANIFEST, verify
 from gauntlet.sandbox import ExecResult
@@ -208,7 +208,7 @@ def test_java_steps(tmp_path: Path) -> None:
         "-DoutputFormats=XML", "-DtimestampedReports=false", "-Dmutators=DEFAULTS",
         "-DadditionalClasspathElements=/project/.gauntlet-out/m2/org/pitest/pitest-junit5-plugin/1.2.1/"
         "pitest-junit5-plugin-1.2.1.jar",
-        "-DexcludedClasses=", "-DexcludedMethods=", "-DexcludedTestClasses=", "-DwithHistory=false", "-DavoidCallsTo=",
+        "-DexcludedClasses=", "-DexcludedMethods=", "-DexcludedTestClasses=", "-DwithHistory=false", "-DavoidCallsTo=", "-Dfeatures=-FANN",
     }  # fmt: skip  # explicit, gauntlet-owned values; no -DtargetClasses (PIT then takes the built packages)
     assert (mutation.timeout, mutation.must_pass) == (7200, False)
     assert report.argv == ("cp", "target/pit-reports/mutations.xml", "/project/.gauntlet-out/mutations.xml")
@@ -488,7 +488,7 @@ def test_the_stale_report_is_removed_by_the_sandbox_right_before_the_mutation_st
     calls = [(c[0][0], c[0][-1]) for c in made[0].calls]
     removal = calls.index(("rm", "/project/.gauntlet-out/stryker.json"))
     assert made[0].calls[removal + 1][0][1].endswith(".bin/stryker")  # the mutation run follows at once
-    assert made[0].calls[removal][1:] == ({}, 60) and list(made[0].calls[removal][0][:2]) == ["rm", "-f"]
+    assert made[0].calls[removal][1:] == ({}, 60) and list(made[0].calls[removal][0][:2]) == ["rm", "-rf"]
 
 
 def test_a_failed_report_removal_stops_the_run(repo: Path, tmp_path: Path) -> None:
@@ -511,3 +511,20 @@ def test_a_symlinked_output_directory_is_refused_before_anything_is_read(repo: P
     factory, _ = make(behave)
     with pytest.raises(ValueError, match=r"\.gauntlet-out is a symlink"):
         runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+
+
+@pytest.mark.parametrize(
+    ("language", "intermediate"),
+    [
+        ("java", "target/pit-reports"),
+        ("csharp", "/project/.gauntlet-out/stryker"),
+        ("rust", "/project/.gauntlet-out/mutants"),
+    ],
+)
+def test_the_intermediate_files_the_copy_steps_read_are_cleared_with_the_report(
+    language: str, intermediate: str
+) -> None:
+    stale = runner._stale(language)  # pyright: ignore[reportPrivateUsage]
+    assert intermediate in stale
+    assert stale[0] == f"/project/.gauntlet-out/{mutation.TOOLS[language].artifact}"
+    assert runner._stale("cpp") == ()  # pyright: ignore[reportPrivateUsage]

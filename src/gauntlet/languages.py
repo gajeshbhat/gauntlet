@@ -53,7 +53,7 @@ TABLE["javascript"] = Language(
     tests=r"^(tests?|__tests__)/",
     pragma=(
         r"(?://|/\*)\s*(?:istanbul ignore|c8 ignore|v8 ignore|node:coverage\s+(?:ignore|disable)"
-        r"|eslint-disable|@ts-ignore|@ts-nocheck|Stryker\s+disable)\b"  # Stryker: disable [next-line|all|...]
+        r"|eslint-disable|@ts-ignore|@ts-nocheck|(?i:stryker\s*disable))\b"  # Stryker: disable [next-line|all|...]
     ),
     coverage_file="lcov.info",
     coverage_format="lcov",
@@ -76,7 +76,7 @@ TABLE["csharp"] = Language(
     tests=r"^[Tt]ests?/",  # top-level only: a Tests directory inside src/ cannot opt out
     pragma=(  # every hint coverlet and Stryker.NET honour: attributes (by name), pragmas, codecov and Stryker comments
         r"\b(?:ExcludeFromCodeCoverage|ExcludeFromCoverage|GeneratedCode|CompilerGenerated)(?:Attribute)?\b"
-        r"|#\s*pragma\s+warning\s+disable\b|//\s*codecov\b|//\s*Stryker\s+(?:disable|restore)\b"
+        r"|#\s*pragma\s+warning\s+disable\b|//\s*codecov\b|//\s*(?i:stryker\s*(?:disable|restore))\b"
     ),
     coverage_file="coverage.cobertura.xml",
     coverage_format="cobertura",
@@ -98,7 +98,7 @@ TABLE["java"] = Language(
     tests=r"^(tests?|src/test)/",  # Maven never builds src/test into the artifact; a name under src/main cannot opt out
     pragma=(
         r"@(?:\w+\.)*\w*Generated\w*\b"  # JaCoCo skips any annotation whose simple name contains "Generated"
-        r"|@(?:\w+\.)*(?:SuppressWarnings|DoNotMutate)\b"  # DoNotMutate: PIT skips the annotated code
+        r"|@(?:\w+\.)*(?:SuppressWarnings|DoNotMutate|CoverageIgnore)\b"  # DoNotMutate: PIT skips the annotated code
         r"|//\s*(?:NOSONAR|NOPMD|CHECKSTYLE:OFF|@formatter:off)\b"
     ),
     coverage_file="jacoco.xml",
