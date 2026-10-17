@@ -126,3 +126,43 @@ def test_csharp_project_runs_through_dotnet_test_and_coverlet_in_a_real_containe
     out = capsys.readouterr().out
     assert "src/Demo/Calc.cs:9: Calc::Risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
     assert "harden: SKIPPED" in out
+
+
+JAVA_FILES = {
+    "pom.xml": """<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.x</groupId><artifactId>demo</artifactId><version>1.0</version>
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version><scope>test</scope></dependency>
+  </dependencies>
+</project>
+""",
+    "gauntlet.toml": 'language = "java"',
+    "src/main/java/com/x/A.java": "package com.x;\npublic class A {\n  public int f(int x) {\n"
+    "    if (x > 1) { return 1; }\n    return 0;\n  }\n"
+    "  public int risky(int a) {\n"
+    + "".join(f"    if (a == {i}) {{ return {i}; }}\n" for i in range(1, 6))
+    + "    return 0;\n  }\n}\n",
+    "src/test/java/com/x/ATest.java": "package com.x;\nimport static org.junit.jupiter.api.Assertions.assertEquals;\n"
+    "import org.junit.jupiter.api.Test;\nclass ATest {\n  @Test void f() {\n"
+    "    assertEquals(1, new A().f(2));\n    assertEquals(0, new A().f(0));\n  }\n}\n",
+}
+
+
+def test_java_project_runs_through_jacoco_in_a_real_container(
+    tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name, text in JAVA_FILES.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(text)
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x", "--no-gpg-sign"]):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True)
+    assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
+    out = capsys.readouterr().out
+    assert "src/main/java/com/x/A.java:7: A::risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
+    assert "harden: SKIPPED" in out

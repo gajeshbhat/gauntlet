@@ -138,6 +138,17 @@ def test_csharp_steps(tmp_path: Path) -> None:
     assert report.argv[2] == runner.COPY_REPORT
 
 
+def test_java_steps(tmp_path: Path) -> None:
+    tests, collect = runner.steps(Config(language="java"), tmp_path)
+    jacoco = "org.jacoco:jacoco-maven-plugin:0.8.12"
+    assert tests.argv == (
+        "mvn", "-B", "-ntp", "-Dmaven.repo.local=/project/.gauntlet-out/m2", f"{jacoco}:prepare-agent", "test",
+        f"{jacoco}:report",
+    )  # fmt: skip
+    assert tests.timeout == 3600
+    assert collect.argv == ("cp", "target/site/jacoco/jacoco.xml", "/project/.gauntlet-out/jacoco.xml")
+
+
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
 def test_python_src_must_be_a_safe_relative_path(src: str) -> None:
     with pytest.raises(ValueError, match="unsafe path"):

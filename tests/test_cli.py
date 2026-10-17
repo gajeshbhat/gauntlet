@@ -919,3 +919,36 @@ def test_run_checks_csharp_coverage(
     assert "produced coverage.cobertura.xml" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
     assert "harden: SKIPPED, no mutation tool is wired for csharp yet" in out
+
+
+# ---- Java: JaCoCo XML, harden skipped
+JAVA_SOURCE = "package com.x;\npublic class A {\n  int f(int x) {\n    return x + 1;\n  }\n}\n"
+JACOCO_XML = (
+    '<report name="r"><package name="com/x"><sourcefile name="A.java">'
+    '<line nr="4" mi="0" ci="1" mb="0" cb="0"/></sourcefile></package></report>'
+)
+
+
+class JavaSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if argv[0] == "cp":
+            (self.project / ".gauntlet-out" / "jacoco.xml").write_text(JACOCO_XML)
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_java_coverage_and_says_harden_was_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    root = project(tmp_path, 'language = "java"\n')
+    (root / "src/main/java/com/x").mkdir(parents=True)
+    (root / "src/main/java/com/x/A.java").write_text(JAVA_SOURCE)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: JavaSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    lax = write_policy("allow_skipped_gates = true\n")
+    assert main(["run", str(root), "--policy", str(lax)]) == 0
+    out = capsys.readouterr().out
+    assert "produced jacoco.xml" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for java yet" in out

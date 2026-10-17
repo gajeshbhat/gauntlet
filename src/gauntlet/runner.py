@@ -23,6 +23,7 @@ UV = ("uv", "run", "--project", "/project")
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
 C8 = "c8@10.1.3"
+JACOCO = "org.jacoco:jacoco-maven-plugin:0.8.12"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
@@ -126,11 +127,21 @@ def _dotnet_steps() -> list[Step]:
     ]
 
 
+def _java_steps() -> list[Step]:
+    repo = f"-Dmaven.repo.local={IN_SANDBOX}/m2"  # no writable HOME for every uid
+    return [
+        Step("tests", ("mvn", "-B", "-ntp", repo, f"{JACOCO}:prepare-agent", "test", f"{JACOCO}:report"), timeout=3600),
+        Step("collect", ("cp", "target/site/jacoco/jacoco.xml", f"{IN_SANDBOX}/jacoco.xml")),
+    ]
+
+
 def steps(cfg: Config, snap: Path) -> list[Step]:
     if cfg.language == "go":
         return _go_steps(cfg, snap)
     if cfg.language == "csharp":
         return _dotnet_steps()
+    if cfg.language == "java":
+        return _java_steps()
     return _js_steps() if cfg.language == "javascript" else _python_steps(cfg)
 
 
@@ -139,12 +150,14 @@ FILES = {
     "go": ("cover.out", "mutation.json"),
     "javascript": ("lcov.info",),
     "csharp": ("coverage.cobertura.xml",),
+    "java": ("jacoco.xml",),
 }  # artifacts the sandbox writes itself
 REQUIRED = {
     "python": ("coverage.json", "mutmut-results.txt"),
     "go": ("cover.out", "imports.txt"),
     "javascript": ("lcov.info",),
     "csharp": ("coverage.cobertura.xml",),
+    "java": ("jacoco.xml",),
 }
 
 

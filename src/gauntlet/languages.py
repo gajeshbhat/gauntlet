@@ -69,6 +69,20 @@ TABLE["csharp"] = Language(
     sdk="dotnet",
     image="mcr.microsoft.com/dotnet/sdk:8.0.426",
 )
+TABLE["java"] = Language(
+    suffixes=(".java",),
+    markers=("pom.xml", "build.gradle"),
+    tests=r"^(tests?|src/test)/",  # Maven never builds src/test into the artifact; a name under src/main cannot opt out
+    pragma=(
+        r"@(?:\w+\.)*\w*Generated\w*\b"  # JaCoCo skips any annotation whose simple name contains "Generated"
+        r"|@(?:\w+\.)*SuppressWarnings\b|//\s*(?:NOSONAR|NOPMD|CHECKSTYLE:OFF|@formatter:off)\b"
+    ),
+    coverage_file="jacoco.xml",
+    coverage_format="jacoco",
+    mutation=False,
+    sdk="java",
+    image="maven:3.9-eclipse-temurin-21",
+)
 NAMES = tuple(TABLE)
 
 

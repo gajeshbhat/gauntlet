@@ -110,3 +110,33 @@ def test_csharp_test_dirs_are_only_the_top_level_ones() -> None:
         assert re.search(cs.tests, path), path
     for path in ("src/tests/A.cs", "src/App/FooTests.cs", "src/Test/A.cs", "mytests/A.cs", "src/App/Tests.cs"):
         assert not re.search(cs.tests, path), path
+
+
+def test_java_pragmas_cover_every_hint_the_pinned_jacoco_and_linters_honour() -> None:
+    java = languages.TABLE["java"]
+    for text in (
+        "@Generated",
+        "  @lombok.Generated",
+        '@javax.annotation.processing.Generated("x")',
+        "@GeneratedByTool",
+        '@SuppressWarnings("unchecked")',
+        "x++; // NOSONAR",
+        "x++; //NOPMD",
+        "// CHECKSTYLE:OFF",
+        "//CHECKSTYLE:OFF",
+        "// @formatter:off",
+        "//@formatter:off",
+    ):
+        assert re.search(java.pragma, text), text
+    assert not re.search(java.pragma, "// an ordinary comment")
+    assert not re.search(java.pragma, "int generated = 1;")
+
+
+def test_java_tests_are_only_the_top_level_test_dirs() -> None:
+    java = languages.TABLE["java"]
+    for path in ("src/test/java/a/ATest.java", "test/a/ATest.java", "tests/A.java"):
+        assert re.search(java.tests, path), path
+    for path in ("src/main/java/ATest.java", "src/main/test/A.java", "src/tests/A.java", "app/src/main/java/Test.java"):
+        assert not re.search(java.tests, path), path
+    assert not java.mutation
+    assert java.suffixes == (".java",)

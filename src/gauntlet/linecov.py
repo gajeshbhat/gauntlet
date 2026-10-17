@@ -77,9 +77,12 @@ def cobertura(text: str) -> Lines:
     return lines
 
 
+JACOCO_DOCTYPE = '<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">'  # JaCoCo always writes this
+
+
 def jacoco(text: str) -> Lines:
     lines: Lines = {}
-    for package in _xml("jacoco", text).iter("package"):
+    for package in _xml("jacoco", text.replace(JACOCO_DOCTYPE, "", 1)).iter("package"):
         for source in package.iter("sourcefile"):
             target = lines.setdefault(f"{package.attrib['name']}/{source.attrib['name']}", {})
             for line in source.iter("line"):

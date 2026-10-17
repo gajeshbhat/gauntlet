@@ -42,6 +42,7 @@ ARTIFACTS = {
     "go": ("cover.out", "imports.txt", "mutation.json"),
     "javascript": ("lcov.info",),
     "csharp": ("coverage.cobertura.xml",),
+    "java": ("jacoco.xml",),
 }
 
 

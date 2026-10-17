@@ -63,6 +63,14 @@ def test_xml_with_entities_or_doctype_is_refused(fmt: str) -> None:
         linecov.parse(fmt, evil)
 
 
+def test_jacoco_stock_doctype_is_accepted_but_nothing_wider() -> None:
+    stock = JACOCO.replace("?>\n", "?>" + linecov.JACOCO_DOCTYPE, 1)
+    assert linecov.parse("jacoco", stock) == {"com/x/Foo.java": {3: 4, 4: 0}}
+    wider = linecov.JACOCO_DOCTYPE.replace('"report.dtd">', '"report.dtd" [<!ENTITY a "b">]>')
+    with pytest.raises(ValueError, match="DOCTYPE or entity"):
+        linecov.parse("jacoco", JACOCO.replace("?>\n", "?>" + wider, 1))
+
+
 @pytest.mark.parametrize("fmt", ["cobertura", "jacoco"])
 def test_malformed_xml_is_a_clean_error(fmt: str) -> None:
     with pytest.raises(ValueError, match=f"cannot read {fmt} report"):
