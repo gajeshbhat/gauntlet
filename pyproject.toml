@@ -6,6 +6,8 @@ authors = [
     { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
 ]
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "radon>=6.0.1",
 ]

@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from gauntlet.names import ENV_NAME
+
 NAME = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
 SDKS = re.compile(r"^[a-z][a-z0-9-]*(,[a-z][a-z0-9-]*)*$")
-ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_TIMEOUT = 86_400
 
 Runner = Callable[..., "subprocess.CompletedProcess[str]"]
@@ -32,13 +33,23 @@ class Sandbox(Protocol):
     def remove(self) -> None: ...
 
 
-def _env_args(env: Mapping[str, str | None]) -> list[str]:
-    args: list[str] = []
+def env_entries(env: Mapping[str, str | None]) -> list[str]:
+    """`NAME=value` entries, or a bare `NAME` (value inherited from our environment, so never in an argv)."""
+    entries: list[str] = []
     for name, value in env.items():
         if not ENV_NAME.match(name):
             raise ValueError(f"bad environment variable name {name!r}")
-        args += ["--env", name if value is None else f"{name}={value}"]  # name only: value inherited, never in argv
-    return args
+        entries.append(name if value is None else f"{name}={value}")
+    return entries
+
+
+def validate_exec(argv: Sequence[str], timeout: int) -> None:
+    if not argv:
+        raise ValueError("empty command")
+    if any("\0" in a for a in argv):
+        raise ValueError("NUL in command")
+    if not 0 < timeout <= MAX_TIMEOUT:
+        raise ValueError(f"timeout must be between 1 and {MAX_TIMEOUT} seconds")
 
 
 class WorkshopSandbox:
@@ -63,13 +74,9 @@ class WorkshopSandbox:
                 raise ValueError(f"workshop {step[0]} failed: {done.stderr.strip() or done.stdout.strip()}")
 
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
-        if not argv:
-            raise ValueError("empty command")
-        if any("\0" in a for a in argv):
-            raise ValueError("NUL in command")
-        if not 0 < timeout <= MAX_TIMEOUT:
-            raise ValueError(f"timeout must be between 1 and {MAX_TIMEOUT} seconds")
-        done = self._workshop("exec", "--timeout", f"{timeout}s", *_env_args(env or {}), self.name, "--", *argv)
+        validate_exec(argv, timeout)
+        flags = [arg for entry in env_entries(env or {}) for arg in ("--env", entry)]
+        done = self._workshop("exec", "--timeout", f"{timeout}s", *flags, self.name, "--", *argv)
         return ExecResult(done.returncode, done.stdout, done.stderr)
 
     def remove(self) -> None:

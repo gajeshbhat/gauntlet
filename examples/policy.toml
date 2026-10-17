@@ -14,4 +14,13 @@ require_pin = false         # refuse a gauntlet.toml you have not pinned with `g
 # agent_timeout = 1800      # seconds per agent run
 # max_rounds = 3            # Fixer rounds before the loop gives up
 
+# Sandbox backend for `run` and `loop`: "auto" (Workshop if installed, else Docker), "workshop" or "docker".
+# sandbox = "auto"
+# container_cli = "docker"        # or "podman"
+# docker_network = "bridge"       # "none" cuts the container off (dependencies and agents then cannot download)
+# docker_memory = "4g"            # empty: no limit
+# docker_image_python = "ghcr.io/astral-sh/uv:python3.12-bookworm"
+# docker_image_go = "golang:1.27"
+# docker_image_agent = "gauntlet-agent"   # build it from examples/agent.Dockerfile
+
 [pins]

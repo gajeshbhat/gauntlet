@@ -10,7 +10,8 @@ import pytest
 from gauntlet import cli
 from gauntlet.cli import main
 from gauntlet.config import Config
-from gauntlet.sandbox import ExecResult, WorkshopSandbox
+from gauntlet.policy import Policy
+from gauntlet.sandbox import ExecResult
 
 BRANCHY = "def g(x):\n" + "".join(f"    if x == {i}:\n        return {i}\n" for i in range(1, 8)) + "    return 0\n"
 GOCYCLO = "18 device DiskMount lxd/device/disk.go:28:1\n6 device Small lxd/device/disk.go:95:1\n"
@@ -508,8 +509,8 @@ class RunSandbox:
         self.removed = True
 
 
-def sandbox_factory(covered: bool = True) -> Callable[[Path, Config], RunSandbox]:
-    return lambda project, cfg: RunSandbox(project, covered)  # noqa: ARG005
+def sandbox_factory(covered: bool = True) -> Callable[[Path, Config, Policy], RunSandbox]:
+    return lambda project, cfg, policy: RunSandbox(project, covered)  # noqa: ARG005
 
 
 def committed_py_project(root: Path, toml: str = 'language = "python"\n') -> Path:
@@ -551,13 +552,6 @@ def test_run_honours_out_and_ignores_stale_artifacts(
     assert main(["run", str(root), "--out", str(out)]) == 0
     assert (out / "coverage.json").exists()
     capsys.readouterr()
-
-
-def test_the_default_sandbox_is_workshop_with_the_right_sdk(tmp_path: Path) -> None:
-    py, go = cli.default_sandbox(tmp_path, Config("python")), cli.default_sandbox(tmp_path, Config("go"))
-    assert isinstance(py, WorkshopSandbox)
-    assert isinstance(go, WorkshopSandbox)
-    assert (py.sdks, go.sdks) == ("uv", "go")
 
 
 def test_report_is_written_for_any_gate(tmp_path: Path, cli_run: Callable[..., int]) -> None:
@@ -670,7 +664,7 @@ def agent_script(prompt: str, project: Path) -> ExecResult:
     return ExecResult(0, "", "")
 
 
-def loop_gates(project: Path, cfg: Config) -> LoopGates:  # noqa: ARG001
+def loop_gates(project: Path, cfg: Config, policy: Policy) -> LoopGates:  # noqa: ARG001
     return LoopGates(project)
 
 
@@ -684,7 +678,7 @@ def loop_setup(
     root = committed_py_project(tmp_path / "repo") if (tmp_path / "repo").mkdir() is None else tmp_path
     boxes: list[AgentBox] = []
 
-    def make_agent(workspace: Path, cfg: Config) -> AgentBox:
+    def make_agent(workspace: Path, cfg: Config, policy: Policy) -> AgentBox:
         boxes.append(AgentBox(workspace, script))
         return boxes[-1]
 
@@ -767,12 +761,6 @@ def test_loop_agent_failure_is_an_error(
     assert "specifier failed (exit 7): agent crashed" in capsys.readouterr().err
 
 
-def test_default_agent_sandbox_is_workshop_with_claude_code(tmp_path: Path) -> None:
-    box = cli.default_agent_sandbox(tmp_path, Config("go"))
-    assert isinstance(box, WorkshopSandbox)
-    assert (box.name, box.sdks) == ("gauntlet-agent", "go,claude-code")
-
-
 def test_loop_prints_exact_summary_and_writes_a_complete_evidence_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
 ) -> None:
@@ -819,3 +807,18 @@ def test_gates_default_to_the_results_of_the_last_run(
     (root / "mod.py").write_text("def g():\n    return 2\n")
     assert main(["clean", str(root)]) == 2
     assert "stale" in capsys.readouterr().err
+
+
+def test_stamp_never_blesses_the_results_of_an_old_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = committed_py_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", sandbox_factory(covered=False))
+    assert main(["run", str(root)]) == 1  # leaves .gauntlet/ with uncovered results
+    capsys.readouterr()
+    covered = {"mod.py": {"executed_lines": list(range(1, 17)), "missing_lines": []}}
+    (root / "coverage.json").write_text(json.dumps({"files": covered}))  # fresh artifacts next to the sources
+    assert main(["stamp", str(root)]) == 0
+    assert "stamped coverage.json" in capsys.readouterr().out
+    assert (root / "gauntlet-manifest.json").exists()
+    assert main(["clean", str(root), "--artifacts", str(root)]) == 0  # the fresh ones, not the old run's

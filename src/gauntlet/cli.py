@@ -12,6 +12,7 @@ from typing import Any
 
 from gauntlet import (
     arch,
+    backends,
     clean,
     diagram,
     exclusions,
@@ -29,7 +30,7 @@ from gauntlet.config import Config, load
 from gauntlet.policy import Policy
 from gauntlet.results import GateResult
 from gauntlet.safefs import read_text
-from gauntlet.sandbox import Sandbox, WorkshopSandbox
+from gauntlet.sandbox import Sandbox
 from gauntlet.scope import Scope, parse
 
 IMPORTS_HOW = "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."
@@ -159,21 +160,9 @@ GATES: dict[str, Callable[[Run], list[GateResult]]] = {
     "check": _check,
 }
 COMMANDS = ("init", "stamp", "pin", "run", "diagram", "loop")
-SDK = {"python": "uv", "go": "go"}
-
-
-def default_sandbox(project: Path, cfg: Config) -> Sandbox:
-    return WorkshopSandbox(project, sdks=SDK[cfg.language])
-
-
-MAKE_SANDBOX: Callable[[Path, Config], Sandbox] = default_sandbox
-
-
-def default_agent_sandbox(workspace: Path, cfg: Config) -> Sandbox:
-    return WorkshopSandbox(workspace, name="gauntlet-agent", sdks=f"{SDK[cfg.language]},claude-code")
-
-
-MAKE_AGENT_SANDBOX: Callable[[Path, Config], Sandbox] = default_agent_sandbox
+SandboxFactory = Callable[[Path, Config, Policy], Sandbox]
+MAKE_SANDBOX: SandboxFactory = backends.gate_sandbox
+MAKE_AGENT_SANDBOX: SandboxFactory = backends.agent_sandbox
 
 
 OPTIONS: tuple[tuple[str, dict[str, Any]], ...] = (
@@ -245,7 +234,7 @@ def _stamp(run: Run) -> int:
 
 
 def _run_pipeline(run: Run) -> list[GateResult]:
-    names = runner.produce(run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg))
+    names = runner.produce(run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
     print(f"produced {', '.join(names)}")
     return [*_check(run), _harden(run)]
 
@@ -253,7 +242,7 @@ def _run_pipeline(run: Run) -> list[GateResult]:
 def _evaluator(run: Run, workspace: Path, out: Path, approved: Path) -> Callable[[], list[GateResult]]:
     def evaluate() -> list[GateResult]:
         sub = replace(run, root=workspace, source=workspace, art=out / "artifacts", feature=approved)
-        runner.produce(workspace, run.cfg, sub.art, lambda project: MAKE_SANDBOX(project, run.cfg))
+        runner.produce(workspace, run.cfg, sub.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
         return [*_check(sub), _harden(sub), _spec(sub)]
 
     return evaluate
@@ -304,7 +293,7 @@ def _loop(run: Run, args: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="gauntlet-loop-") as tmp:
         workspace = loop.prepare_workspace(run.source, Path(tmp) / "ws")
-        box = MAKE_AGENT_SANDBOX(workspace, run.cfg)
+        box = MAKE_AGENT_SANDBOX(workspace, run.cfg, run.policy)
         agent = loop.Agent(box, run.policy.agent_command, run.policy.agent_env, run.policy.agent_timeout)
         box.ensure()
         try:
@@ -325,7 +314,8 @@ def _build_run(args: argparse.Namespace, pol: Policy) -> Run:
     raw = load(config_path)
     policy.check_pin(pol, config_path)
     last_run = args.root / ".gauntlet"
-    use_last = args.gate == "run" or (last_run / provenance.MANIFEST).is_file()
+    # `stamp` binds the artifacts you just produced, so it must never default to an old run's results.
+    use_last = args.gate == "run" or (args.gate != "stamp" and (last_run / provenance.MANIFEST).is_file())
     art = args.artifacts or args.out or (last_run if use_last else args.root)
     scope = parse(args.only or [])
     return Run(args.root, art, args.source or args.root, policy.apply(raw, pol), scope, pol, args.feature)
