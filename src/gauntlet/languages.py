@@ -99,6 +99,20 @@ TABLE["rust"] = Language(
     sdk="rust",
     image="rust:1.93-bookworm",
 )
+TABLE["cpp"] = Language(
+    suffixes=(".c", ".h", ".cc", ".cpp", ".cxx", ".hpp"),
+    markers=("CMakeLists.txt", "Makefile", "meson.build"),
+    tests=r"^tests?/",  # only the top-level test dir: a name inside the source tree cannot opt out
+    pragma=(
+        r"\b(?:LCOV|GCOVR)_EXCL_(?:LINE|START|STOP|BR_LINE|BR_START|BR_STOP)\b|\bNOLINT"
+        r"|#\s*pragma\s+GCC\s+diagnostic\b|__attribute__\s*\(\(\s*no_(?:profile_)?instrument_function\b"
+    ),
+    coverage_file="lcov.info",
+    coverage_format="lcov",
+    mutation=False,
+    sdk="cpp",
+    image="gcc:14.3-bookworm",
+)
 NAMES = tuple(TABLE)
 
 

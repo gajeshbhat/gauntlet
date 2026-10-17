@@ -195,3 +195,32 @@ def test_java_project_runs_through_jacoco_in_a_real_container(
     out = capsys.readouterr().out
     assert "src/main/java/com/x/A.java:7: A::risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
     assert "harden: SKIPPED" in out
+
+
+CPP_FILES = {
+    "gauntlet.toml": 'language = "cpp"',
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.16)\nproject(demo C)\nenable_testing()\n"
+    "add_library(demo src/demo.c)\nadd_executable(t tests/t.c)\ntarget_link_libraries(t demo)\n"
+    "add_test(NAME t COMMAND t)\n",
+    "gcovr.cfg": "exclude = .*\n",  # a repo trying to hide itself from the report: must be ignored
+    "src/demo.c": "int f(int x) {\n  if (x > 1) { return 1; }\n  return 0;\n}\n"
+    + "int risky(int a) {\n"
+    + "".join(f"  if (a == {i}) {{ return {i}; }}\n" for i in range(1, 6))
+    + "  return 0;\n}\n",
+    "tests/t.c": "int f(int);\nint main(void) { return f(2) == 1 && f(0) == 0 ? 0 : 1; }\n",
+}
+
+
+def test_cpp_project_runs_through_cmake_and_gcovr_in_a_real_container(
+    tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name, text in CPP_FILES.items():
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_text(text)
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x", "--no-gpg-sign"]):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True)
+    assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
+    out = capsys.readouterr().out
+    assert "src/demo.c:5: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
+    assert "src/demo.c:1: f" not in out
+    assert "harden: SKIPPED" in out

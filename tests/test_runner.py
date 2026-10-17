@@ -348,3 +348,16 @@ def test_a_step_with_output_but_no_capture_name_stores_nothing(repo: Path, tmp_p
     names = runner.produce(repo, Config(language="python"), tmp_path / "out", noisy)
     assert names == ["coverage.json", "mutmut-results.txt"]
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["coverage.json", MANIFEST, "mutmut-results.txt"]
+
+
+def test_cpp_steps_are_fixed_pinned_and_ignore_the_repos_gcovr_config(tmp_path: Path) -> None:
+    install, configure, build, tests, coverage = runner.steps(Config(language="cpp"), tmp_path)
+    assert install.argv[:2] == ("sh", "-c")
+    assert "sha256sum -c -" in install.argv[2] and runner.PIP_SHA256 in install.argv[2]
+    assert "cmake==4.4.4 gcovr==8.7" in install.argv[2]
+    assert "--coverage" in " ".join(configure.argv) and configure.argv[0] == "/project/.gauntlet-out/py/bin/cmake"
+    assert build.argv[1:] == ("--build", "/project/.gauntlet-out/build")
+    assert tests.argv[0] == "/project/.gauntlet-out/py/bin/ctest" and tests.timeout == 3600
+    assert coverage.argv[:5] == ("python3", "-m", "gcovr", "--config", "/project/.gauntlet-out/gcovr.cfg")
+    assert coverage.argv[-2:] == ("--lcov", "/project/.gauntlet-out/lcov.info")
+    assert dict(coverage.env) == {"PYTHONPATH": "/project/.gauntlet-out/py"}

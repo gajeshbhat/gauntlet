@@ -44,6 +44,7 @@ ARTIFACTS = {
     "csharp": ("coverage.cobertura.xml",),
     "java": ("jacoco.xml",),
     "rust": ("lcov.info",),
+    "cpp": ("lcov.info",),
 }
 
 

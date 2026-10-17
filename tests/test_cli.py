@@ -979,3 +979,30 @@ def test_run_checks_java_coverage_and_says_harden_was_skipped(
     assert "produced jacoco.xml" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
     assert "harden: SKIPPED, no mutation tool is wired for java yet" in out
+
+
+# ---- C and C++: coverage gates work, harden is visibly skipped
+class CppSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if "gcovr" in argv:
+            (self.project / ".gauntlet-out" / "lcov.info").write_text(
+                "SF:/project/a.c\nDA:1,1\nDA:2,1\nend_of_record\n"
+            )
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_cpp_coverage_and_says_harden_was_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    lax = write_policy("allow_skipped_gates = true\n")
+    project(tmp_path, 'language = "cpp"\n')
+    (tmp_path / "a.c").write_text("int f(int x) {\n  return x + 1;\n}\n")
+    for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-q", "-m", "x", "--no-gpg-sign")):
+        git(tmp_path, *args)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: CppSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(tmp_path)]) == 1  # a skipped gate fails unless the operator's policy accepts it
+    assert main(["run", str(tmp_path), "--policy", str(lax)]) == 0
+    out = capsys.readouterr().out
+    assert "produced lcov.info" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for cpp yet" in out

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from gauntlet import languages, linecov
+from gauntlet.clean import function_findings
 from gauntlet.names import IMAGE
 
 
@@ -167,3 +168,32 @@ def test_every_suffix_is_one_lizard_reads() -> None:
     for name, row in languages.TABLE.items():
         for suffix in row.suffixes:
             assert get_reader_for(f"x{suffix}"), (name, suffix)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        *(f"x; // {tool}_EXCL_{kind}" for tool in ("LCOV", "GCOVR") for kind in ("LINE", "START", "STOP")),
+        *(f"/* {tool}_EXCL_BR_{kind} */" for tool in ("LCOV", "GCOVR") for kind in ("LINE", "START", "STOP")),
+        "int x; // NOLINT",
+        "// NOLINTNEXTLINE(readability)",
+        '#pragma GCC diagnostic ignored "-Wall"',
+        "# pragma  GCC diagnostic push",
+        "void f(void) __attribute__((no_instrument_function));",
+        "__attribute__ (( no_profile_instrument_function ))",
+    ],
+)
+def test_cpp_pragmas_cover_every_exclusion_hint(text: str) -> None:
+    assert re.search(languages.TABLE["cpp"].pragma, text), text
+
+
+def test_cpp_ordinary_code_is_not_a_pragma() -> None:
+    assert not re.search(languages.TABLE["cpp"].pragma, "// an ordinary comment about EXCLUSION\nint x;")
+
+
+def test_cpp_test_dirs_are_top_level_only_and_suffixes_are_lizard_known() -> None:
+    cpp = languages.TABLE["cpp"]
+    assert re.search(cpp.tests, "tests/a.c") and re.search(cpp.tests, "test/a.cpp")
+    assert not re.search(cpp.tests, "src/test/a.c") and not re.search(cpp.tests, "src/a_test.cpp")
+    for suffix in cpp.suffixes:
+        assert [f.name for f in function_findings("x" + suffix, "int f(int x) { return x; }\n", None)] == ["f"], suffix
