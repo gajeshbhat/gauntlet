@@ -49,7 +49,15 @@ def test_detect_by_marker_files(tmp_path: Path) -> None:
 
 def test_javascript_pragmas_and_test_dirs() -> None:
     js = languages.TABLE["javascript"]
-    for text in ("/* istanbul ignore next */", "// c8 ignore next", "// eslint-disable-next-line", "// @ts-ignore"):
+    for text in (
+        "/* istanbul ignore next */",
+        "// c8 ignore next",
+        "// eslint-disable-next-line",
+        "// @ts-ignore",
+        "/* v8 ignore next */",
+        "// node:coverage ignore next",
+        "// node:coverage disable",
+    ):
         assert re.search(js.pragma, text), text
     assert not re.search(js.pragma, "// an ordinary comment")
     assert re.search(js.tests, "tests/a.js") and not re.search(js.tests, "src/tests/a.js")

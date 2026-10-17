@@ -113,10 +113,12 @@ def _clean(run: Run) -> GateResult:
 
 
 def _harden_or_skip(run: Run) -> GateResult:
-    """For `run` and `loop`: a language without a wired mutation tool is reported as skipped, never as a pass."""
+    """For `run` and `loop`: no wired mutation tool is a failure, unless the operator's policy accepts it."""
     if languages.get(run.cfg.language).mutation:
         return _harden(run)
-    return GateResult("harden", True, f"harden: SKIPPED, no mutation tool is wired for {run.cfg.language} yet")
+    ok = run.policy.allow_skipped_gates
+    note = "" if ok else " (set allow_skipped_gates = true in your policy to accept)"
+    return GateResult("harden", ok, f"harden: SKIPPED, no mutation tool is wired for {run.cfg.language} yet{note}")
 
 
 def _harden(run: Run) -> GateResult:

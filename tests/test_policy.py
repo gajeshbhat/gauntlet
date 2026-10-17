@@ -16,7 +16,7 @@ def cfg(**kw: object) -> Config:
 def test_defaults_when_no_policy_file() -> None:
     p = policy.load(None)
     assert (p.crap_ceiling, p.mutation_floor, p.max_exclusions) == (8, 90, 10)
-    assert not (p.allow_unstamped or p.allow_config_excludes or p.require_pin)
+    assert not (p.allow_unstamped or p.allow_config_excludes or p.allow_skipped_gates or p.require_pin)
 
 
 def test_default_path_follows_xdg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -215,7 +215,7 @@ def test_every_policy_error_names_the_file(write_policy: Callable[[str], Path], 
 
 
 def test_each_boolean_defaults_to_false_and_each_can_be_set(write_policy: Callable[[str], Path]) -> None:
-    for key in ("allow_config_excludes", "allow_unstamped", "require_pin"):
+    for key in ("allow_config_excludes", "allow_skipped_gates", "allow_unstamped", "require_pin"):
         assert getattr(policy.load(write_policy("max_exclusions = 1\n")), key) is False
         assert getattr(policy.load(write_policy(f"{key} = true\n")), key) is True
 

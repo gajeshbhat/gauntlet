@@ -45,7 +45,10 @@ TABLE["javascript"] = Language(
     suffixes=(".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"),
     markers=("package.json",),
     tests=r"^(tests?|__tests__)/",
-    pragma=r"(?://|/\*)\s*(?:istanbul ignore|c8 ignore|eslint-disable|@ts-ignore|@ts-nocheck)\b",
+    pragma=(
+        r"(?://|/\*)\s*(?:istanbul ignore|c8 ignore|v8 ignore|node:coverage\s+(?:ignore|disable)"
+        r"|eslint-disable|@ts-ignore|@ts-nocheck)\b"
+    ),
     coverage_file="lcov.info",
     coverage_format="lcov",
     mutation=False,

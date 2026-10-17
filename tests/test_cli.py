@@ -860,11 +860,14 @@ def committed_js_project(root: Path, toml: str = 'language = "javascript"\n') ->
 
 
 def test_run_checks_javascript_coverage_and_says_harden_was_skipped(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
 ) -> None:
+    lax = write_policy("allow_skipped_gates = true\n")
     root = committed_js_project(tmp_path)
     monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: JsSandbox(project))  # type: ignore[misc]  # noqa: ARG005
-    assert main(["run", str(root)]) == 0
+    assert main(["run", str(root)]) == 1  # a skipped gate is a failure unless the operator's policy accepts it
+    assert "allow_skipped_gates = true" in capsys.readouterr().out
+    assert main(["run", str(root), "--policy", str(lax)]) == 0
     out = capsys.readouterr().out
     assert "produced lcov.info" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out

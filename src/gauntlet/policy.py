@@ -16,7 +16,7 @@ from gauntlet import languages
 from gauntlet.config import Config
 from gauntlet.names import IMAGE, MEMORY
 
-BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin")
+BOOLS = ("allow_config_excludes", "allow_skipped_gates", "allow_unstamped", "require_pin")
 INTS = ("crap_ceiling", "mutation_floor", "max_exclusions")
 RANGES = {"agent_timeout": (1, 86_400), "max_rounds": (1, 20)}
 LISTS = ("agent_command", "agent_env")
@@ -35,6 +35,7 @@ class Policy:
     crap_ceiling: int = 8  # repo crap.max may be lower, never higher
     mutation_floor: int = 90  # repo mutation.min_score may be higher, never lower
     max_exclusions: int = 10  # budget of `pragma: no mutate|cover` / nolint / nosec in scope
+    allow_skipped_gates: bool = False  # let a gate with no tool for the language (harden) pass as skipped
     allow_config_excludes: bool = False  # coverage `omit` / mutmut `do_not_mutate` in the repo config
     allow_unstamped: bool = False  # accept artifacts with no provenance manifest
     require_pin: bool = False  # refuse a gauntlet.toml that was never pinned
@@ -163,6 +164,7 @@ def _checked(path: Path, data: dict[str, Any]) -> Policy:
         mutation_floor=int(data.get("mutation_floor", d.mutation_floor)),
         max_exclusions=int(data.get("max_exclusions", d.max_exclusions)),
         allow_config_excludes=bool(data.get("allow_config_excludes", d.allow_config_excludes)),
+        allow_skipped_gates=bool(data.get("allow_skipped_gates", d.allow_skipped_gates)),
         allow_unstamped=bool(data.get("allow_unstamped", d.allow_unstamped)),
         require_pin=bool(data.get("require_pin", d.require_pin)),
         pins=_pins(path, data),
