@@ -117,6 +117,15 @@ def test_go_steps(tmp_path: Path) -> None:
     assert dict(steps["tests"].env) == {"GOBIN": "/project/.gauntlet-out/bin", "GOFLAGS": "-buildvcs=false"}
 
 
+def test_javascript_steps(tmp_path: Path) -> None:
+    install, tests = runner.steps(Config(language="javascript"), tmp_path)
+    assert install.argv == ("npm", "ci", "--ignore-scripts")
+    assert tests.argv == (
+        "npx", "--yes", "c8@10.1.3", "--reporter=lcovonly", "--reports-dir=/project/.gauntlet-out", "npm", "test"
+    )  # fmt: skip
+    assert tests.timeout == 3600
+
+
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
 def test_python_src_must_be_a_safe_relative_path(src: str) -> None:
     with pytest.raises(ValueError, match="unsafe path"):

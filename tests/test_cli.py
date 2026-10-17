@@ -837,3 +837,50 @@ def test_stamp_never_blesses_the_results_of_an_old_run(
     assert "stamped coverage.json" in capsys.readouterr().out
     assert (root / "gauntlet-manifest.json").exists()
     assert main(["clean", str(root), "--artifacts", str(root)]) == 0  # the fresh ones, not the old run's
+
+
+# ---- JavaScript: coverage gates work, harden is visibly skipped
+JS_SOURCE = "function f(x) {\n  return x + 1;\n}\nmodule.exports = { f };\n"
+
+
+class JsSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if "c8@10.1.3" in argv:
+            (self.project / ".gauntlet-out" / "lcov.info").write_text("SF:index.js\nDA:1,1\nDA:2,1\nend_of_record\n")
+        return ExecResult(0, "", "")
+
+
+def committed_js_project(root: Path, toml: str = 'language = "javascript"\n') -> Path:
+    project(root, toml)
+    (root / "index.js").write_text(JS_SOURCE)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
+    return root
+
+
+def test_run_checks_javascript_coverage_and_says_harden_was_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = committed_js_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: JsSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert "produced lcov.info" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for javascript yet" in out
+
+
+def test_harden_asked_for_directly_is_an_error_where_no_tool_is_wired(
+    tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
+) -> None:
+    assert cli_run("harden", project(tmp_path, 'language = "javascript"\n')) == 2
+    assert "harden is not available for javascript yet" in capsys.readouterr().err
+
+
+def test_arch_with_layers_is_an_error_where_no_import_reader_exists(
+    tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
+) -> None:
+    root = project(tmp_path, 'language = "javascript"\n[layers]\norder = ["a", "b"]\n')
+    assert cli_run("arch", root) == 2
+    assert "arch has no import reader for javascript yet" in capsys.readouterr().err

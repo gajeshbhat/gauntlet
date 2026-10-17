@@ -1,9 +1,10 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from gauntlet.clean import Finding, check, crap_score, function_findings
-from gauntlet.languages import TABLE, Language
+from gauntlet.languages import TABLE
 from gauntlet.scope import Scope, parse
 
 PY = TABLE["python"]
@@ -157,7 +158,7 @@ def test_coverage_paths_cannot_climb_out_of_the_project(tmp_path: Path) -> None:
 
 
 def test_other_languages_use_the_same_gate(tmp_path: Path) -> None:
-    java = Language((".java",), ("pom.xml",), "_Test\\.java$", "x", "jacoco.xml", "jacoco", "java", "img")
+    java = replace(TABLE["go"], suffixes=(".java",), tests=r"_Test\.java$")
     src = "class A {\n  int f(int x) {\n    if (x > 1) { return 1; }\n    return 2;\n  }\n}\n"
     project(tmp_path, src, "src/main/java/com/x/A.java")
     covered = check(tmp_path, {"com/x/A.java": {3: 1, 4: 1}}, java, 8, Scope())

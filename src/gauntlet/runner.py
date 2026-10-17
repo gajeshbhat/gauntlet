@@ -22,6 +22,7 @@ GOBIN = f"{IN_SANDBOX}/bin"
 UV = ("uv", "run", "--project", "/project")
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
+C8 = "c8@10.1.3"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
@@ -96,12 +97,30 @@ def _go_steps(cfg: Config, snap: Path) -> list[Step]:
     ]
 
 
+def _js_steps() -> list[Step]:
+    report = f"--reports-dir={IN_SANDBOX}"
+    return [
+        Step("install", ("npm", "ci", "--ignore-scripts")),  # lockfile only; dependency scripts never run
+        Step("tests", ("npx", "--yes", C8, "--reporter=lcovonly", report, "npm", "test"), timeout=3600),
+    ]
+
+
 def steps(cfg: Config, snap: Path) -> list[Step]:
-    return _go_steps(cfg, snap) if cfg.language == "go" else _python_steps(cfg)
+    if cfg.language == "go":
+        return _go_steps(cfg, snap)
+    return _js_steps() if cfg.language == "javascript" else _python_steps(cfg)
 
 
-FILES = {"python": ("coverage.json",), "go": ("cover.out", "mutation.json")}  # artifacts the sandbox writes itself
-REQUIRED = {"python": ("coverage.json", "mutmut-results.txt"), "go": ("cover.out", "imports.txt")}
+FILES = {
+    "python": ("coverage.json",),
+    "go": ("cover.out", "mutation.json"),
+    "javascript": ("lcov.info",),
+}  # artifacts the sandbox writes itself
+REQUIRED = {
+    "python": ("coverage.json", "mutmut-results.txt"),
+    "go": ("cover.out", "imports.txt"),
+    "javascript": ("lcov.info",),
+}
 
 
 def output_tail(done: ExecResult) -> str:

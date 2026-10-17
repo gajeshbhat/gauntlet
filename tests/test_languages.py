@@ -45,3 +45,17 @@ def test_detect_by_marker_files(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[project]\n")
     assert languages.detect(tmp_path) == ["python", "go"]
     assert languages.detect(tmp_path / "nothing") == []
+
+
+def test_javascript_pragmas_and_test_dirs() -> None:
+    js = languages.TABLE["javascript"]
+    for text in ("/* istanbul ignore next */", "// c8 ignore next", "// eslint-disable-next-line", "// @ts-ignore"):
+        assert re.search(js.pragma, text), text
+    assert not re.search(js.pragma, "// an ordinary comment")
+    assert re.search(js.tests, "tests/a.js") and not re.search(js.tests, "src/tests/a.js")
+
+
+def test_every_row_names_a_known_coverage_format_and_a_valid_image() -> None:
+    for name, row in languages.TABLE.items():
+        assert row.coverage_format in linecov.PARSERS, name
+        assert IMAGE.match(row.image), name

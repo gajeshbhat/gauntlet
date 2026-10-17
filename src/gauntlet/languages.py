@@ -12,6 +12,7 @@ class Language:
     pragma: str  # regex for the comments that exclude code from the gates
     coverage_file: str  # the artifact the clean gate reads ...
     coverage_format: str  # ... and its format (a key of linecov.PARSERS)
+    mutation: bool  # a mutation tool is wired; without one `run` reports the harden gate as skipped
     sdk: str  # the Canonical Workshop SDK
     image: str  # the default Docker image (the policy can override it per language)
 
@@ -24,6 +25,7 @@ TABLE: dict[str, Language] = {
         pragma=r"#\s*(?:pragma:\s*no\s+(?:mutate|cover)|nosec)\b",
         coverage_file="coverage.json",
         coverage_format="coveragepy",
+        mutation=True,
         sdk="uv",
         image="ghcr.io/astral-sh/uv:python3.12-bookworm",
     ),
@@ -34,10 +36,22 @@ TABLE: dict[str, Language] = {
         pragma=r"//\s*nolint\b",
         coverage_file="cover.out",
         coverage_format="gocover",
+        mutation=True,
         sdk="go",
         image="golang:1.27",
     ),
 }
+TABLE["javascript"] = Language(
+    suffixes=(".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"),
+    markers=("package.json",),
+    tests=r"^(tests?|__tests__)/",
+    pragma=r"(?://|/\*)\s*(?:istanbul ignore|c8 ignore|eslint-disable|@ts-ignore|@ts-nocheck)\b",
+    coverage_file="lcov.info",
+    coverage_format="lcov",
+    mutation=False,
+    sdk="node",
+    image="node:22-bookworm",
+)
 NAMES = tuple(TABLE)
 
 

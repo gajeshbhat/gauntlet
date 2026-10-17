@@ -40,6 +40,7 @@ MUTMUT_HOW = "mutmut run && mutmut results --all true > mutmut-results.txt (or: 
 ARTIFACTS = {
     "python": ("coverage.json", "mutmut-results.txt"),
     "go": ("cover.out", "imports.txt", "mutation.json"),
+    "javascript": ("lcov.info",),
 }
 
 
@@ -64,6 +65,8 @@ def _arch_result(run: Run) -> arch.ArchResult:
     cfg = run.cfg
     if not cfg.layers:
         raise ValueError("no layers configured: add [layers] order to gauntlet.toml")
+    if cfg.language not in ("python", "go"):
+        raise ValueError(f"arch has no import reader for {cfg.language} yet")
     if cfg.language == "go":
         _trusted(run, ["imports.txt"])
         result = golang.arch_check(golang.read(run.art, "imports.txt", IMPORTS_HOW), cfg.layers)
@@ -109,8 +112,17 @@ def _clean(run: Run) -> GateResult:
     return GateResult("clean", not found, summary, found, {"functions": result.evaluated, "over": len(found)})
 
 
+def _harden_or_skip(run: Run) -> GateResult:
+    """For `run` and `loop`: a language without a wired mutation tool is reported as skipped, never as a pass."""
+    if languages.get(run.cfg.language).mutation:
+        return _harden(run)
+    return GateResult("harden", True, f"harden: SKIPPED, no mutation tool is wired for {run.cfg.language} yet")
+
+
 def _harden(run: Run) -> GateResult:
     cfg = run.cfg
+    if not languages.get(cfg.language).mutation:
+        raise ValueError(f"harden is not available for {cfg.language} yet")
     if cfg.language == "go":
         _trusted(run, ["mutation.json"])
         text = golang.read(run.art, "mutation.json", "gremlins unleash -o mutation.json .")
@@ -233,14 +245,14 @@ def _stamp(run: Run) -> int:
 def _run_pipeline(run: Run) -> list[GateResult]:
     names = runner.produce(run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
     print(f"produced {', '.join(names)}")
-    return [*_check(run), _harden(run)]
+    return [*_check(run), _harden_or_skip(run)]
 
 
 def _evaluator(run: Run, workspace: Path, out: Path, approved: Path) -> Callable[[], list[GateResult]]:
     def evaluate() -> list[GateResult]:
         sub = replace(run, root=workspace, source=workspace, art=out / "artifacts", feature=approved)
         runner.produce(workspace, run.cfg, sub.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
-        return [*_check(sub), _harden(sub), _spec(sub)]
+        return [*_check(sub), _harden_or_skip(sub), _spec(sub)]
 
     return evaluate
 
