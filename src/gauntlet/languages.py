@@ -8,6 +8,7 @@ from pathlib import Path
 class Language:
     suffixes: tuple[str, ...]  # source files
     markers: tuple[str, ...]  # files whose presence says "this project uses the language" (for `init`)
+    tests: str  # regex for test files: the clean gate does not hold them to the CRAP limit
     pragma: str  # regex for the comments that exclude code from the gates
     coverage_file: str  # the artifact the clean gate reads ...
     coverage_format: str  # ... and its format (a key of linecov.PARSERS)
@@ -19,6 +20,7 @@ TABLE: dict[str, Language] = {
     "python": Language(
         suffixes=(".py",),
         markers=("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"),
+        tests=r"(^|/)(tests?/|conftest\.py$|test_[^/]*\.py$|[^/]*_test\.py$)",
         pragma=r"#\s*(?:pragma:\s*no\s+(?:mutate|cover)|nosec)\b",
         coverage_file="coverage.json",
         coverage_format="coveragepy",
@@ -28,6 +30,7 @@ TABLE: dict[str, Language] = {
     "go": Language(
         suffixes=(".go",),
         markers=("go.mod",),
+        tests=r"_test\.go$",
         pragma=r"//\s*nolint\b",
         coverage_file="cover.out",
         coverage_format="gocover",

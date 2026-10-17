@@ -164,7 +164,7 @@ def test_clean_with_empty_coverage_is_an_error_not_a_pass(
     py_project(tmp_path)
     (tmp_path / "coverage.json").write_text('{"files": {}}')
     assert cli_run("clean", tmp_path) == 2
-    assert "no functions were evaluated" in capsys.readouterr().err
+    assert "mentions no source file of this project" in capsys.readouterr().err
 
 
 def test_clean_scope_that_matches_nothing_is_an_error(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:

@@ -120,3 +120,15 @@ def test_ambiguous_suffix_is_an_error() -> None:
 def test_paths_that_climb_out_are_refused(key: str) -> None:
     with pytest.raises(ValueError, match="escapes the project root"):
         linecov.locate(key, ["secret.py"])
+
+
+@pytest.mark.parametrize("block", ["a.go:9.1,3.2 1 1", "a.go:1.1,9000000.2 1 1"], ids=["backwards", "too-many-lines"])
+def test_go_profile_refuses_implausible_blocks(block: str) -> None:
+    with pytest.raises(ValueError, match="implausible block"):
+        linecov.gocover(f"mode: set\n{block}\n")
+
+
+def test_go_profile_caps_the_total_across_blocks() -> None:
+    blocks = "".join(f"a.go:1.1,{3_000_000}.2 1 1\n" for _ in range(2))
+    with pytest.raises(ValueError, match="implausible block"):
+        linecov.gocover("mode: set\n" + blocks)

@@ -130,7 +130,7 @@ def test_scope_limits_what_is_evaluated_and_reported(tmp_path: Path) -> None:
     assert check(tmp_path, {"mod.py": hits}, PY, 8, parse(["other.py"])).evaluated == 0
 
 
-def test_every_file_in_the_coverage_data_is_evaluated(tmp_path: Path) -> None:
+def test_every_measured_file_is_evaluated(tmp_path: Path) -> None:
     project(tmp_path, BRANCHY, "a.py")
     project(tmp_path, BRANCHY, "pkg/b.py")
     cov = {n: {1: 1, **{k: 0 for k in range(2, 9)}} for n in ("a.py", "pkg/b.py")}
@@ -157,7 +157,7 @@ def test_coverage_paths_cannot_climb_out_of_the_project(tmp_path: Path) -> None:
 
 
 def test_other_languages_use_the_same_gate(tmp_path: Path) -> None:
-    java = Language((".java",), ("pom.xml",), "x", "jacoco.xml", "jacoco", "java", "img")
+    java = Language((".java",), ("pom.xml",), "_Test\\.java$", "x", "jacoco.xml", "jacoco", "java", "img")
     src = "class A {\n  int f(int x) {\n    if (x > 1) { return 1; }\n    return 2;\n  }\n}\n"
     project(tmp_path, src, "src/main/java/com/x/A.java")
     covered = check(tmp_path, {"com/x/A.java": {3: 1, 4: 1}}, java, 8, Scope())
@@ -174,3 +174,24 @@ def test_source_that_is_not_text_is_an_error(tmp_path: Path) -> None:
     (tmp_path / "mod.py").write_bytes(b"\xff\xfe\x00")
     with pytest.raises(ValueError, match="not valid UTF-8"):
         check(tmp_path, {"mod.py": {1: 1}}, PY, 8, Scope())
+
+
+def test_a_source_file_the_report_never_mentions_counts_as_uncovered(tmp_path: Path) -> None:
+    project(tmp_path, BRANCHY, "a.py")
+    project(tmp_path, BRANCHY, "hidden.py")
+    cov = {"a.py": {1: 1, **{k: 1 for k in range(2, 9)}}}
+    ((path, f),) = check(tmp_path, cov, PY, 8, Scope()).offenders
+    assert (path, f.coverage) == ("hidden.py", 0.0)
+
+
+def test_test_files_are_not_held_to_the_limit(tmp_path: Path) -> None:
+    project(tmp_path, SIMPLE)
+    project(tmp_path, BRANCHY, "tests/test_mod.py")
+    project(tmp_path, BRANCHY, "pkg/conftest.py")
+    result = check(tmp_path, {"mod.py": {1: 1, 2: 1}}, PY, 8, Scope())
+    assert (result.evaluated, result.offenders) == (1, [])
+
+
+def test_a_report_matching_no_source_file_is_an_error_not_a_pass(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="mentions no source file"):
+        check(project(tmp_path), {}, PY, 8, Scope())

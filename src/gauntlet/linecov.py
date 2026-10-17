@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET  # noqa: N817
 from collections import defaultdict
 from collections.abc import Callable
 
+MAX_LINES = 5_000_000  # line entries one report may expand to
 Lines = dict[str, dict[int, int]]
 GO_BLOCK = re.compile(r"^(?P<file>.+):(?P<a>\d+)\.\d+,(?P<b>\d+)\.\d+ \d+ (?P<count>\d+)$")
 
@@ -31,12 +32,17 @@ def coveragepy(text: str) -> Lines:
 
 def gocover(text: str) -> Lines:
     lines: Lines = defaultdict(dict)
+    total = 0
     for raw in text.splitlines()[1:]:  # the first line is "mode: ..."
         block = GO_BLOCK.match(raw)
         if block is None:
             raise ValueError(raw)
+        first, last = int(block["a"]), int(block["b"])
+        total += last - first + 1
+        if last < first or total > MAX_LINES:  # a hostile profile must not make us expand billions of lines
+            raise ValueError(f"implausible block {raw!r}")
         hit = int(block["count"]) > 0
-        for n in range(int(block["a"]), int(block["b"]) + 1):
+        for n in range(first, last + 1):
             lines[block["file"]][n] = max(lines[block["file"]].get(n, 0), int(hit))
     return dict(lines)
 
