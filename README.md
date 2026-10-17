@@ -21,14 +21,14 @@ Every gate fails closed: checking nothing is an error, never a pass. Results are
 |---|---|---|---|
 | Python | pytest + coverage.py | mutmut | yes (gauntlet runs itself) |
 | Go | `go test -coverprofile` | gremlins | yes |
-| JavaScript / TypeScript | `npm ci --ignore-scripts`, `npm test` under c8 | none yet | yes (JS) |
-| C# | `dotnet test` + coverlet (the test project must reference `coverlet.collector`) | none yet | yes |
-| Java | Maven + JaCoCo (no pom edits) | none yet | yes |
-| Rust | cargo-llvm-cov | none yet | yes |
+| JavaScript / TypeScript | `npm ci --ignore-scripts`, `npm test` under c8 | Stryker | yes (JS) |
+| C# | `dotnet test` + coverlet (the test project must reference `coverlet.collector`) | Stryker.NET | yes |
+| Java | Maven + JaCoCo (no pom edits) | PIT | yes |
+| Rust | cargo-llvm-cov | cargo-mutants | yes |
 | C / C++ | CMake + gcov + gcovr (CMake projects only) | none yet | yes (C only) |
 | Dart | `dart test` + `coverage` (Flutter not yet; lizard reads Dart through its Java reader, so `=>` functions are not scored) | none yet | yes |
 
-Where `harden` has no tool, `run` reports it as skipped and **fails** unless your policy sets `allow_skipped_gates = true`.
+Where `harden` has no tool (C/C++ and Dart), `run` reports it as skipped and **fails** unless your policy sets `allow_skipped_gates = true`.
 `arch` (layers) works for Python and Go; other languages exit 2 until an import reader exists. Complexity comes from
 [lizard](https://github.com/terryyin/lizard) for every language.
 

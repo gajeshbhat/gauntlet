@@ -76,7 +76,9 @@ def test_rust_project_runs_through_cargo_llvm_cov_in_a_real_container(
     out = capsys.readouterr().out
     assert "src/lib.rs:5: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
     assert "src/lib.rs:1: f" not in out
-    assert "harden: SKIPPED" in out
+    assert "mutation score" in out
+    assert "src/lib.rs:6: FnValue 0 MissedMutant" in out  # risky is never exercised: its mutants survive
+    assert "src/lib.rs:2: FnValue" not in out  # f is tested: its function-level mutants are killed
 
 
 JS_FILES = {
@@ -88,7 +90,7 @@ JS_FILES = {
     + "function risky(a) {\n"
     + "".join(f"  if (a === {i}) {{ return {i}; }}\n" for i in range(1, 6))
     + "  return 0;\n}\nmodule.exports = { f, risky };\n",
-    "index.test.js": 'const t = require("node:test"), a = require("node:assert"), { f } = require("./index.js");\n'
+    "tests/index.test.js": 'const t = require("node:test"), a = require("node:assert"), { f } = require("../index.js");\n'
     't("f", () => { a.strictEqual(f(2), 1); a.strictEqual(f(0), 0); });\n',
 }
 
@@ -97,13 +99,16 @@ def test_javascript_project_runs_through_c8_in_a_real_container(
     tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     for name, text in JS_FILES.items():
+        (tmp_path / name).parent.mkdir(exist_ok=True)
         (tmp_path / name).write_text(text)
     for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x", "--no-gpg-sign"]):
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True)
     assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
     out = capsys.readouterr().out
     assert "index.js:5: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
-    assert "harden: SKIPPED" in out
+    assert "mutation score" in out  # Stryker killed the mutants in f ...
+    assert "index.js:7: ConditionalExpression Survived" in out  # ... and left the untested risky() ones alive
+    assert "harden: SKIPPED" not in out
 
 
 GUIDS = {"Demo": "C81ECFB0-998E-463C-8A0D-41B358036A04", "Demo.Tests": "9371B09D-E6F8-4A8B-8F6D-FF37A2E21BEF"}
@@ -144,7 +149,7 @@ CS_FILES = {
 }
 
 
-def test_csharp_project_runs_through_dotnet_test_and_coverlet_in_a_real_container(
+def test_csharp_project_runs_through_coverlet_and_stryker_net_in_a_real_container(
     tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     for name, text in CS_FILES.items():
@@ -155,7 +160,11 @@ def test_csharp_project_runs_through_dotnet_test_and_coverlet_in_a_real_containe
     assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
     out = capsys.readouterr().out
     assert "src/Demo/Calc.cs:9: Calc::Risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
-    assert "harden: SKIPPED" in out
+    assert "mutation score 21.4% < 90%" in out  # F's tests kill 3 mutants; Risky has none
+    assert (
+        "src/Demo/Calc.cs:6: Equality mutation Survived" in out
+    )  # covered, but the test cannot tell x > 1 from x >= 1
+    assert "src/Demo/Calc.cs:11: Equality mutation NoCoverage" in out  # untested code is not caught
 
 
 JAVA_FILES = {
@@ -184,7 +193,7 @@ JAVA_FILES = {
 }
 
 
-def test_java_project_runs_through_jacoco_in_a_real_container(
+def test_java_project_runs_through_jacoco_and_pit_in_a_real_container(
     tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     for name, text in JAVA_FILES.items():
@@ -195,7 +204,10 @@ def test_java_project_runs_through_jacoco_in_a_real_container(
     assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
     out = capsys.readouterr().out
     assert "src/main/java/com/x/A.java:7: A::risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
-    assert "harden: SKIPPED" in out
+    assert "mutation score 15.4% < 90%" in out  # f is tested (2 of 13 killed); risky is never run
+    assert "src/main/java/com/x/A.java:4: ConditionalsBoundaryMutator in f: SURVIVED" in out
+    assert "src/main/java/com/x/A.java:8: " in out
+    assert "NO_COVERAGE" in out
 
 
 CPP_FILES = {

@@ -45,3 +45,11 @@ def source_files(root: Path, suffixes: tuple[str, ...]) -> list[str]:
         dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not (top and d in SKIP_TOP))
         found += [(Path(dirpath) / n).relative_to(root).as_posix() for n in sorted(names) if n.endswith(suffixes)]
     return found
+
+
+def read_artifact(root: Path, name: str, how: str) -> str:
+    """A gate input produced earlier (`gauntlet run` or your own toolchain); a missing one says how to make it."""
+    path = root / name
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found; produce it with: {how}")
+    return read_text(path, MAX_ARTIFACT_BYTES)

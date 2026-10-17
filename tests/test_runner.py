@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -118,7 +119,7 @@ def test_go_steps(tmp_path: Path) -> None:
 
 
 def test_javascript_steps(tmp_path: Path) -> None:
-    install, tests = runner.steps(Config(language="javascript"), tmp_path)
+    install, tests, *_ = runner.steps(Config(language="javascript"), tmp_path)
     assert install.argv == ("npm", "ci", "--ignore-scripts")
     assert tests.argv == (
         "npx", "--yes", "c8@10.1.3", "--reporter=lcovonly", "--reports-dir=/project/.gauntlet-out", "npm", "test"
@@ -126,8 +127,35 @@ def test_javascript_steps(tmp_path: Path) -> None:
     assert tests.timeout == 3600
 
 
+def test_javascript_mutation_steps_are_fixed_pinned_and_use_our_own_stryker_config(tmp_path: Path) -> None:
+    steps = {s.name: s for s in runner.steps(Config(language="javascript"), tmp_path)}
+    assert steps["install-stryker"].argv == (
+        "npm", "install", "--prefix", "/project/.gauntlet-out/stryker", "--ignore-scripts", "--no-audit", "--no-fund",
+        "--no-save", "@stryker-mutator/core@9.6.1",
+    )  # fmt: skip
+    write = steps["stryker-config"].argv
+    assert write[:4] == ("sh", "-c", 'printf %s "$1" > "$2"', "sh")  # a fixed script; the config is data
+    assert write[-1] == "/project/.gauntlet-out/stryker.conf.json"
+    config = json.loads(write[4])
+    assert config["mutate"] == [
+        "**/*.{js,mjs,cjs,jsx,ts,tsx}", "!**/node_modules/**", "!.gauntlet-out/**", "!tests/**", "!test/**",
+        "!__tests__/**",
+    ]  # fmt: skip
+    assert config["jsonReporter"] == {"fileName": "/project/.gauntlet-out/stryker.json"}
+    assert config["commandRunner"] == {"command": "npm test"}
+    mutation = steps["mutation"]
+    assert mutation.argv == (
+        "node",
+        "/project/.gauntlet-out/stryker/node_modules/.bin/stryker",
+        "run",
+        "/project/.gauntlet-out/stryker.conf.json",
+    )  # an explicit config path: a repo's stryker.conf.* is never read
+    assert (mutation.timeout, mutation.must_pass) == (7200, False)
+    assert runner.REQUIRED["javascript"] == ("lcov.info", "stryker.json")
+
+
 def test_csharp_steps(tmp_path: Path) -> None:
-    tests, report = runner.steps(Config(language="csharp"), tmp_path)
+    tests, report, *_ = runner.steps(Config(language="csharp"), tmp_path)
     assert tests.argv == (
         "dotnet", "test", "--collect", "XPlat Code Coverage",
         "--results-directory", "/project/.gauntlet-out/results", "-p:RunSettingsFilePath=",
@@ -138,19 +166,57 @@ def test_csharp_steps(tmp_path: Path) -> None:
     assert report.argv[2] == runner.COPY_REPORT
 
 
-def test_java_steps(tmp_path: Path) -> None:
-    tests, collect = runner.steps(Config(language="java"), tmp_path)
-    jacoco = "org.jacoco:jacoco-maven-plugin:0.8.12"
-    assert tests.argv == (
-        "mvn", "-B", "-ntp", "-Dmaven.repo.local=/project/.gauntlet-out/m2", f"{jacoco}:prepare-agent", "test",
-        f"{jacoco}:report",
+def test_csharp_mutation_steps_pin_the_tool_and_use_only_our_config(tmp_path: Path) -> None:
+    *_, install, config, mutation, collect = runner.steps(Config(language="csharp"), tmp_path)
+    out = "/project/.gauntlet-out"
+    assert install.argv == (
+        "dotnet",
+        "tool",
+        "install",
+        "--tool-path",
+        f"{out}/tools",
+        "dotnet-stryker",
+        "--version",
+        "4.8.1",
+    )
+    assert config.argv[2] == 'echo \'{"stryker-config":{}}\' > "$1"'  # empty: nothing ignored, nothing narrowed
+    assert config.argv[:2] == ("sh", "-c") and config.argv[3:] == ("sh", f"{out}/stryker-config.json")
+    assert mutation.argv == (
+        f"{out}/tools/dotnet-stryker", "--config-file", f"{out}/stryker-config.json", "--mutate", "**/*.cs",
+        "--reporter", "json", "--output", f"{out}/stryker",
     )  # fmt: skip
+    assert (mutation.must_pass, mutation.timeout) == (False, 7200)
+    assert dict(mutation.env) == dict(install.env) and "XDG_RUNTIME_DIR" in dict(install.env)
+    assert collect.argv == ("cp", f"{out}/stryker/reports/mutation-report.json", f"{out}/stryker-report.json")
+    assert collect.must_pass is False
+    assert "stryker-report.json" in runner.REQUIRED["csharp"] + runner.FILES["csharp"]
+
+
+def test_java_steps(tmp_path: Path) -> None:
+    tests, collect, fetch, mutation, report = runner.steps(Config(language="java"), tmp_path)
+    jacoco = "org.jacoco:jacoco-maven-plugin:0.8.12"
+    m2 = "-Dmaven.repo.local=/project/.gauntlet-out/m2"
+    assert tests.argv == ("mvn", "-B", "-ntp", m2, f"{jacoco}:prepare-agent", "test", f"{jacoco}:report")
     assert tests.timeout == 3600
     assert collect.argv == ("cp", "target/site/jacoco/jacoco.xml", "/project/.gauntlet-out/jacoco.xml")
+    assert fetch.argv == (
+        "mvn", "-B", "-ntp", m2, "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get",
+        "-Dartifact=org.pitest:pitest-junit5-plugin:1.2.1", "-Dtransitive=false",
+    )  # fmt: skip
+    assert mutation.argv[:5] == ("mvn", "-B", "-ntp", m2, "org.pitest:pitest-maven:1.17.4:mutationCoverage")
+    assert set(mutation.argv[5:]) == {
+        "-DoutputFormats=XML", "-DtimestampedReports=false", "-Dmutators=DEFAULTS",
+        "-DadditionalClasspathElements=/project/.gauntlet-out/m2/org/pitest/pitest-junit5-plugin/1.2.1/"
+        "pitest-junit5-plugin-1.2.1.jar",
+        "-DexcludedClasses=", "-DexcludedMethods=", "-DexcludedTestClasses=", "-DwithHistory=false", "-DavoidCallsTo=",
+    }  # fmt: skip  # explicit, gauntlet-owned values; no -DtargetClasses (PIT then takes the built packages)
+    assert (mutation.timeout, mutation.must_pass) == (7200, False)
+    assert report.argv == ("cp", "target/pit-reports/mutations.xml", "/project/.gauntlet-out/mutations.xml")
+    assert report.must_pass is False
 
 
 def test_rust_steps(tmp_path: Path) -> None:
-    rustup, install, tests = runner.steps(Config(language="rust"), tmp_path)
+    rustup, install, tests, *extra = runner.steps(Config(language="rust"), tmp_path)
     assert rustup.argv == ("rustup", "component", "add", "llvm-tools-preview")
     assert install.argv == (
         "cargo", "install", "--locked", "--version", "0.6.21", "cargo-llvm-cov", "--root", "/project/.gauntlet-out/cargo"
@@ -160,6 +226,17 @@ def test_rust_steps(tmp_path: Path) -> None:
         "--output-path", "/project/.gauntlet-out/lcov.info",
     )  # fmt: skip
     assert tests.timeout == 3600
+    get, mutation, report = extra
+    assert get.argv == (
+        "cargo", "install", "--locked", "--version", "27.1.0", "cargo-mutants", "--root", "/project/.gauntlet-out/cargo"
+    )  # fmt: skip
+    assert mutation.argv == (
+        "/project/.gauntlet-out/cargo/bin/cargo-mutants", "mutants", "--no-config",
+        "--output", "/project/.gauntlet-out/mutants",
+    )  # fmt: skip
+    assert (mutation.timeout, mutation.must_pass, report.must_pass) == (7200, False, False)
+    assert report.argv[0] == "cp" and report.argv[2] == "/project/.gauntlet-out/mutants-outcomes.json"
+    assert "mutants-outcomes.json" in runner.REQUIRED["rust"] and "mutants-outcomes.json" in runner.FILES["rust"]
 
 
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
@@ -385,3 +462,52 @@ def test_the_cpp_lock_pins_every_requirement_with_hashes() -> None:
     entries = [line for line in lock.splitlines() if line and not line.startswith((" ", "#"))]
     assert entries and all("==" in line for line in entries)
     assert lock.count("--hash=sha256:") >= len(entries)
+
+
+def test_a_mutation_report_planted_by_the_tests_does_not_survive_a_crashed_mutation_run(
+    repo: Path, tmp_path: Path
+) -> None:
+    def behave(argv: Sequence[str], project: Path) -> ExecResult:
+        out = project / runner.OUT_DIR
+        if argv[0] == "rm":  # what the sandbox does with the removal step
+            (out / Path(argv[-1]).name).unlink(missing_ok=True)
+        if "c8@10.1.3" in argv:  # the repo's own tests plant a flattering report
+            (out / "lcov.info").write_text("SF:a.js\nDA:1,1\nend_of_record\n")
+            (out / "stryker.json").write_text('{"files": {}}')
+        return ExecResult(0, "", "")  # the real Stryker run produces nothing
+
+    factory, _ = make(behave)
+    with pytest.raises(ValueError, match="the sandbox did not produce stryker.json"):
+        runner.produce(repo, Config(language="javascript"), tmp_path / "out", factory)
+
+
+def test_the_stale_report_is_removed_by_the_sandbox_right_before_the_mutation_step(repo: Path, tmp_path: Path) -> None:
+    factory, made = make(lambda argv, project: ExecResult(0, "", ""))
+    with pytest.raises(ValueError, match="did not produce"):
+        runner.produce(repo, Config(language="javascript"), tmp_path / "out", factory)
+    calls = [(c[0][0], c[0][-1]) for c in made[0].calls]
+    removal = calls.index(("rm", "/project/.gauntlet-out/stryker.json"))
+    assert made[0].calls[removal + 1][0][1].endswith(".bin/stryker")  # the mutation run follows at once
+    assert made[0].calls[removal][1:] == ({}, 60) and list(made[0].calls[removal][0][:2]) == ["rm", "-f"]
+
+
+def test_a_failed_report_removal_stops_the_run(repo: Path, tmp_path: Path) -> None:
+    factory, _ = make(lambda argv, project: ExecResult(1 if argv[0] == "rm" else 0, "", "read-only file system"))
+    with pytest.raises(ValueError, match="could not clear the old mutation report: read-only file system"):
+        runner.produce(repo, Config(language="javascript"), tmp_path / "out", factory)
+
+
+def test_a_symlinked_output_directory_is_refused_before_anything_is_read(repo: Path, tmp_path: Path) -> None:
+    host = tmp_path / "host"
+    host.mkdir()
+    (host / "coverage.json").write_text('{"files": {}}')
+
+    def behave(argv: Sequence[str], project: Path) -> ExecResult:
+        if "pytest" in argv:  # the tests replace .gauntlet-out with a link to a host directory
+            shutil.rmtree(project / runner.OUT_DIR)
+            (project / runner.OUT_DIR).symlink_to(host)
+        return ExecResult(0, "", "")
+
+    factory, _ = make(behave)
+    with pytest.raises(ValueError, match=r"\.gauntlet-out is a symlink"):
+        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)

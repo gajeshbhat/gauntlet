@@ -67,6 +67,9 @@ def test_javascript_pragmas_and_test_dirs() -> None:
         "/* v8 ignore next */",
         "// node:coverage ignore next",
         "// node:coverage disable",
+        "// Stryker disable next-line all",
+        "/* Stryker disable all */",
+        "//Stryker disable-next-line EqualityOperator: why",
     ):
         assert re.search(js.pragma, text), text
     assert not re.search(js.pragma, "// an ordinary comment")
@@ -94,6 +97,9 @@ CSHARP_HINTS = (
     "  #  pragma warning disable",
     "x++; //codecov:ignore",
     "// codecov ignore",
+    "// Stryker disable once all",
+    "//Stryker disable All : reason",
+    "// Stryker restore all",
 )
 
 
@@ -103,7 +109,8 @@ def test_csharp_pragma_matches_every_hint_the_coverage_tool_honours(text: str) -
 
 
 def test_csharp_pragma_ignores_ordinary_code() -> None:
-    assert not re.search(languages.TABLE["csharp"].pragma, "// an ordinary comment\n#pragma warning restore CS0168")
+    text = "// an ordinary comment\n#pragma warning restore CS0168\n// Stryker was here"
+    assert not re.search(languages.TABLE["csharp"].pragma, text)
 
 
 def test_csharp_test_dirs_are_only_the_top_level_ones() -> None:
@@ -128,6 +135,8 @@ def test_java_pragmas_cover_every_hint_the_pinned_jacoco_and_linters_honour() ->
         "//CHECKSTYLE:OFF",
         "// @formatter:off",
         "//@formatter:off",
+        "@DoNotMutate",
+        "  @com.x.DoNotMutate",
     ):
         assert re.search(java.pragma, text), text
     assert not re.search(java.pragma, "// an ordinary comment")
@@ -140,7 +149,6 @@ def test_java_tests_are_only_the_top_level_test_dirs() -> None:
         assert re.search(java.tests, path), path
     for path in ("src/main/java/ATest.java", "src/main/test/A.java", "src/tests/A.java", "app/src/main/java/Test.java"):
         assert not re.search(java.tests, path), path
-    assert not java.mutation
     assert java.suffixes == (".java",)
 
 
@@ -149,6 +157,8 @@ RUST_HINTS = (
     "#[no_coverage]", "// LCOV_EXCL_LINE", "// LCOV_EXCL_START", "// LCOV_EXCL_STOP", "// LCOV_EXCL_BR_LINE",
     "#[allow(dead_code)]", "#![allow(clippy::all)]", "#[expect(unused)]", "#[cfg_attr(test, allow(unused))]",
     "#[rustfmt::skip]", "#[rustfmt :: skip]", "#[cfg_attr(rustfmt, rustfmt::skip)]", "#[automatically_derived]",
+    "#[mutants::skip]", "#[::mutants::skip]", "#[mutants :: skip]", "#[cfg_attr(test, mutants::skip)]",
+    "#![mutants::skip]",
 )  # fmt: skip
 
 
@@ -160,7 +170,6 @@ def test_rust_pragmas_and_test_dirs() -> None:
         assert not re.search(rs.pragma, text), text
     assert re.search(rs.tests, "tests/a.rs") and not re.search(rs.tests, "src/tests/a.rs")
     assert not re.search(rs.tests, "src/test/a.rs") and not re.search(rs.tests, "src/a_test.rs")
-    assert not rs.mutation
 
 
 def test_every_suffix_is_one_lizard_reads() -> None:
@@ -213,8 +222,8 @@ def test_lizard_reads_every_suffix_directly_or_through_the_named_reader(name: st
 
 def test_dart_row_and_test_dirs() -> None:
     dart = languages.TABLE["dart"]
-    assert (dart.suffixes, dart.markers, dart.coverage_format, dart.mutation) == (
-        (".dart",), ("pubspec.yaml",), "lcov", False
+    assert (dart.suffixes, dart.markers, dart.coverage_format) == (
+        (".dart",), ("pubspec.yaml",), "lcov"
     )  # fmt: skip
     assert re.search(dart.tests, "test/a_test.dart")
     for path in ("lib/test/a.dart", "lib/a_test.dart", "tests/a.dart", "test.dart"):
@@ -269,3 +278,11 @@ def test_pragmas_cover_every_spelling_the_tool_honours(language: str, hidden: li
         assert re.search(pattern, text), text
     for text in plain:
         assert not re.search(pattern, text), text
+
+
+def test_java_config_scan_reports_a_pitest_block_in_the_pom() -> None:
+    (glob, pattern), *_ = languages.TABLE["java"].config_scan
+    assert glob == "pom.xml"
+    for text in ("<artifactId>pitest-maven</artifactId>", "<groupId>org.pitest</groupId>"):
+        assert re.search(pattern, text), text
+    assert not re.search(pattern, "<artifactId>junit-jupiter</artifactId>")

@@ -61,7 +61,7 @@ def lcov(text: str) -> Lines:
     return lines
 
 
-def _xml(fmt: str, text: str) -> ET.Element:
+def parse_xml(fmt: str, text: str) -> ET.Element:
     if re.search(r"<!(DOCTYPE|ENTITY)", text, re.IGNORECASE):
         raise UnsafeXml(f"{fmt} report contains a DOCTYPE or entity declaration; refusing to parse it")
     try:
@@ -71,7 +71,7 @@ def _xml(fmt: str, text: str) -> ET.Element:
 
 
 def cobertura(text: str) -> Lines:
-    root = _xml("cobertura", text)
+    root = parse_xml("cobertura", text)
     sources = [(el.text or "").strip() for el in root.iter("source")]
     base = sources[0].rstrip("/") + "/" if len(sources) == 1 and sources[0].startswith("/") else ""
     lines: Lines = {}
@@ -89,7 +89,7 @@ JACOCO_DOCTYPE = '<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "repor
 
 def jacoco(text: str) -> Lines:
     lines: Lines = {}
-    for package in _xml("jacoco", text.replace(JACOCO_DOCTYPE, "", 1)).iter("package"):
+    for package in parse_xml("jacoco", text.replace(JACOCO_DOCTYPE, "", 1)).iter("package"):
         for source in package.iter("sourcefile"):
             target = lines.setdefault(f"{package.attrib['name']}/{source.attrib['name']}", {})
             for line in source.iter("line"):

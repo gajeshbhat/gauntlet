@@ -6,22 +6,13 @@ mutation.json   gremlins unleash -o mutation.json .
 """
 
 import json
-from pathlib import Path
 
 from gauntlet.arch import ArchResult, Violation, layer_of
 from gauntlet.results import Mutation
-from gauntlet.safefs import MAX_ARTIFACT_BYTES, read_text
 from gauntlet.scope import Scope
 
 CAUGHT = {"KILLED", "TIMED OUT"}
 IGNORED = {"NOT VIABLE", "SKIPPED"}
-
-
-def read(root: Path, name: str, how: str) -> str:
-    path = root / name
-    if not path.exists():
-        raise FileNotFoundError(f"{path} not found; produce it with: {how}")
-    return read_text(path, MAX_ARTIFACT_BYTES)
 
 
 def _outward(package: str, imported: list[str], layers: tuple[str, ...]) -> list[Violation]:

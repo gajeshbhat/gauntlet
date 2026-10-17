@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from gauntlet import golang
+from gauntlet.safefs import read_artifact
 from gauntlet.scope import parse
 
 IMPORTS = """\
@@ -70,7 +71,7 @@ def test_harden_without_mutants_in_scope_is_an_error() -> None:
 
 def test_load_artifacts_names_the_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="gocyclo.txt"):
-        golang.read(tmp_path, "gocyclo.txt", "gocyclo -over 0 ./...")
+        read_artifact(tmp_path, "gocyclo.txt", "gocyclo -over 0 ./...")
 
 
 def test_arch_same_layer_imports_are_fine() -> None:
