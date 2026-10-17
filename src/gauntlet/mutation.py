@@ -77,6 +77,17 @@ def cargo_mutants(text: str, scope: Scope) -> Mutation:
     return tally(mutants, scope, "cargo-mutants")
 
 
+def universalmutator(text: str, scope: Scope) -> Mutation:
+    """gauntlet's own report of a universalmutator run (cppmutants.py). `killed` (the tests, or a test timeout, failed
+    on the mutant) is caught. `survived` is not, and neither is any other status (fail closed). Mutants that do not
+    build were already left out by `mutate --cmd`; a mutant whose rebuild fails later counts as survived."""
+    mutants = (
+        Mutant(m["file"], m["line"], f"{m['mutation']}: {m['status']}", m["status"] == "killed")
+        for m in json.loads(text)["mutants"]
+    )
+    return tally(mutants, scope, "universalmutator")
+
+
 @dataclass(frozen=True)
 class Tool:
     artifact: str  # the file the sandbox run leaves behind
@@ -101,12 +112,12 @@ def _stryker_path(name: str) -> str:
     return name.removeprefix(SANDBOX_ROOT)
 
 
-def stryker_check(text: str, scope: Scope) -> Mutation:
-    """Stryker's JSON report (mutation-testing-elements schema) as one score.
+def stryker_check(text: str, scope: Scope, tool: str = "Stryker") -> Mutation:
+    """A JSON report in the mutation-testing-elements schema (Stryker, Mull) as one score.
 
     Killed, Timeout and RuntimeError count as caught. Survived and NoCoverage (no test ran the code) are NOT caught,
-    and any status Stryker adds later fails closed the same way. CompileError and Ignored are left out of the count
-    (Ignored covers Stryker's own filters; a disable comment is counted against the exclusion budget).
+    and any status the tool adds later fails closed the same way. CompileError and Ignored are left out of the count
+    (Ignored covers the tool's own filters; a disable comment is counted against the exclusion budget).
     """
     mutants = (
         Mutant(
@@ -119,7 +130,7 @@ def stryker_check(text: str, scope: Scope) -> Mutation:
         for m in file["mutants"]
         if m["status"] not in STRYKER_IGNORED
     )
-    return tally(mutants, scope, "Stryker")
+    return tally(mutants, scope, tool)
 
 
 TOOLS: dict[str, Tool] = {
@@ -148,10 +159,20 @@ TOOLS: dict[str, Tool] = {
         "cargo mutants --no-config -o out && cp out/mutants.out/outcomes.json mutants-outcomes.json (or: gauntlet run)",
         lambda text, scope, cfg: cargo_mutants(text, scope),  # noqa: ARG005
     ),
+    "cpp": Tool(
+        "cpp-mutants.json",
+        "see src/gauntlet/cppmutants.py: universalmutator over the CMake project (or: gauntlet run)",
+        lambda text, scope, cfg: universalmutator(text, scope),  # noqa: ARG005
+    ),
     "csharp": Tool(
         "stryker-report.json",
         "dotnet stryker --reporter json, then copy StrykerOutput/*/reports/mutation-report.json to"
         " stryker-report.json (or: gauntlet run)",
         lambda text, scope, cfg: stryker_check(text, scope),  # noqa: ARG005
+    ),
+    "cpp-clang": Tool(
+        "mull-report.json",
+        "mull-runner-21 <test binary> --reporters Elements, merge the reports as mull-report.json (or: gauntlet run)",
+        lambda text, scope, cfg: stryker_check(text, scope, "Mull"),  # noqa: ARG005
     ),
 }

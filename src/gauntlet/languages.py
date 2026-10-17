@@ -25,6 +25,22 @@ _MSBUILD_HIDES = (  # project settings that steer or filter coverlet, or that a 
     r"|<Exclude>|<Include>|IncludeTestAssembly|SkipAutoProps"
 )
 
+CPP_SUFFIXES = (".c", ".h", ".cc", ".cpp", ".cxx", ".hpp")
+CPP_TESTS = r"^tests?/"  # only the top-level test dir: a name inside the source tree cannot opt out
+CPP_PRAGMA = (
+    r"\b[GL]COVR?_EXCL_(?:LINE|START|STOP|BR_LINE|BR_START|BR_STOP|BR_SOURCE|FUNCTION)\b|\bNOLINT"
+    r"|#\s*pragma\s+(?:GCC|clang)\s+diagnostic\b|__attribute__\s*\(\(\s*no_(?:profile_)?instrument_function\b"
+    r"|\bmull-(?:off|ignore(?:-next)?)\b"  # Mull's comments that hide code from the mutation run
+    # universalmutator skips a line with DO_NOT_MUTATE, a @BEGIN/END_TEST_CODE block, and any line that opens
+    # or closes a /* comment (so code sharing that line is never mutated)
+    r"|\bDO_NOT_MUTATE\b|@(?:BEGIN|END)_TEST_CODE\b|\S.*?/\*|\*/\s*\S"
+)
+CPP_CONFIG_SCAN: tuple[ConfigScan, ...] = (
+    ("mull.yml", ""),  # Mull could mutate less; gauntlet passes its own config
+    ("*.rules", ""),  # universalmutator rule files: the sandbox run uses only its built-in rules
+    ("custom_handler.py", ""),  # universalmutator imports it if it finds it: the sandbox run does not
+)
+
 TABLE: dict[str, Language] = {
     "python": Language(
         suffixes=(".py",),
@@ -135,17 +151,26 @@ TABLE["rust"] = Language(
     ),
 )
 TABLE["cpp"] = Language(
-    suffixes=(".c", ".h", ".cc", ".cpp", ".cxx", ".hpp"),
+    suffixes=CPP_SUFFIXES,
     markers=("CMakeLists.txt", "Makefile", "meson.build"),
-    tests=r"^tests?/",  # only the top-level test dir: a name inside the source tree cannot opt out
-    pragma=(
-        r"\b[GL]COVR?_EXCL_(?:LINE|START|STOP|BR_LINE|BR_START|BR_STOP|BR_SOURCE|FUNCTION)\b|\bNOLINT"
-        r"|#\s*pragma\s+GCC\s+diagnostic\b|__attribute__\s*\(\(\s*no_(?:profile_)?instrument_function\b"
-    ),
+    tests=CPP_TESTS,
+    pragma=CPP_PRAGMA,
     coverage_file="lcov.info",
     coverage_format="lcov",
     sdk="cpp",
     image="gcc:14.3-bookworm",
+    config_scan=CPP_CONFIG_SCAN,
+)
+TABLE["cpp-clang"] = Language(  # clang coverage and Mull mutation; chosen with `language = "cpp-clang"`, never detected
+    suffixes=CPP_SUFFIXES,
+    markers=(),
+    tests=CPP_TESTS,
+    pragma=CPP_PRAGMA,
+    coverage_file="lcov.info",
+    coverage_format="lcov",
+    sdk="cpp",
+    image="silkeh/clang:21-trixie@sha256:7cb6d48fa9882b0956f09e6e722f38c9cef11fb676f60db2b9ce612f4ff9e58d",
+    config_scan=CPP_CONFIG_SCAN,
 )
 TABLE["dart"] = Language(
     suffixes=(".dart",),

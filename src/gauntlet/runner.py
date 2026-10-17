@@ -46,6 +46,13 @@ STRYKER_NET = "4.8.1"
 STRYKER_CONFIG = f"{IN_SANDBOX}/stryker-config.json"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
+MULL_URL = (  # built for clang 21.1.8, the exact release of the cpp-clang image
+    "https://github.com/mull-project/mull/releases/download/0.34.0/Mull-21-0.34.0-LLVM-21.1.8-ubuntu-amd64-26.04.deb"
+)
+MULL_SHA256 = "6b942ec5727f8ab5e06d7885d130a502dd0ad41c742814e6cbfdac3658f9a080"
+MULL = f"{IN_SANDBOX}/mull"
+MULL_CONFIG = f"{IN_SANDBOX}/mull.yml"
+MULL_REPORTS = f"{IN_SANDBOX}/mull-reports"
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
 PACKAGE_OK = re.compile(r"^\./[A-Za-z0-9_./-]*(\.\.\.)?$")
 
@@ -249,10 +256,27 @@ def _cpp_install() -> str:
     )
 
 
+CPP_FLAGS = tuple(f"-DCMAKE_{kind}_FLAGS=--coverage" for kind in ("C", "CXX", "EXE_LINKER"))
+CPP_MUTANTS = f"{IN_SANDBOX}/cppmutants.py"
+
+
+def _cpp_mutation_steps(env: tuple[tuple[str, str], ...]) -> list[Step]:
+    """universalmutator, driven by our own script (gauntlet.cppmutants, shipped as a file): it picks the
+    files from the language row, uses the built-in rules only and builds in its own build directory."""
+    row = languages.TABLE["cpp"]
+    script = (files("gauntlet") / "cppmutants.py").read_text()
+    args = (IN_SANDBOX, f"{IN_SANDBOX}/{mutation.TOOLS['cpp'].artifact}", ",".join(row.suffixes), row.tests)
+    return [
+        Step("mutation-script", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", script, CPP_MUTANTS)),
+        Step("mutation", ("python3", "-P", CPP_MUTANTS, "/project", *args, *CPP_FLAGS),
+             timeout=7200, must_pass=False, env=env),
+    ]  # fmt: skip
+
+
 def _cpp_steps() -> list[Step]:
     py, build = f"{IN_SANDBOX}/py", f"{IN_SANDBOX}/build"
     env = (("PYTHONPATH", py),)
-    flags = [f"-DCMAKE_{kind}_FLAGS=--coverage" for kind in ("C", "CXX", "EXE_LINKER")]
+    flags = list(CPP_FLAGS)
     return [
         Step("install", ("sh", "-c", _cpp_install())),
         Step("configure", (f"{py}/bin/cmake", "-S", ".", "-B", build, "-DCMAKE_BUILD_TYPE=Debug", *flags), env=env),
@@ -266,7 +290,61 @@ def _cpp_steps() -> list[Step]:
             ),
             env=env,
         ),
+        *_cpp_mutation_steps(env),
     ]  # fmt: skip
+
+
+def _mull_config() -> str:
+    """Mull's settings, ours alone (MULL_CONFIG names this file, so a mull.yml in the repo or above it is never read).
+    JSON is YAML. Only project code is mutated: not the top-level test directories, nor our own output."""
+    tests = languages.TABLE["cpp-clang"].tests.removeprefix("^")
+    return json.dumps({"includePaths": ["^/project/"], "excludePaths": [f"^/project/(?:{tests}|{OUT_DIR}/)"]})
+
+
+def _cpp_clang_steps() -> list[Step]:
+    """Coverage from clang's source-based instrumentation; mutation with Mull, whose clang plugin is fetched by its
+    pinned hash and unpacked without root. The helper (data/cpp-clang-driver.txt) finds the test executables through
+    `ctest --show-only=json-v1`, so nothing the repository contains chooses what runs."""
+    driver = (files("gauntlet") / "data" / "cpp-clang-driver.txt").read_text()
+    helper = ("python3", "-I", "-c", driver)
+    build, mull_build, profiles = f"{IN_SANDBOX}/build", f"{IN_SANDBOX}/mull-build", f"{IN_SANDBOX}/prof"
+    cov = "-fprofile-instr-generate -fcoverage-mapping"
+    plugin = f"-O0 -g -grecord-command-line -fpass-plugin={MULL}/usr/lib/mull-ir-frontend-21"
+    cmake = ("cmake", "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++", "-DCMAKE_BUILD_TYPE=Debug")
+    env = (("MULL_CONFIG", MULL_CONFIG),)
+
+    def configure(where: str, flags: str) -> tuple[str, ...]:
+        return (*cmake, "-S", ".", "-B", where, f"-DCMAKE_C_FLAGS={flags}", f"-DCMAKE_CXX_FLAGS={flags}")
+
+    return [
+        Step("install-mull", (*helper, "install", MULL_URL, MULL_SHA256, MULL)),
+        Step("configure", (*configure(build, cov), f"-DCMAKE_EXE_LINKER_FLAGS={cov}")),
+        Step("build", ("cmake", "--build", build), timeout=3600),
+        Step(
+            "tests",
+            ("ctest", "--test-dir", build, "--output-on-failure"),
+            timeout=3600,
+            env=(("LLVM_PROFILE_FILE", f"{profiles}/%p-%m.profraw"),),
+        ),
+        Step("coverage", (*helper, "coverage", build, profiles, f"{IN_SANDBOX}/lcov.info")),
+        Step("mull-config", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", _mull_config(), MULL_CONFIG)),
+        Step("mull-configure", configure(mull_build, plugin), env=env),
+        Step("mull-build", ("cmake", "--build", mull_build), timeout=3600, env=env),
+        Step(
+            "mutation",
+            (
+                *helper,
+                "mutate",
+                mull_build,
+                f"{MULL}/usr/bin/mull-runner-21",
+                MULL_REPORTS,
+                f"{IN_SANDBOX}/mull-report.json",
+            ),
+            timeout=7200,
+            must_pass=False,
+            env=env,
+        ),
+    ]
 
 
 def _dart_steps() -> list[Step]:
@@ -293,20 +371,21 @@ def _dart_steps() -> list[Step]:
     ]
 
 
+BUILDERS: dict[str, Callable[[], list[Step]]] = {
+    "csharp": _dotnet_steps,
+    "java": _java_steps,
+    "rust": _rust_steps,
+    "cpp": _cpp_steps,
+    "cpp-clang": _cpp_clang_steps,
+    "dart": _dart_steps,
+    "javascript": _js_steps,
+}
+
+
 def steps(cfg: Config, snap: Path) -> list[Step]:
     if cfg.language == "go":
         return _go_steps(cfg, snap)
-    if cfg.language == "csharp":
-        return _dotnet_steps()
-    if cfg.language == "java":
-        return _java_steps()
-    if cfg.language == "rust":
-        return _rust_steps()
-    if cfg.language == "cpp":
-        return _cpp_steps()
-    if cfg.language == "dart":
-        return _dart_steps()
-    return _js_steps() if cfg.language == "javascript" else _python_steps(cfg)
+    return BUILDERS[cfg.language]() if cfg.language in BUILDERS else _python_steps(cfg)
 
 
 FILES = {
@@ -316,7 +395,8 @@ FILES = {
     "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
     "java": ("jacoco.xml", "mutations.xml"),
     "rust": ("lcov.info", "mutants-outcomes.json"),
-    "cpp": ("lcov.info",),
+    "cpp": ("lcov.info", "cpp-mutants.json"),
+    "cpp-clang": ("lcov.info", "mull-report.json"),
     "dart": ("lcov.info",),
 }  # artifacts the sandbox writes itself
 REQUIRED = {
@@ -326,7 +406,8 @@ REQUIRED = {
     "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
     "java": ("jacoco.xml",),
     "rust": ("lcov.info", "mutants-outcomes.json"),
-    "cpp": ("lcov.info",),
+    "cpp": ("lcov.info", "cpp-mutants.json"),
+    "cpp-clang": ("lcov.info", "mull-report.json"),
     "dart": ("lcov.info",),
 }
 
@@ -340,12 +421,20 @@ INTERMEDIATES = {  # what the copy steps after a mutation run read, as the tool 
     "java": ("target/pit-reports",),
     "csharp": (f"{IN_SANDBOX}/stryker",),
     "rust": (MUTANTS_OUT,),
+    "cpp": (f"{IN_SANDBOX}/mutwork", f"{IN_SANDBOX}/mutbuild"),
+    "cpp-clang": (MULL_REPORTS,),
 }
 
 
 def _stale(language: str) -> tuple[str, ...]:
     tool = mutation.TOOLS.get(language)
     return (f"{IN_SANDBOX}/{tool.artifact}", *INTERMEDIATES.get(language, ())) if tool else ()
+
+
+def _clear(box: Sandbox, stale: tuple[str, ...]) -> None:
+    removal = box.exec(["rm", "-rf", "--", *stale], {}, 60)
+    if removal.code != 0:
+        raise ValueError(f"could not clear the old mutation report: {output_tail(removal)}")
 
 
 def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> dict[str, bytes]:
@@ -356,9 +445,7 @@ def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> d
     captured: dict[str, bytes] = {}
     for step in plan:
         if stale and step.name == "mutation":
-            removal = box.exec(["rm", "-rf", "--", *stale], {}, 60)
-            if removal.code != 0:
-                raise ValueError(f"could not clear the old mutation report: {output_tail(removal)}")
+            _clear(box, stale)
         done = box.exec(step.argv, dict(step.env), step.timeout)
         if done.code != 0 and step.must_pass:
             raise ValueError(f"step {step.name!r} failed (exit {done.code}): {output_tail(done)}")
@@ -367,12 +454,17 @@ def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> d
     return captured
 
 
+def _check_size(name: str, data: bytes) -> None:
+    if len(data) > MAX_ARTIFACT_BYTES:
+        raise ValueError(f"{name} is {len(data)} bytes, over the {MAX_ARTIFACT_BYTES} byte limit")
+
+
 def _read_artifact(path: Path) -> bytes | None:
     if path.is_symlink():
         raise ValueError(f"{path.name} is a symlink")
     data = path.read_bytes() if path.is_file() else None
-    if data is not None and len(data) > MAX_ARTIFACT_BYTES:
-        raise ValueError(f"{path.name} is {len(data)} bytes, over the {MAX_ARTIFACT_BYTES} byte limit")
+    if data is not None:
+        _check_size(path.name, data)
     return data
 
 
@@ -385,8 +477,7 @@ def _collect(snap: Path, language: str, captured: dict[str, bytes]) -> dict[str,
         if data is not None:
             found[name] = data
     for name, data in captured.items():
-        if len(data) > MAX_ARTIFACT_BYTES:
-            raise ValueError(f"{name} is {len(data)} bytes, over the {MAX_ARTIFACT_BYTES} byte limit")
+        _check_size(name, data)
     missing = [n for n in REQUIRED[language] if n not in found]
     if missing:
         raise ValueError(f"the sandbox did not produce {', '.join(missing)}")

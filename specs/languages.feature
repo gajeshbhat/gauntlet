@@ -37,9 +37,9 @@ Feature: Gates hold for every supported language
     When the exclusions gate scans it
     Then the file is listed as a config exclude
 
-  @test(tests/test_cli.py::test_run_checks_cpp_coverage_and_says_harden_was_skipped)
+  @test(tests/test_cli.py::test_run_checks_dart_coverage_and_names_code_the_reader_could_not_see)
   Scenario: A language without a mutation tool fails unless the operator accepts it
-    Given a C++ project and a default policy
+    Given a Dart project and a default policy
     When gauntlet runs
     Then harden is reported as skipped and the run fails
 

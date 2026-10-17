@@ -6,6 +6,7 @@ import pytest
 
 from gauntlet import languages, linecov
 from gauntlet.clean import function_findings
+from gauntlet.exclusions import config_hints
 from gauntlet.names import IMAGE
 
 
@@ -18,7 +19,7 @@ def test_the_table_is_the_one_list_of_supported_languages() -> None:
 def test_every_row_is_well_formed(name: str) -> None:
     row = languages.TABLE[name]
     assert row.suffixes and all(s.startswith(".") and s == s.lower() for s in row.suffixes)
-    assert row.markers
+    assert row.markers or name == "cpp-clang"  # the one row you choose by name
     assert row.coverage_format in linecov.PARSERS
     assert IMAGE.match(row.image)
     assert re.compile(row.pragma)  # a valid exclusion pattern
@@ -187,6 +188,17 @@ def test_every_suffix_is_one_lizard_reads() -> None:
             assert get_reader_for(f"x.{row.parse_as}" if row.parse_as else f"x{suffix}"), (name, suffix)
 
 
+UM_HINTS = [  # every way universalmutator leaves a line unmutated
+    "x = 1; // DO_NOT_MUTATE",
+    "/* DO_NOT_MUTATE */",
+    "// @BEGIN_TEST_CODE",
+    "// @END_TEST_CODE",
+    "if (x > 1) return 1; /* a note",  # code before a /* : the line is skipped, and the rest is a comment
+    'glob("src/*.c");',  # a /* in a string starts a "comment" that hides the lines after it
+    "end of comment */ if (x > 1) return 1;",  # code after a */ : the closing line is skipped
+]
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -198,14 +210,53 @@ def test_every_suffix_is_one_lizard_reads() -> None:
         "# pragma  GCC diagnostic push",
         "void f(void) __attribute__((no_instrument_function));",
         "__attribute__ (( no_profile_instrument_function ))",
+        *UM_HINTS,
+        '#pragma clang diagnostic ignored "-Wall"',
+        "if (a == 1) { return 1; } // mull-ignore: cxx_eq_to_ne",
+        "// mull-ignore-next: cxx_eq_to_ne",
+        "// mull-off",
+        "/* mull-off: cxx_all */",
     ],
 )
 def test_cpp_pragmas_cover_every_exclusion_hint(text: str) -> None:
-    assert re.search(languages.TABLE["cpp"].pragma, text), text
+    for name in ("cpp", "cpp-clang"):
+        assert re.search(languages.TABLE[name].pragma, text), text
 
 
-def test_cpp_ordinary_code_is_not_a_pragma() -> None:
-    assert not re.search(languages.TABLE["cpp"].pragma, "// an ordinary comment about EXCLUSION\nint x;")
+@pytest.mark.parametrize(
+    "text",
+    [
+        "// an ordinary comment about EXCLUSION\nint x;",
+        "/* a plain comment line",
+        "/** doc */",
+        " * middle */",
+        "int mull_off = 1; // mull is a tool",
+        "a / b * c;",
+    ],
+)
+def test_cpp_ordinary_code_is_not_a_pragma(text: str) -> None:
+    assert not re.search(languages.TABLE["cpp"].pragma, text)
+
+
+def test_cpp_clang_is_chosen_by_name_and_shares_the_cpp_rules(tmp_path: Path) -> None:
+    cpp, clang = languages.TABLE["cpp"], languages.TABLE["cpp-clang"]
+    assert clang.markers == ()
+    (tmp_path / "CMakeLists.txt").write_text("")
+    assert languages.detect(tmp_path) == ["cpp"]  # never picked by detect
+    assert languages.get("cpp-clang") is clang
+    assert (clang.suffixes, clang.tests, clang.pragma, clang.config_scan) == (
+        cpp.suffixes,
+        cpp.tests,
+        cpp.pragma,
+        cpp.config_scan,
+    )
+    assert (clang.coverage_file, clang.coverage_format) == ("lcov.info", "lcov")
+    assert "@sha256:" in clang.image  # the Mull plugin must match this exact clang
+
+
+def test_a_mull_yml_is_reported_as_a_settings_file(tmp_path: Path) -> None:
+    (tmp_path / "mull.yml").write_text("excludePaths: ['.*']\n")
+    assert config_hints(tmp_path, "cpp-clang") == ["mull.yml: coverage-affecting settings file"]
 
 
 def test_cpp_test_dirs_are_top_level_only_and_suffixes_are_lizard_known() -> None:
@@ -265,6 +316,7 @@ def test_ordinary_dart_comments_are_not_pragmas() -> None:
     ("language", "hidden", "plain"),
     [
         ("cpp", ["x; // GCOV_EXCL_LINE", "// LCOVR_EXCL_START", "// GCOVR_EXCL_BR_SOURCE"], ["int gcov_excl = 1;"]),
+        ("cpp-clang", ["x; // GCOV_EXCL_LINE", "// mull-off", "x; // mull-ignore: cxx_all"], ["int gcov_excl = 1;"]),
         (
             "rust",
             [

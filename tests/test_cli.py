@@ -911,8 +911,8 @@ def test_run_checks_javascript_coverage_and_scores_the_stryker_report(
 def test_harden_asked_for_directly_is_an_error_where_no_tool_is_wired(
     tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
 ) -> None:
-    assert cli_run("harden", project(tmp_path, 'language = "cpp"\n')) == 2
-    assert "harden is not available for cpp yet" in capsys.readouterr().err
+    assert cli_run("harden", project(tmp_path, 'language = "dart"\n')) == 2
+    assert "harden is not available for dart yet" in capsys.readouterr().err
 
 
 def test_arch_with_layers_is_an_error_where_no_import_reader_exists(
@@ -1008,31 +1008,65 @@ def test_run_checks_java_coverage_and_scores_pit_mutants(
     assert "SKIPPED" not in out
 
 
-# ---- C and C++: coverage gates work, harden is visibly skipped
+# ---- C and C++: coverage gates and universalmutator harden
 class CppSandbox(RunSandbox):
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        out = self.project / ".gauntlet-out"
         if "gcovr" in argv:
-            (self.project / ".gauntlet-out" / "lcov.info").write_text(
-                "SF:/project/a.c\nDA:1,1\nDA:2,1\nend_of_record\n"
-            )
+            (out / "lcov.info").write_text("SF:/project/a.c\nDA:1,1\nDA:2,1\nend_of_record\n")
+        if "-P" in argv and argv[2].endswith("cppmutants.py"):  # the stubbed universalmutator run
+            muts = [
+                {"file": "a.c", "line": 2, "mutation": "x + 1 -> x - 1", "status": s} for s in ("killed", "survived")
+            ]
+            (out / "cpp-mutants.json").write_text(json.dumps({"mutants": muts}))
         return ExecResult(0, "", "")
 
 
-def test_run_checks_cpp_coverage_and_says_harden_was_skipped(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+def test_run_checks_cpp_coverage_and_scores_the_universalmutator_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
 ) -> None:
-    lax = write_policy("allow_skipped_gates = true\n")
     project(tmp_path, 'language = "cpp"\n')
     (tmp_path / "a.c").write_text("int f(int x) {\n  return x + 1;\n}\n")
     for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-q", "-m", "x", "--no-gpg-sign")):
         git(tmp_path, *args)
     monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: CppSandbox(project))  # type: ignore[misc]  # noqa: ARG005
-    assert main(["run", str(tmp_path)]) == 1  # a skipped gate fails unless the operator's policy accepts it
-    assert main(["run", str(tmp_path), "--policy", str(lax)]) == 0
+    assert main(["run", str(tmp_path)]) == 1
     out = capsys.readouterr().out
-    assert "produced lcov.info" in out
+    assert "produced cpp-mutants.json, lcov.info" in out
     assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
-    assert "harden: SKIPPED, no mutation tool is wired for cpp yet" in out
+    assert "mutation score 50.0% < 90%" in out
+    assert "a.c:2: x + 1 -> x - 1: survived" in out
+    assert "SKIPPED" not in out
+
+
+# ---- cpp-clang: clang coverage and a Mull report
+class ClangSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        out = self.project / ".gauntlet-out"
+        if "coverage" in argv:
+            (out / "lcov.info").write_text("SF:/project/a.c\nDA:1,1\nDA:2,1\nend_of_record\n")
+        if "mutate" in argv:  # the stubbed Mull run
+            muts = [{"mutatorName": "cxx_add_to_sub", "status": s, "location": {"start": {"line": 2}}}
+                    for s in ("Killed", "Survived")]  # fmt: skip
+            (out / "mull-report.json").write_text(json.dumps({"files": {"/project/a.c": {"mutants": muts}}}))
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_cpp_clang_coverage_and_scores_the_mull_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    project(tmp_path, 'language = "cpp-clang"\n')
+    (tmp_path / "a.c").write_text("int f(int x) {\n  return x + 1;\n}\n")
+    for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-q", "-m", "x", "--no-gpg-sign")):
+        git(tmp_path, *args)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: ClangSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "produced lcov.info, mull-report.json" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "mutation score 50.0% < 90%" in out
+    assert "a.c:2: cxx_add_to_sub Survived" in out
+    assert "SKIPPED" not in out
 
 
 # ---- Dart: the same, with the unreadable-file rule visible end to end

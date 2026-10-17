@@ -1,6 +1,7 @@
 """Runs real containers. Opt in with GAUNTLET_DOCKER_TESTS=1 (needs Docker and network to pull the image)."""
 
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -239,7 +240,35 @@ def test_cpp_project_runs_through_cmake_and_gcovr_in_a_real_container(
     out = capsys.readouterr().out
     assert "src/demo.c:5: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
     assert "src/demo.c:1: f" not in out
-    assert "harden: SKIPPED" in out
+    assert "mutation score" in out and "< 90%" in out  # f is tested; risky is never run
+    assert re.search(r"src/demo\.c:6: if \(a == 1\).*: survived", out)  # a survivor, with file:line
+    assert "SKIPPED" not in out
+
+
+CPP_CLANG_FILES = {
+    **CPP_FILES,
+    "gauntlet.toml": 'language = "cpp-clang"',
+    "mull.yml": 'excludePaths: [".*"]\n',  # a repo trying to hide itself from the mutation run: must be ignored
+}
+
+
+def test_cpp_clang_project_runs_through_clang_coverage_and_mull_in_a_real_container(
+    tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name, text in CPP_CLANG_FILES.items():
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_text(text)
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x", "--no-gpg-sign"]):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True)
+    assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
+    out = capsys.readouterr().out
+    assert "src/demo.c:5: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
+    assert "src/demo.c:1: f" not in out
+    assert "mutation score" in out
+    assert "src/demo.c:6: cxx_eq_to_ne Survived" in out  # risky is never exercised: its mutants survive
+    assert "cxx_gt_to_le" not in out  # f is tested: that mutant is killed
+    assert "tests/t.c" not in out  # the tests themselves are not mutated
+    assert "harden: SKIPPED" not in out
 
 
 DART_FILES = {
