@@ -20,7 +20,7 @@ TABLE: dict[str, Language] = {
     "python": Language(
         suffixes=(".py",),
         markers=("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"),
-        tests=r"(^|/)(tests?/|conftest\.py$|test_[^/]*\.py$|[^/]*_test\.py$)",
+        tests=r"^(tests?/|conftest\.py$)",  # only the top-level test dir: a name inside src/ cannot opt out
         pragma=r"#\s*(?:pragma:\s*no\s+(?:mutate|cover)|nosec)\b",
         coverage_file="coverage.json",
         coverage_format="coveragepy",

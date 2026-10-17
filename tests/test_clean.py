@@ -187,9 +187,16 @@ def test_a_source_file_the_report_never_mentions_counts_as_uncovered(tmp_path: P
 def test_test_files_are_not_held_to_the_limit(tmp_path: Path) -> None:
     project(tmp_path, SIMPLE)
     project(tmp_path, BRANCHY, "tests/test_mod.py")
-    project(tmp_path, BRANCHY, "pkg/conftest.py")
     result = check(tmp_path, {"mod.py": {1: 1, 2: 1}}, PY, 8, Scope())
     assert (result.evaluated, result.offenders) == (1, [])
+
+
+@pytest.mark.parametrize("name", ["src/test_evil.py", "src/tests/evil.py", "pkg/conftest.py", "src/evil_test.py"])
+def test_a_test_looking_name_inside_the_source_tree_is_still_checked(tmp_path: Path, name: str) -> None:
+    project(tmp_path)
+    project(tmp_path, BRANCHY, name)
+    ((path, _),) = check(tmp_path, {"mod.py": {1: 1, 2: 1}}, PY, 8, Scope()).offenders
+    assert path == name
 
 
 def test_a_report_matching_no_source_file_is_an_error_not_a_pass(tmp_path: Path) -> None:
