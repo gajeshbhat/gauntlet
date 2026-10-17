@@ -22,7 +22,6 @@ GOBIN = f"{IN_SANDBOX}/bin"
 UV = ("uv", "run", "--project", "/project")
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
-GOCYCLO = "github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0"
 GREMLINS = "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
 LIST_FORMAT = '{{.ImportPath}} {{join .Imports " "}}'
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
@@ -75,13 +74,10 @@ def _go_steps(cfg: Config, snap: Path) -> list[Step]:
     packages = tuple(_safe_package(p) for p in cfg.packages)
     mutation_dir = _safe_path(cfg.mutation_dir or ".")
     env = (("GOBIN", GOBIN), ("GOFLAGS", "-buildvcs=false"))
-    profile = f"{IN_SANDBOX}/c.out"
+    profile = f"{IN_SANDBOX}/cover.out"
     return [
-        Step("install-gocyclo", ("go", "install", GOCYCLO), env=env),
         Step("install-gremlins", ("go", "install", GREMLINS), env=env),
         Step("tests", ("go", "test", "-count=1", f"-coverprofile={profile}", *packages), timeout=3600, env=env),
-        Step("cover-func", ("go", "tool", "cover", f"-func={profile}"), "cover-func.txt"),
-        Step("complexity", (f"{GOBIN}/gocyclo", "."), "gocyclo.txt"),
         Step("imports", ("go", "list", "-e", "-f", LIST_FORMAT, *packages), "imports.txt", env=env),
         Step(
             "mutation",
@@ -104,8 +100,8 @@ def steps(cfg: Config, snap: Path) -> list[Step]:
     return _go_steps(cfg, snap) if cfg.language == "go" else _python_steps(cfg)
 
 
-FILES = {"python": ("coverage.json",), "go": ("mutation.json",)}  # artifacts the sandbox writes itself
-REQUIRED = {"python": ("coverage.json", "mutmut-results.txt"), "go": ("cover-func.txt", "gocyclo.txt", "imports.txt")}
+FILES = {"python": ("coverage.json",), "go": ("cover.out", "mutation.json")}  # artifacts the sandbox writes itself
+REQUIRED = {"python": ("coverage.json", "mutmut-results.txt"), "go": ("cover.out", "imports.txt")}
 
 
 def output_tail(done: ExecResult) -> str:

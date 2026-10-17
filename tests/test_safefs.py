@@ -45,3 +45,13 @@ def test_read_text_rejects_undecodable_files(tmp_path: Path) -> None:
     path.write_bytes(b"\xff\xfe\x00")
     with pytest.raises(ValueError, match="not valid UTF-8"):
         read_text(path, 100)
+
+
+def test_source_files_lists_by_suffix_and_skips_vendored_directories(tmp_path: Path) -> None:
+    from gauntlet.safefs import source_files
+
+    for rel in ("a.py", "pkg/b.py", "pkg/c.txt", ".venv/x.py", "node_modules/m/y.py", "pkg/sub/d.PY"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("")
+    assert source_files(tmp_path, (".py",)) == ["a.py", "pkg/b.py"]
+    assert source_files(tmp_path, (".py", ".txt")) == ["a.py", "pkg/b.py", "pkg/c.txt"]

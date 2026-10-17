@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-LANGUAGES = ("python", "go")
+from gauntlet import languages
+
 KEYS = {
     "": {"language", "src", "crap", "mutation", "layers", "go"},
     "crap": {"max"},
@@ -74,8 +75,10 @@ def load(path: Path) -> Config:
     language = top.get("language")
     if language is None:
         raise ValueError(f"{path}: 'language' is required")
-    if language not in LANGUAGES:
-        raise ValueError(f"{path}: unsupported language {language!r}, expected one of {LANGUAGES}")
+    try:
+        languages.get(language)
+    except ValueError as e:
+        raise ValueError(f"{path}: {e}") from None
     return Config(
         language=language,
         crap_max=_int(path, sections["crap"], "max", Config.crap_max, 1, 1000),

@@ -105,12 +105,9 @@ def test_go_steps(tmp_path: Path) -> None:
         (tmp_path / "lxd" / "device" / name).write_text("package device\n")
     cfg = Config(language="go", packages=("./lxd/device/",), mutation_dir="lxd/device", mutate_only=("disk.go",))
     steps = {s.name: s for s in runner.steps(cfg, tmp_path)}
-    assert steps["install-gocyclo"].argv == ("go", "install", "github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0")
     assert steps["install-gremlins"].argv == ("go", "install", "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0")
-    assert steps["tests"].argv[:4] == ("go", "test", "-count=1", "-coverprofile=/project/.gauntlet-out/c.out")
+    assert steps["tests"].argv[:4] == ("go", "test", "-count=1", "-coverprofile=/project/.gauntlet-out/cover.out")
     assert steps["tests"].argv[-1] == "./lxd/device/"
-    assert steps["cover-func"].capture == "cover-func.txt"
-    assert steps["complexity"].argv == ("/project/.gauntlet-out/bin/gocyclo", ".")
     assert steps["imports"].argv[-1] == "./lxd/device/"
     mutation = steps["mutation"].argv
     assert mutation[:2] == ("/project/.gauntlet-out/bin/gremlins", "unleash")
@@ -209,20 +206,16 @@ def test_go_pipeline_collects_captured_and_written_artifacts(repo: Path, tmp_pat
     def go_behaviour(argv: Sequence[str], project: Path) -> ExecResult:
         out = project / runner.OUT_DIR
         if argv[:2] == ["go", "test"]:
-            (out / "c.out").write_text("mode: set\n")
-        if "-func=/project/.gauntlet-out/c.out" in argv:
-            return ExecResult(0, "cover\n", "")
+            (out / "cover.out").write_text("mode: set\n")
         if argv[:2] == [f"{runner.IN_SANDBOX}/bin/gremlins", "unleash"]:
             (out / "mutation.json").write_text('{"files": []}')
-        if argv[0].endswith("gocyclo") and len(argv) == 2:
-            return ExecResult(0, "1 p f a.go:1:1\n", "")
         if argv[:2] == ["go", "list"]:
             return ExecResult(0, "m/a fmt\n", "")
         return ExecResult(0, "", "")
 
     factory, _ = make(go_behaviour)
     names = runner.produce(repo, Config(language="go"), tmp_path / "out", factory)
-    assert names == ["cover-func.txt", "gocyclo.txt", "imports.txt", "mutation.json"]
+    assert names == ["cover.out", "imports.txt", "mutation.json"]
     assert (tmp_path / "out" / "imports.txt").read_text() == "m/a fmt\n"
 
 
@@ -243,10 +236,8 @@ def test_oversized_captured_output_is_refused(repo: Path, tmp_path: Path, monkey
 
 def test_steps_receive_their_timeouts_and_environment(repo: Path, tmp_path: Path) -> None:
     def go_ok(argv: Sequence[str], project: Path) -> ExecResult:
-        if "-func=/project/.gauntlet-out/c.out" in argv:
-            return ExecResult(0, "x\n", "")
-        if argv[0].endswith("gocyclo") and len(argv) == 2:
-            return ExecResult(0, "y\n", "")
+        if argv[:2] == ["go", "test"]:
+            (project / runner.OUT_DIR / "cover.out").write_text("mode: set\n")
         if argv[:2] == ["go", "list"]:
             return ExecResult(0, "z\n", "")
         return ExecResult(0, "", "")
@@ -256,11 +247,10 @@ def test_steps_receive_their_timeouts_and_environment(repo: Path, tmp_path: Path
     calls = made[0].calls
     assert [(c[0][1] if c[0][0] == "go" else c[0][0].split("/")[-1], c[2]) for c in calls][:3] == [
         ("install", 1800),
-        ("install", 1800),
         ("test", 3600),
+        ("list", 1800),
     ]
     assert calls[0][1] == {"GOBIN": "/project/.gauntlet-out/bin", "GOFLAGS": "-buildvcs=false"}
-    assert calls[3][1] == {}  # cover-func needs no environment
     assert calls[-1][2] == 7200  # mutation
 
 

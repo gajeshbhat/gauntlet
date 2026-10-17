@@ -14,10 +14,18 @@ from gauntlet.policy import Policy
 from gauntlet.sandbox import ExecResult
 
 BRANCHY = "def g(x):\n" + "".join(f"    if x == {i}:\n        return {i}\n" for i in range(1, 8)) + "    return 0\n"
-GOCYCLO = "18 device DiskMount lxd/device/disk.go:28:1\n6 device Small lxd/device/disk.go:95:1\n"
-COVER = (
-    "example.com/m/lxd/device/disk.go:28:\t\tDiskMount\t\t0.0%\n"
-    "example.com/m/lxd/device/disk.go:95:\t\tSmall\t\t100.0%\n"
+
+
+def _go_branches(name: str, count: int) -> list[str]:
+    body = [line for i in range(count) for line in (f"\tif x == {i} {{", f"\t\treturn {i}", "\t}")]
+    return [f"func {name}(x int) int {{", *body, "\treturn 0", "}"]
+
+
+GO_SOURCE = "\n".join(
+    ["package device", *[""] * 26, *_go_branches("DiskMount", 17), *[""] * 13, *_go_branches("Small", 5)]
+)
+GO_COVER = (
+    "mode: set\nexample.com/m/lxd/device/disk.go:28.1,81.2 1 0\nexample.com/m/lxd/device/disk.go:95.1,112.2 1 1\n"
 )
 Out = pytest.CaptureFixture[str]
 
@@ -39,8 +47,9 @@ def py_project(root: Path, toml: str = 'language = "python"\n', covered: bool = 
 
 def go_project(root: Path, extra: str = "") -> Path:
     project(root, 'language = "go"\n[layers]\norder = ["m/web", "m/domain"]\n' + extra)
-    (root / "gocyclo.txt").write_text(GOCYCLO)
-    (root / "cover-func.txt").write_text(COVER)
+    (root / "lxd" / "device").mkdir(parents=True)
+    (root / "lxd" / "device" / "disk.go").write_text(GO_SOURCE + "\n")
+    (root / "cover.out").write_text(GO_COVER)
     (root / "imports.txt").write_text("m/domain m/web\n")
     return root
 
@@ -85,7 +94,7 @@ def test_malformed_input_is_a_clean_error(tmp_path: Path, capsys: Out, cli_run: 
     py_project(tmp_path)
     (tmp_path / "coverage.json").write_text("{}")
     assert cli_run("clean", tmp_path) == 2
-    assert "malformed input, missing 'files'" in capsys.readouterr().err
+    assert "cannot read coveragepy report" in capsys.readouterr().err
 
 
 # ---- arch
@@ -143,7 +152,10 @@ def test_clean_passes_when_functions_are_covered(tmp_path: Path, cli_run: Callab
 def test_clean_without_coverage_exits_2(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
     project(tmp_path, 'language = "python"\n')
     assert cli_run("clean", tmp_path) == 2
-    assert "--cov-report=json" in capsys.readouterr().err
+    assert (
+        "coverage.json not found; produce it with: gauntlet run, or your test runner's coveragepy report"
+        in capsys.readouterr().err
+    )
 
 
 def test_clean_with_empty_coverage_is_an_error_not_a_pass(
@@ -178,7 +190,11 @@ def test_go_clean_scope_can_exclude_the_offender(tmp_path: Path, cli_run: Callab
 def test_go_missing_artifact_says_how_to_make_it(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
     project(tmp_path, 'language = "go"\n')
     assert cli_run("clean", tmp_path) == 2
-    assert capsys.readouterr().err.strip().endswith("produce it with: gocyclo ./...")
+    assert (
+        capsys.readouterr()
+        .err.strip()
+        .endswith("cover.out not found; produce it with: gauntlet run, or your test runner's gocover report")
+    )
 
 
 def test_artifacts_can_live_elsewhere(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
@@ -186,7 +202,7 @@ def test_artifacts_can_live_elsewhere(tmp_path: Path, capsys: Out, cli_run: Call
     art.mkdir()
     root.mkdir()
     go_project(root)
-    for name in ("gocyclo.txt", "cover-func.txt", "imports.txt"):
+    for name in ("cover.out", "imports.txt"):
         (art / name).write_text((root / name).read_text())
         (root / name).unlink()
     assert cli_run("clean", root, "--artifacts", art) == 1
@@ -377,10 +393,9 @@ def committed_go_project(root: Path) -> Path:
 @pytest.mark.parametrize(
     ("gate", "stamped", "uncovered"),
     [
-        ("clean", ["gocyclo.txt", "imports.txt"], "cover-func.txt"),
-        ("clean", ["cover-func.txt", "imports.txt"], "gocyclo.txt"),
-        ("arch", ["gocyclo.txt", "cover-func.txt"], "imports.txt"),
-        ("harden", ["gocyclo.txt", "imports.txt"], "mutation.json"),
+        ("clean", ["imports.txt", "mutation.json"], "cover.out"),
+        ("arch", ["cover.out", "mutation.json"], "imports.txt"),
+        ("harden", ["cover.out", "imports.txt"], "mutation.json"),
     ],
 )
 def test_go_gates_refuse_artifacts_the_manifest_does_not_cover(
@@ -397,7 +412,7 @@ def test_go_gates_refuse_artifacts_the_manifest_does_not_cover(
 @pytest.mark.parametrize(
     ("gate", "missing", "how"),
     [
-        ("clean", "cover-func.txt", "go test -coverprofile=c.out ./... && go tool cover -func=c.out"),
+        ("clean", "cover.out", "gauntlet run, or your test runner's gocover report"),
         ("arch", "imports.txt", "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."),
         ("harden", "mutation.json", "gremlins unleash -o mutation.json ."),
     ],
@@ -443,7 +458,7 @@ def test_json_has_every_field(tmp_path: Path, cli_run: Callable[..., int]) -> No
 def test_stamp_lists_what_it_stamped(tmp_path: Path, capsys: Out) -> None:
     root = committed_go_project(tmp_path)
     assert main(["stamp", str(root)]) == 0
-    assert capsys.readouterr().out == "stamped gocyclo.txt, cover-func.txt, imports.txt, mutation.json\n"
+    assert capsys.readouterr().out == "stamped cover.out, imports.txt, mutation.json\n"
 
 
 def test_check_fails_when_any_gate_fails(tmp_path: Path, cli_run: Callable[..., int]) -> None:

@@ -36,7 +36,7 @@ def test_go_project(tmp_path: Path) -> None:
 def test_both_languages_is_ambiguous(tmp_path: Path) -> None:
     (tmp_path / "go.mod").write_text("module m\n")
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-    with pytest.raises(ValueError, match="both pyproject.toml and go.mod"):
+    with pytest.raises(ValueError, match="found python and go; write gauntlet.toml yourself"):
         scaffold.write_config(tmp_path)
     assert not (tmp_path / "gauntlet.toml").exists()
 

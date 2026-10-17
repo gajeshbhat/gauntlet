@@ -18,6 +18,8 @@ from gauntlet import (
     exclusions,
     golang,
     harden,
+    languages,
+    linecov,
     loop,
     policy,
     provenance,
@@ -35,10 +37,9 @@ from gauntlet.scope import Scope, parse
 
 IMPORTS_HOW = "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."
 MUTMUT_HOW = "mutmut run && mutmut results --all true > mutmut-results.txt (or: gauntlet run)"
-COVER_HOW = "go test -coverprofile=c.out ./... && go tool cover -func=c.out"
 ARTIFACTS = {
     "python": ("coverage.json", "mutmut-results.txt"),
-    "go": ("gocyclo.txt", "cover-func.txt", "imports.txt", "mutation.json"),
+    "go": ("cover.out", "imports.txt", "mutation.json"),
 }
 
 
@@ -86,17 +87,13 @@ def _arch(run: Run) -> GateResult:
 
 
 def _clean_result(run: Run) -> clean.CleanResult:
-    cfg = run.cfg
-    if cfg.language == "go":
-        _trusted(run, ["gocyclo.txt", "cover-func.txt"])
-        return golang.clean_check(
-            golang.read(run.art, "gocyclo.txt", "gocyclo ./..."),
-            golang.read(run.art, "cover-func.txt", COVER_HOW),
-            cfg.crap_max,
-            run.scope,
-        )
-    _trusted(run, ["coverage.json"])
-    return clean.check(run.root, run.art / "coverage.json", cfg.crap_max, run.scope)
+    language = languages.get(run.cfg.language)
+    _trusted(run, [language.coverage_file])
+    text = golang.read(
+        run.art, language.coverage_file, f"gauntlet run, or your test runner's {language.coverage_format} report"
+    )
+    lines = linecov.parse(language.coverage_format, text)
+    return clean.check(run.root, lines, language, run.cfg.crap_max, run.scope)
 
 
 def _clean(run: Run) -> GateResult:

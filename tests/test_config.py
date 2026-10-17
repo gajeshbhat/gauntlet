@@ -75,7 +75,7 @@ def test_defaults_are_the_documented_ones(tmp_path: Path) -> None:
     ("text", "message"),
     [
         ('src = "x"\n', "gauntlet.toml: 'language' is required"),
-        ('language = "rust"\n', r"unsupported language 'rust', expected one of \('python', 'go'\)"),
+        ('language = "rust"\n', r"unsupported language 'rust', expected one of python, go"),
         ('language = "go"\n[go]\nmutation_dir = 3\n', "mutation_dir must be a string"),
         ('language = "go"\n[crap]\nmax = 1001\n', "max must be an integer between 1 and 1000"),
         ('language = "go"\n[mutation]\nmin_score = -1\n', "min_score must be an integer between 0 and 100"),

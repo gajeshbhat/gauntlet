@@ -2,27 +2,15 @@
 
 import configparser
 import io
-import os
 import re
 import tokenize
 import tomllib
 from pathlib import Path
 from typing import Any
 
-from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text
+from gauntlet import languages
+from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text, source_files
 from gauntlet.scope import Scope
-
-PRAGMA = re.compile(r"(?:#|//)\s*(?:pragma:\s*no\s+(?:mutate|cover)|nolint|nosec)\b")
-SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "vendor", "mutants", "__pycache__", ".tox"}
-SUFFIX = {"python": ".py", "go": ".go"}
-
-
-def _files(root: Path, suffix: str) -> list[str]:
-    found: list[str] = []
-    for dirpath, dirs, names in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
-        found += [str((Path(dirpath) / n).relative_to(root)) for n in sorted(names) if n.endswith(suffix)]
-    return found
 
 
 def _python_comments(rel: str, text: str) -> list[tuple[int, str]]:
@@ -41,14 +29,16 @@ def _comments(rel: str, text: str, language: str) -> list[tuple[int, str]]:
 
 
 def pragmas(root: Path, language: str, scope: Scope, max_bytes: int = MAX_SOURCE_BYTES) -> list[str]:
+    row = languages.get(language)
+    pattern = re.compile(row.pragma)
     out: list[str] = []
-    for rel in _files(root, SUFFIX[language]):
+    for rel in source_files(root, row.suffixes):
         text = read_text(inside(root, rel), max_bytes)
         lines = text.splitlines()
         out += [
             f"{rel}:{n}: {lines[n - 1].strip()}"
             for n, comment in _comments(rel, text, language)
-            if PRAGMA.search(comment) and scope.contains(rel, n)
+            if pattern.search(comment) and scope.contains(rel, n)
         ]
     return out
 

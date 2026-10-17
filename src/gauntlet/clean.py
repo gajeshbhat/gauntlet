@@ -1,15 +1,22 @@
-"""Clean gate: fail functions whose CRAP score exceeds the configured maximum."""
+"""Clean gate: CRAP score per function = complexity (read by lizard, any language) x coverage of its own lines."""
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from radon.complexity import cc_visit  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
+import lizard  # pyright: ignore[reportMissingTypeStubs]
 
-from gauntlet.crap import crap_score
-from gauntlet.safefs import MAX_ARTIFACT_BYTES, MAX_SOURCE_BYTES, inside, read_text
+from gauntlet import linecov
+from gauntlet.languages import Language
+from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text, source_files
 from gauntlet.scope import Scope
+
+
+def crap_score(complexity: int, coverage: float) -> float:
+    """complexity^2 * (1 - coverage)^3 + complexity: risky code is complex and untested."""
+    if not 0.0 <= coverage <= 1.0:
+        raise ValueError(f"coverage must be within 0..1, got {coverage}")
+    return complexity**2 * (1 - coverage) ** 3 + complexity
 
 
 @dataclass(frozen=True)
@@ -21,46 +28,50 @@ class Finding:
     crap: float
 
 
-def function_findings(source: str, executed: set[int], missing: set[int]) -> list[Finding]:
-    findings: list[Finding] = []
-    blocks = cast("list[Any]", cc_visit(source))  # pragma: no mutate (radon ships no stubs)
-    for block in blocks:
-        if type(block).__name__ != "Function":
-            continue  # radon also yields Class blocks; their methods come through as Functions
-        span = set(range(block.lineno, block.endline + 1))
-        hit, miss = len(executed & span), len(missing & span)
-        coverage = hit / (hit + miss) if hit + miss else 1.0
-        name = f"{block.classname}.{block.name}" if block.classname else block.name
-        crap = crap_score(block.complexity, coverage)
-        findings.append(Finding(name, block.lineno, block.complexity, coverage, crap))
-    return findings
-
-
 @dataclass(frozen=True)
 class CleanResult:
     evaluated: int  # functions looked at; 0 means the gate saw nothing and must not pass
     offenders: list[tuple[str, Finding]]
 
 
-def _analyse(rel: str, source: str, data: dict[str, Any]) -> list[Finding]:
-    try:
-        return function_findings(source, set(data["executed_lines"]), set(data["missing_lines"]))
-    except (SyntaxError, RecursionError, MemoryError, ValueError) as e:
-        raise ValueError(f"cannot analyse {rel}: {type(e).__name__}") from None
+def function_findings(filename: str, source: str, hits: dict[int, int]) -> list[Finding]:
+    """One finding per function in `source`; `hits` maps the executable lines of the file to their hit counts."""
+    findings: list[Finding] = []
+    functions = cast(
+        "list[Any]",
+        lizard.analyze_file.analyze_source_code(filename, source).function_list,  # pyright: ignore[reportUnknownMemberType]
+    )
+    for fn in functions:
+        executable = [n for n in range(fn.start_line, fn.end_line + 1) if n in hits]
+        covered = sum(hits[n] > 0 for n in executable)
+        coverage = covered / len(executable) if executable else 1.0
+        complexity = int(fn.cyclomatic_complexity)
+        findings.append(
+            Finding(str(fn.name), int(fn.start_line), complexity, coverage, crap_score(complexity, coverage))
+        )
+    return findings
 
 
 def check(
-    root: Path, coverage_json: Path, crap_max: float, scope: Scope, max_bytes: int = MAX_SOURCE_BYTES
+    root: Path,
+    lines: linecov.Lines,
+    language: Language,
+    crap_max: float,
+    scope: Scope,
+    max_bytes: int = MAX_SOURCE_BYTES,
 ) -> CleanResult:
-    if not coverage_json.exists():
-        raise FileNotFoundError(
-            f"{coverage_json} not found; run your tests with `pytest --cov --cov-report=json` first"
-        )
-    files = json.loads(read_text(coverage_json, MAX_ARTIFACT_BYTES))["files"]
+    files = source_files(root, language.suffixes)
     evaluated = 0
     offenders: list[tuple[str, Finding]] = []
-    for rel, data in files.items():
-        found = [f for f in _analyse(rel, read_text(inside(root, rel), max_bytes), data) if scope.contains(rel, f.line)]
+    for key, hits in lines.items():
+        rel = linecov.locate(key, files)
+        if rel is None:  # coverage of something that is not a source file of this project
+            continue
+        found = [
+            f
+            for f in function_findings(rel, read_text(inside(root, rel), max_bytes), hits)
+            if scope.contains(rel, f.line)
+        ]
         evaluated += len(found)
         offenders += [(rel, f) for f in found if f.crap > crap_max]
     return CleanResult(evaluated, offenders)

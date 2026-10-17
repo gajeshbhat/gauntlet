@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from gauntlet import languages
 from gauntlet.config import Config
 from gauntlet.names import IMAGE, MEMORY
 
@@ -25,7 +26,7 @@ CHOICES = {
     "container_cli": ("docker", "podman"),
     "docker_network": ("bridge", "none"),
 }
-IMAGES = ("docker_image_python", "docker_image_go", "docker_image_agent")  # agent may be empty (unset)
+IMAGES = ("docker_image_agent",)  # may be empty (unset)
 STRINGS = ("docker_memory",)
 
 
@@ -48,8 +49,7 @@ class Policy:
     container_cli: str = "docker"  # or podman
     docker_network: str = "bridge"  # none cuts the container off (dependencies and agents then cannot download)
     docker_memory: str = ""  # e.g. 4g; empty means no limit
-    docker_image_python: str = "ghcr.io/astral-sh/uv:python3.12-bookworm"
-    docker_image_go: str = "golang:1.27"
+    docker_images: dict[str, str] = field(default_factory=lambda: dict[str, str]())  # language -> image override
     docker_image_agent: str = ""  # an image with your coding agent and the toolchain; see examples/agent.Dockerfile
 
 
@@ -63,7 +63,7 @@ def _bad_int(value: Any) -> bool:
 
 
 def _check_values(path: Path, data: dict[str, Any]) -> None:
-    unknown = sorted(set(data) - {*BOOLS, *INTS, *RANGES, *LISTS, *CHOICES, *IMAGES, *STRINGS, "pins"})
+    unknown = sorted(set(data) - {*BOOLS, *INTS, *RANGES, *LISTS, *CHOICES, *IMAGES, *STRINGS, "pins", "docker_images"})
     if unknown:
         raise ValueError(f"{path}: unknown key(s) {', '.join(unknown)}")
     _check_ints(path, data)
@@ -134,6 +134,20 @@ def _check_strings(path: Path, data: dict[str, Any]) -> None:
     _check_images(path, data)
 
 
+def _images(path: Path, data: dict[str, Any]) -> dict[str, str]:
+    table: Any = data.get("docker_images", {})
+    if not isinstance(table, dict):
+        raise ValueError(f"{path}: docker_images must be a table of language = image")
+    for name, image in table.items():  # pyright: ignore[reportUnknownVariableType]
+        if name not in languages.TABLE:
+            raise ValueError(
+                f"{path}: docker_images has unknown language {name!r}, expected one of {', '.join(languages.NAMES)}"
+            )
+        if not isinstance(image, str) or not IMAGE.match(image):
+            raise ValueError(f"{path}: docker_images.{name} must be a container image name")
+    return {str(k): str(v) for k, v in table.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+
+
 def _pins(path: Path, data: dict[str, Any]) -> dict[str, str]:
     raw = data.get("pins", {})
     if not isinstance(raw, dict) or not all(isinstance(v, str) and v.startswith("sha256:") for v in raw.values()):  # pyright: ignore[reportUnknownVariableType]
@@ -160,8 +174,7 @@ def _checked(path: Path, data: dict[str, Any]) -> Policy:
         container_cli=data.get("container_cli", d.container_cli),
         docker_network=data.get("docker_network", d.docker_network),
         docker_memory=data.get("docker_memory", d.docker_memory),
-        docker_image_python=data.get("docker_image_python", d.docker_image_python),
-        docker_image_go=data.get("docker_image_go", d.docker_image_go),
+        docker_images=_images(path, data),
         docker_image_agent=data.get("docker_image_agent", d.docker_image_agent),
     )
 
@@ -175,14 +188,17 @@ def load(path: Path | None, missing_ok: bool = False) -> Policy:
     return _checked(path, tomllib.loads(path.read_text()))
 
 
+def _table(name: str, values: dict[str, str]) -> list[str]:
+    return ["", f"[{name}]", *[f"{json.dumps(k)} = {json.dumps(v)}" for k, v in sorted(values.items())]]
+
+
 def dump(p: Policy) -> str:
     lines = [f"{k} = {getattr(p, k)}" for k in INTS]
     lines += [f"{k} = {str(getattr(p, k)).lower()}" for k in BOOLS]
     lines += [f"{k} = {json.dumps(list(getattr(p, k)))}" for k in LISTS if getattr(p, k)]
     lines += [f"{k} = {getattr(p, k)}" for k in RANGES]
     lines += [f"{k} = {json.dumps(getattr(p, k))}" for k in (*CHOICES, *STRINGS, *IMAGES)]
-    lines += ["", "[pins]", *[f"{json.dumps(k)} = {json.dumps(v)}" for k, v in sorted(p.pins.items())]]
-    return "\n".join(lines) + "\n"
+    return "\n".join([*lines, *_table("docker_images", p.docker_images), *_table("pins", p.pins)]) + "\n"
 
 
 def apply(cfg: Config, p: Policy) -> Config:

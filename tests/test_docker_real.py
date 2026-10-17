@@ -5,15 +5,15 @@ from pathlib import Path
 
 import pytest
 
+from gauntlet import languages
 from gauntlet.docker import DockerSandbox
-from gauntlet.policy import Policy
 
 pytestmark = pytest.mark.skipif(os.environ.get("GAUNTLET_DOCKER_TESTS") != "1", reason="set GAUNTLET_DOCKER_TESTS=1")
 
 
 @pytest.fixture
 def box(tmp_path: Path):  # type: ignore[no-untyped-def]  # noqa: ANN201
-    sandbox = DockerSandbox(tmp_path, Policy().docker_image_python, memory="512m")
+    sandbox = DockerSandbox(tmp_path, languages.TABLE["python"].image, memory="512m")
     sandbox.ensure()
     yield sandbox
     sandbox.remove()

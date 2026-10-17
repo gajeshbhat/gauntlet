@@ -1,11 +1,12 @@
-import json
 from pathlib import Path
 
 import pytest
 
-from gauntlet.clean import Finding, check, function_findings
+from gauntlet.clean import Finding, check, crap_score, function_findings
+from gauntlet.languages import TABLE, Language
 from gauntlet.scope import Scope, parse
 
+PY = TABLE["python"]
 SIMPLE = "def f(x):\n    return x\n"
 BRANCHY = (
     "def g(x):\n"
@@ -19,121 +20,157 @@ BRANCHY = (
 )  # complexity 4, lines 1-8
 
 
+# ---- the score
+def test_fully_covered_equals_complexity() -> None:
+    assert crap_score(complexity=5, coverage=1.0) == 5
+
+
+def test_uncovered_is_quadratic_plus_complexity() -> None:
+    assert crap_score(complexity=4, coverage=0.0) == 4**2 + 4
+
+
+def test_partial_coverage() -> None:
+    assert crap_score(complexity=10, coverage=0.5) == pytest.approx(10**2 * 0.5**3 + 10)
+
+
+@pytest.mark.parametrize("coverage", [-0.1, 1.1])
+def test_rejects_coverage_out_of_range(coverage: float) -> None:
+    with pytest.raises(ValueError, match="coverage"):
+        crap_score(complexity=1, coverage=coverage)
+
+
+# ---- per function
 def test_covered_function_scores_its_complexity() -> None:
-    (f,) = function_findings(SIMPLE, executed={1, 2}, missing=set())
+    (f,) = function_findings("m.py", SIMPLE, {1: 1, 2: 1})
     assert f == Finding(name="f", line=1, complexity=1, coverage=1.0, crap=1.0)
 
 
-def test_uncovered_branchy_function_is_quadratic() -> None:
-    (f,) = function_findings(BRANCHY, executed={1}, missing={2, 3, 4, 5, 6, 7, 8})
+def test_only_executable_lines_count_toward_coverage() -> None:
+    hits = {1: 1, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0}  # lines 1-8, one hit
+    (f,) = function_findings("m.py", BRANCHY, hits)
     assert f.complexity == 4
+    assert f.coverage == pytest.approx(1 / 8)
     assert f.crap == pytest.approx(4**2 * (1 - 1 / 8) ** 3 + 4)
 
 
-def test_class_methods_reported_by_qualified_name() -> None:
-    src = "class A:\n    def m(self):\n        return 1\n"
-    (f,) = function_findings(src, executed={1, 2, 3}, missing=set())
-    assert f.name == "A.m"
-    assert f.line == 2
-
-
-def test_function_without_executable_lines_counts_as_covered() -> None:
-    (f,) = function_findings(SIMPLE, executed=set(), missing=set())
+def test_lines_that_are_not_code_do_not_dilute_coverage() -> None:
+    (f,) = function_findings("m.py", BRANCHY, {2: 1, 3: 1})  # only 2 executable lines known, both hit
     assert f.coverage == 1.0
 
 
-def write_project(root: Path, source: str, executed: list[int], missing: list[int]) -> None:
-    (root / "mod.py").write_text(source)
-    cov = {"files": {"mod.py": {"executed_lines": executed, "missing_lines": missing}}}
-    (root / "coverage.json").write_text(json.dumps(cov))
+def test_function_without_executable_lines_counts_as_covered() -> None:
+    (f,) = function_findings("m.py", SIMPLE, {})
+    assert f.coverage == 1.0
 
 
-def test_check_passes_when_all_under_threshold(tmp_path: Path) -> None:
-    write_project(tmp_path, SIMPLE, [1, 2], [])
-    assert check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope()).offenders == []
-
-
-def test_check_reports_offenders_with_path(tmp_path: Path) -> None:
-    write_project(tmp_path, BRANCHY, [1], [2, 3, 4, 5, 6, 7, 8])
-    ((path, f),) = check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope()).offenders
-    assert path == "mod.py"
-    assert f.name == "g"
-
-
-def test_threshold_is_inclusive(tmp_path: Path) -> None:
-    write_project(tmp_path, SIMPLE, [1, 2], [])
-    assert check(tmp_path, tmp_path / "coverage.json", crap_max=1, scope=Scope()).offenders == []
-    assert len(check(tmp_path, tmp_path / "coverage.json", crap_max=0, scope=Scope()).offenders) == 1
-
-
-def test_missing_coverage_file_explains_how_to_make_it(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError, match="--cov-report=json"):
-        check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope())
+def test_methods_are_named_with_their_class() -> None:
+    (f,) = function_findings("m.py", "class A:\n    def m(self):\n        return 1\n", {2: 1, 3: 1})
+    assert f.name.endswith("m")
+    assert f.line == 2
 
 
 def test_coverage_is_per_function_not_per_file() -> None:
     src = SIMPLE + "\n" + BRANCHY.replace("g", "h", 1)
-    covered, risky = function_findings(src, executed={1, 2}, missing=set(range(4, 12)))
-    assert covered.coverage == 1.0
-    assert risky.coverage == 0.0
-
-
-def test_half_covered_function() -> None:
-    (f,) = function_findings(SIMPLE, executed={1}, missing={2})
-    assert f.coverage == 0.5
-
-
-def test_check_collects_offenders_from_every_file(tmp_path: Path) -> None:
-    files = {}
-    for name in ("a.py", "b.py"):
-        (tmp_path / name).write_text(BRANCHY)
-        files[name] = {"executed_lines": [1], "missing_lines": [2, 3, 4, 5, 6, 7, 8]}
-    (tmp_path / "coverage.json").write_text(json.dumps({"files": files}))
-    paths = [p for p, _ in check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope()).offenders]
-    assert paths == ["a.py", "b.py"]
+    hits = {1: 1, 2: 1, **{n: 0 for n in range(4, 12)}}
+    covered, risky = function_findings("m.py", src, hits)
+    assert (covered.coverage, risky.coverage) == (1.0, 0.0)
 
 
 def test_adjacent_functions_do_not_share_lines() -> None:
     src = "def f():\n    return 1\ndef g():\n    return 2\n"
-    f, g = function_findings(src, executed={1, 2}, missing={3, 4})
+    f, g = function_findings("m.py", src, {1: 1, 2: 1, 3: 0, 4: 0})
     assert (f.coverage, g.coverage) == (1.0, 0.0)
 
 
-def test_check_reports_how_many_functions_it_evaluated(tmp_path: Path) -> None:
-    write_project(tmp_path, SIMPLE + "\n" + BRANCHY.replace("g", "h", 1), [1, 2], [4, 5, 6, 7, 8, 9, 10, 11])
-    result = check(tmp_path, tmp_path / "coverage.json", crap_max=8, scope=Scope())
-    assert result.evaluated == 2
+@pytest.mark.parametrize(
+    ("filename", "source", "complexity"),
+    [
+        ("a.go", "package a\nfunc F(x int) int {\n\tif x > 1 && x < 5 {\n\t\treturn 1\n\t}\n\treturn 2\n}\n", 3),
+        ("a.c", "int f(int x) {\n  if (x > 1) { return 1; }\n  return 2;\n}\n", 2),
+        ("a.java", "class A {\n  int f(int x) {\n    if (x > 1 || x < -1) { return 1; }\n    return 2;\n  }\n}\n", 3),
+        ("a.rs", "fn f(x: i32) -> i32 {\n    if x > 1 { 1 } else { 2 }\n}\n", 2),
+        ("a.js", "function f(x) {\n  return x ? 1 : 2;\n}\n", 2),
+        ("a.cs", "class A {\n  int F(int x) {\n    return x > 1 ? 1 : 2;\n  }\n}\n", 2),
+    ],
+)
+def test_complexity_is_read_from_any_language(filename: str, source: str, complexity: int) -> None:
+    (f,) = function_findings(filename, source, {})
+    assert f.complexity == complexity
 
 
-def test_check_counts_only_functions_in_scope(tmp_path: Path) -> None:
-    write_project(tmp_path, SIMPLE, [1, 2], [])
-    assert check(tmp_path, tmp_path / "coverage.json", 8, parse(["mod.py"])).evaluated == 1
-    assert check(tmp_path, tmp_path / "coverage.json", 8, parse(["other.py"])).evaluated == 0
+# ---- the gate over a project
+def project(root: Path, source: str = SIMPLE, name: str = "mod.py") -> Path:
+    (root / name).parent.mkdir(parents=True, exist_ok=True)
+    (root / name).write_text(source)
+    return root
 
 
-def test_coverage_paths_cannot_escape_the_root(tmp_path: Path) -> None:
+def test_check_passes_when_all_under_threshold(tmp_path: Path) -> None:
+    result = check(project(tmp_path), {"mod.py": {1: 1, 2: 1}}, PY, 8, Scope())
+    assert (result.evaluated, result.offenders) == (1, [])
+
+
+def test_check_reports_offenders_with_their_path(tmp_path: Path) -> None:
+    hits = {1: 1, **{n: 0 for n in range(2, 9)}}
+    ((path, f),) = check(project(tmp_path, BRANCHY), {"mod.py": hits}, PY, 8, Scope()).offenders
+    assert (path, f.name) == ("mod.py", "g")
+
+
+def test_threshold_is_inclusive(tmp_path: Path) -> None:
+    project(tmp_path)
+    assert check(tmp_path, {"mod.py": {1: 1, 2: 1}}, PY, 1, Scope()).offenders == []
+    assert len(check(tmp_path, {"mod.py": {1: 1, 2: 1}}, PY, 0, Scope()).offenders) == 1
+
+
+def test_scope_limits_what_is_evaluated_and_reported(tmp_path: Path) -> None:
+    project(tmp_path, SIMPLE + "\n" + BRANCHY.replace("g", "h", 1))
+    hits = {1: 1, 2: 1, **{n: 0 for n in range(4, 12)}}
+    assert check(tmp_path, {"mod.py": hits}, PY, 8, parse(["mod.py"])).evaluated == 2
+    assert check(tmp_path, {"mod.py": hits}, PY, 8, parse(["mod.py:1-2"])).evaluated == 1
+    assert check(tmp_path, {"mod.py": hits}, PY, 8, parse(["other.py"])).evaluated == 0
+
+
+def test_every_file_in_the_coverage_data_is_evaluated(tmp_path: Path) -> None:
+    project(tmp_path, BRANCHY, "a.py")
+    project(tmp_path, BRANCHY, "pkg/b.py")
+    cov = {n: {1: 1, **{k: 0 for k in range(2, 9)}} for n in ("a.py", "pkg/b.py")}
+    assert [p for p, _ in check(tmp_path, cov, PY, 8, Scope()).offenders] == ["a.py", "pkg/b.py"]
+
+
+def test_coverage_paths_that_belong_to_no_source_file_are_ignored(tmp_path: Path) -> None:
+    result = check(project(tmp_path), {"mod.py": {1: 1}, "/usr/include/stdio.h": {1: 0}}, PY, 8, Scope())
+    assert result.evaluated == 1
+
+
+def test_coverage_paths_are_matched_by_suffix(tmp_path: Path) -> None:
+    go = TABLE["go"]
+    project(tmp_path, "package a\nfunc F() int {\n\treturn 1\n}\n", "pkg/a.go")
+    result = check(tmp_path, {"example.com/m/pkg/a.go": {2: 1, 3: 1}}, go, 8, Scope())
+    assert result.evaluated == 1
+
+
+def test_coverage_paths_cannot_climb_out_of_the_project(tmp_path: Path) -> None:
     root = tmp_path / "root"
-    root.mkdir()
-    (tmp_path / "secret.py").write_text("def f():\n    return 1\n")
-    cov = {"files": {"../secret.py": {"executed_lines": [1], "missing_lines": []}}}
-    (root / "coverage.json").write_text(json.dumps(cov))
+    project(root)
     with pytest.raises(ValueError, match="escapes the project root"):
-        check(root, root / "coverage.json", 8, Scope())
+        check(root, {"../secret.py": {1: 1}}, PY, 8, Scope())
 
 
-def test_unparseable_source_is_a_clean_error(tmp_path: Path) -> None:
-    write_project(tmp_path, "def broken(:\n", [], [])
-    with pytest.raises(ValueError, match=r"cannot analyse mod\.py"):
-        check(tmp_path, tmp_path / "coverage.json", 8, Scope())
-
-
-def test_pathologically_nested_source_is_a_clean_error(tmp_path: Path) -> None:
-    write_project(tmp_path, "x = " + "(" * 5000 + "1" + ")" * 5000 + "\n", [], [])
-    with pytest.raises(ValueError, match=r"cannot analyse mod\.py"):
-        check(tmp_path, tmp_path / "coverage.json", 8, Scope())
+def test_other_languages_use_the_same_gate(tmp_path: Path) -> None:
+    java = Language((".java",), ("pom.xml",), "x", "jacoco.xml", "jacoco", "java", "img")
+    src = "class A {\n  int f(int x) {\n    if (x > 1) { return 1; }\n    return 2;\n  }\n}\n"
+    project(tmp_path, src, "src/main/java/com/x/A.java")
+    covered = check(tmp_path, {"com/x/A.java": {3: 1, 4: 1}}, java, 8, Scope())
+    assert (covered.evaluated, covered.offenders) == (1, [])
 
 
 def test_oversized_source_is_rejected(tmp_path: Path) -> None:
-    write_project(tmp_path, "x = 1\n" * 10, [], [])
+    project(tmp_path, "x = 1\n" * 10)
     with pytest.raises(ValueError, match="byte limit"):
-        check(tmp_path, tmp_path / "coverage.json", 8, Scope(), max_bytes=10)
+        check(tmp_path, {"mod.py": {1: 1}}, PY, 8, Scope(), max_bytes=10)
+
+
+def test_source_that_is_not_text_is_an_error(tmp_path: Path) -> None:
+    (tmp_path / "mod.py").write_bytes(b"\xff\xfe\x00")
+    with pytest.raises(ValueError, match="not valid UTF-8"):
+        check(tmp_path, {"mod.py": {1: 1}}, PY, 8, Scope())
