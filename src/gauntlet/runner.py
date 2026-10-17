@@ -105,9 +105,32 @@ def _js_steps() -> list[Step]:
     ]
 
 
+COPY_REPORT = 'cp "$1"/results/*/coverage.cobertura.xml "$1"/coverage.cobertura.xml'  # one test project per run
+
+
+def _dotnet_steps() -> list[Step]:
+    # coverlet.collector comes from the test project's own references; an empty RunSettingsFilePath keeps a repo's
+    # .runsettings (and the exclusions it could carry) out. XDG_RUNTIME_DIR: .NET named mutexes fail for a uid with
+    # no passwd entry without it.
+    env = (("XDG_RUNTIME_DIR", "/tmp"), ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"), ("DOTNET_NOLOGO", "1"))
+    results = f"{IN_SANDBOX}/results"
+    return [
+        Step(
+            "tests",
+            ("dotnet", "test", "--collect", "XPlat Code Coverage", "--results-directory", results)
+            + ("-p:RunSettingsFilePath=",),
+            timeout=3600,
+            env=env,
+        ),
+        Step("report", ("sh", "-c", COPY_REPORT, "sh", IN_SANDBOX)),
+    ]
+
+
 def steps(cfg: Config, snap: Path) -> list[Step]:
     if cfg.language == "go":
         return _go_steps(cfg, snap)
+    if cfg.language == "csharp":
+        return _dotnet_steps()
     return _js_steps() if cfg.language == "javascript" else _python_steps(cfg)
 
 
@@ -115,11 +138,13 @@ FILES = {
     "python": ("coverage.json",),
     "go": ("cover.out", "mutation.json"),
     "javascript": ("lcov.info",),
+    "csharp": ("coverage.cobertura.xml",),
 }  # artifacts the sandbox writes itself
 REQUIRED = {
     "python": ("coverage.json", "mutmut-results.txt"),
     "go": ("cover.out", "imports.txt"),
     "javascript": ("lcov.info",),
+    "csharp": ("coverage.cobertura.xml",),
 }
 
 

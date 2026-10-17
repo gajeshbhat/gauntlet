@@ -887,3 +887,35 @@ def test_arch_with_layers_is_an_error_where_no_import_reader_exists(
     root = project(tmp_path, 'language = "javascript"\n[layers]\norder = ["a", "b"]\n')
     assert cli_run("arch", root) == 2
     assert "arch has no import reader for javascript yet" in capsys.readouterr().err
+
+
+# ---- C#: coverage gates work, harden is visibly skipped
+CS_SOURCE = "namespace Demo;\npublic static class A\n{\n    public static int F(int x)\n    {\n        return x + 1;\n    }\n}\n"
+CS_COBERTURA = (
+    '<coverage><packages><package><classes><class filename="project/src/A.cs"><lines>'
+    '<line number="6" hits="1"/></lines></class></classes></package></packages></coverage>'
+)
+
+
+class CsSandbox(RunSandbox):
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        if argv[0] == "sh":  # the step that moves the report out of its results/<guid>/ directory
+            (self.project / ".gauntlet-out" / "coverage.cobertura.xml").write_text(CS_COBERTURA)
+        return ExecResult(0, "", "")
+
+
+def test_run_checks_csharp_coverage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    root = project(tmp_path, 'language = "csharp"\n')
+    (root / "src").mkdir()
+    (root / "src" / "A.cs").write_text(CS_SOURCE)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", lambda project, cfg, policy: CsSandbox(project))  # type: ignore[misc]  # noqa: ARG005
+    assert main(["run", str(root), "--policy", str(write_policy("allow_skipped_gates = true\n"))]) == 0
+    out = capsys.readouterr().out
+    assert "produced coverage.cobertura.xml" in out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out
+    assert "harden: SKIPPED, no mutation tool is wired for csharp yet" in out

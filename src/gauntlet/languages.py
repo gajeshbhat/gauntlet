@@ -7,7 +7,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Language:
     suffixes: tuple[str, ...]  # source files
-    markers: tuple[str, ...]  # files whose presence says "this project uses the language" (for `init`)
+    markers: tuple[str, ...]  # files (globs) whose presence says "this project uses the language" (for `init`)
     tests: str  # regex for test files: the clean gate does not hold them to the CRAP limit
     pragma: str  # regex for the comments that exclude code from the gates
     coverage_file: str  # the artifact the clean gate reads ...
@@ -55,6 +55,20 @@ TABLE["javascript"] = Language(
     sdk="node",
     image="node:22-bookworm",
 )
+TABLE["csharp"] = Language(
+    suffixes=(".cs",),
+    markers=("*.sln", "*.csproj"),
+    tests=r"^[Tt]ests?/",  # top-level only: a Tests directory inside src/ cannot opt out
+    pragma=(  # every hint coverlet honours: attributes (by name, any namespace), plus pragmas and codecov comments
+        r"\b(?:ExcludeFromCodeCoverage|ExcludeFromCoverage|GeneratedCode|CompilerGenerated)(?:Attribute)?\b"
+        r"|#\s*pragma\s+warning\s+disable\b|//\s*codecov\b"
+    ),
+    coverage_file="coverage.cobertura.xml",
+    coverage_format="cobertura",
+    mutation=False,
+    sdk="dotnet",
+    image="mcr.microsoft.com/dotnet/sdk:8.0.426",
+)
 NAMES = tuple(TABLE)
 
 
@@ -66,4 +80,4 @@ def get(name: str) -> Language:
 
 def detect(root: Path) -> list[str]:
     """The languages whose marker files exist in `root`, in table order."""
-    return [name for name, row in TABLE.items() if any((root / m).exists() for m in row.markers)]
+    return [name for name, row in TABLE.items() if any(next(root.glob(m), None) for m in row.markers)]

@@ -47,6 +47,14 @@ def test_detect_by_marker_files(tmp_path: Path) -> None:
     assert languages.detect(tmp_path / "nothing") == []
 
 
+def test_dotnet_projects_are_detected_by_their_project_or_solution_file(tmp_path: Path) -> None:
+    (tmp_path / "App.sln").write_text("")
+    assert languages.detect(tmp_path) == ["csharp"]
+    (tmp_path / "App.sln").unlink()
+    (tmp_path / "App.csproj").write_text("")
+    assert languages.detect(tmp_path) == ["csharp"]
+
+
 def test_javascript_pragmas_and_test_dirs() -> None:
     js = languages.TABLE["javascript"]
     for text in (
@@ -67,3 +75,38 @@ def test_every_row_names_a_known_coverage_format_and_a_valid_image() -> None:
     for name, row in languages.TABLE.items():
         assert row.coverage_format in linecov.PARSERS, name
         assert IMAGE.match(row.image), name
+
+
+CSHARP_HINTS = (
+    "[ExcludeFromCodeCoverage]",
+    '[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage(Justification = "x")]',
+    "[ExcludeFromCodeCoverageAttribute]",
+    "[ExcludeFromCoverage]",
+    "[ExcludeFromCoverageAttribute]",
+    "[Serializable, ExcludeFromCodeCoverage]",
+    "    ExcludeFromCodeCoverage,",
+    "[assembly: ExcludeFromCodeCoverage]",
+    '[GeneratedCode("tool", "1.0")]',
+    "[CompilerGenerated]",
+    "#pragma warning disable CS0168",
+    "  #  pragma warning disable",
+    "x++; //codecov:ignore",
+    "// codecov ignore",
+)
+
+
+@pytest.mark.parametrize("text", CSHARP_HINTS)
+def test_csharp_pragma_matches_every_hint_the_coverage_tool_honours(text: str) -> None:
+    assert re.search(languages.TABLE["csharp"].pragma, text), text
+
+
+def test_csharp_pragma_ignores_ordinary_code() -> None:
+    assert not re.search(languages.TABLE["csharp"].pragma, "// an ordinary comment\n#pragma warning restore CS0168")
+
+
+def test_csharp_test_dirs_are_only_the_top_level_ones() -> None:
+    cs = languages.TABLE["csharp"]
+    for path in ("tests/App.Tests/A.cs", "test/A.cs", "Tests/A.cs"):
+        assert re.search(cs.tests, path), path
+    for path in ("src/tests/A.cs", "src/App/FooTests.cs", "src/Test/A.cs", "mytests/A.cs", "src/App/Tests.cs"):
+        assert not re.search(cs.tests, path), path

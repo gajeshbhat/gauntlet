@@ -74,3 +74,55 @@ def test_javascript_project_runs_through_c8_in_a_real_container(
     out = capsys.readouterr().out
     assert "index.js:5: risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
     assert "harden: SKIPPED" in out
+
+
+GUIDS = {"Demo": "C81ECFB0-998E-463C-8A0D-41B358036A04", "Demo.Tests": "9371B09D-E6F8-4A8B-8F6D-FF37A2E21BEF"}
+PATHS = {"Demo": "src\\Demo\\Demo.csproj", "Demo.Tests": "tests\\Demo.Tests\\Demo.Tests.csproj"}
+SLN = (
+    "Microsoft Visual Studio Solution File, Format Version 12.00\n"
+    + "".join(
+        f'Project("{{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}}") = "{n}", "{PATHS[n]}", "{{{g}}}"\nEndProject\n'
+        for n, g in GUIDS.items()
+    )
+    + "Global\n\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n\t\tDebug|Any CPU = Debug|Any CPU\n"
+    + "\tEndGlobalSection\n\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n"
+    + "".join(
+        f"\t\t{{{g}}}.Debug|Any CPU.{k} = Debug|Any CPU\n" for g in GUIDS.values() for k in ("ActiveCfg", "Build.0")
+    )
+    + "\tEndGlobalSection\nEndGlobal\n"
+)
+
+
+CS_FILES = {
+    "gauntlet.toml": 'language = "csharp"',
+    "Demo.sln": SLN,
+    "src/Demo/Demo.csproj": '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework>'
+    "</PropertyGroup></Project>",
+    "src/Demo/Calc.cs": "namespace Demo;\npublic static class Calc\n{\n    public static int F(int x)\n    {\n"
+    "        if (x > 1) { return 1; }\n        return 0;\n    }\n    public static int Risky(int a)\n    {\n"
+    + "".join(f"        if (a == {i}) {{ return {i}; }}\n" for i in range(1, 6))
+    + "        return 0;\n    }\n}\n",
+    "tests/Demo.Tests/Demo.Tests.csproj": '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
+    "<TargetFramework>net8.0</TargetFramework><IsPackable>false</IsPackable></PropertyGroup><ItemGroup>"
+    '<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />'
+    '<PackageReference Include="xunit" Version="2.9.2" />'
+    '<PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />'
+    '<PackageReference Include="coverlet.collector" Version="6.0.2" /></ItemGroup><ItemGroup>'
+    '<ProjectReference Include="../../src/Demo/Demo.csproj" /></ItemGroup></Project>',
+    "tests/Demo.Tests/CalcTests.cs": "using Demo;\nusing Xunit;\npublic class CalcTests {\n"
+    "    [Fact] public void F() { Assert.Equal(1, Calc.F(2)); Assert.Equal(0, Calc.F(0)); }\n}\n",
+}
+
+
+def test_csharp_project_runs_through_dotnet_test_and_coverlet_in_a_real_container(
+    tmp_path: Path, write_policy: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name, text in CS_FILES.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(text)
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x", "--no-gpg-sign"]):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True)
+    assert main(["run", str(tmp_path), "--policy", str(write_policy('sandbox = "docker"\n'))]) == 1
+    out = capsys.readouterr().out
+    assert "src/Demo/Calc.cs:9: Calc::Risky CRAP 42.0 > 8 (complexity 6, coverage 0%)" in out
+    assert "harden: SKIPPED" in out

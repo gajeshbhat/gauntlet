@@ -126,6 +126,18 @@ def test_javascript_steps(tmp_path: Path) -> None:
     assert tests.timeout == 3600
 
 
+def test_csharp_steps(tmp_path: Path) -> None:
+    tests, report = runner.steps(Config(language="csharp"), tmp_path)
+    assert tests.argv == (
+        "dotnet", "test", "--collect", "XPlat Code Coverage",
+        "--results-directory", "/project/.gauntlet-out/results", "-p:RunSettingsFilePath=",
+    )  # fmt: skip  # an empty RunSettingsFilePath: a repo's own .runsettings cannot add exclusions
+    assert tests.timeout == 3600
+    assert dict(tests.env) == {"XDG_RUNTIME_DIR": "/tmp", "DOTNET_CLI_TELEMETRY_OPTOUT": "1", "DOTNET_NOLOGO": "1"}
+    assert report.argv[:2] == ("sh", "-c") and report.argv[3:] == ("sh", "/project/.gauntlet-out")
+    assert report.argv[2] == runner.COPY_REPORT
+
+
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
 def test_python_src_must_be_a_safe_relative_path(src: str) -> None:
     with pytest.raises(ValueError, match="unsafe path"):

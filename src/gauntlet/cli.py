@@ -41,6 +41,7 @@ ARTIFACTS = {
     "python": ("coverage.json", "mutmut-results.txt"),
     "go": ("cover.out", "imports.txt", "mutation.json"),
     "javascript": ("lcov.info",),
+    "csharp": ("coverage.cobertura.xml",),
 }
 
 
