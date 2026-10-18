@@ -97,6 +97,7 @@ def test_coverage_merges_the_profiles_and_exports_lcov_for_every_test_executable
         "-o", str(profiles / "merged.profdata"),
     ]  # fmt: skip
     assert export[:3] == ["llvm-cov", "export", "-format=lcov"] and "-ignore-filename-regex" in export[4]
+    assert export[4].endswith("|^/project/\\.gauntlet-out/")  # anchored: a nested .gauntlet-out is project code
     assert export[5:] == ["-object", str(build / "a"), "-object", str(build / "b")]
     assert out.read_text() == "SF:/project/a.c\n"
 

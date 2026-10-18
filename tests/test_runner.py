@@ -584,11 +584,15 @@ def test_cpp_clang_mutation_step_is_the_fixed_mull_run_and_may_fail(tmp_path: Pa
 
 def test_cpp_clang_mull_config_mutates_project_code_only() -> None:
     config = json.loads(runner._mull_config())  # pyright: ignore[reportPrivateUsage]
-    assert config == {"includePaths": ["^/project/"], "excludePaths": ["^/project/(?:tests?/|.gauntlet-out/)"]}
+    assert config == {
+        "includePaths": ["^/project/"],
+        "excludePaths": [rf"^/project/(?:tests?/|{re.escape('.gauntlet-out')}/)"],
+    }
     exclude = re.compile(config["excludePaths"][0])
     assert exclude.search("/project/tests/t.c") and exclude.search("/project/test/t.c")
     assert exclude.search("/project/.gauntlet-out/build/x.c")
     assert not exclude.search("/project/src/tests/t.c") and not exclude.search("/project/src/demo.c")
+    assert not exclude.search("/project/src/.gauntlet-out/x.c") and not exclude.search("/project/xgauntlet-out/x.c")
 
 
 def test_cpp_clang_artifacts_and_stale_files() -> None:

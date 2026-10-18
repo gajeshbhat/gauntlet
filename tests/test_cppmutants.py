@@ -26,6 +26,11 @@ def test_sources_are_the_languages_suffixes_minus_tests_and_our_own_directories(
     assert found == ["inc/x.h", "src/a.cpp", "src/b.c", "src/test/keep.c"]
 
 
+def test_only_the_top_level_output_directory_is_skipped(tmp_path: Path) -> None:
+    tree(tmp_path, {".gauntlet-out/gen.c": "", "src/.gauntlet-out/real.c": "", "src/a.c": ""})
+    assert cppmutants.sources(tmp_path, (".c",), TESTS) == ["src/a.c", "src/.gauntlet-out/real.c"]
+
+
 def test_run_passes_and_a_failing_tool_stops_the_script_with_its_output_tail(tmp_path: Path) -> None:
     cppmutants.run(["true"], tmp_path)
     with pytest.raises(SystemExit, match=r"sh failed \(exit 3\): oops \| said"):

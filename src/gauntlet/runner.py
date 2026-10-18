@@ -286,7 +286,8 @@ def _cpp_steps() -> list[Step]:
             "coverage",
             (
                 "python3", "-P", "-m", "gcovr", "--config", f"{IN_SANDBOX}/gcovr.cfg", "--root", "/project",
-                "--object-directory", build, "--exclude", rf"{OUT_DIR}/", "--lcov", f"{IN_SANDBOX}/lcov.info",
+                "--object-directory", build, "--exclude", rf"^/project/{re.escape(OUT_DIR)}/",
+                "--lcov", f"{IN_SANDBOX}/lcov.info",
             ),
             env=env,
         ),
@@ -298,7 +299,9 @@ def _mull_config() -> str:
     """Mull's settings, ours alone (MULL_CONFIG names this file, so a mull.yml in the repo or above it is never read).
     JSON is YAML. Only project code is mutated: not the top-level test directories, nor our own output."""
     tests = languages.TABLE["cpp-clang"].tests.removeprefix("^")
-    return json.dumps({"includePaths": ["^/project/"], "excludePaths": [f"^/project/(?:{tests}|{OUT_DIR}/)"]})
+    return json.dumps(
+        {"includePaths": ["^/project/"], "excludePaths": [f"^/project/(?:{tests}|{re.escape(OUT_DIR)}/)"]}
+    )
 
 
 def _cpp_clang_steps() -> list[Step]:

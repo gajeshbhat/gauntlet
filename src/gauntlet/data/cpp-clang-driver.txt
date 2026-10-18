@@ -45,7 +45,7 @@ def coverage(build, profiles, out):
     merged = os.path.join(profiles, "merged.profdata")
     subprocess.run(["llvm-profdata", "merge", "-sparse", *raw, "-o", merged], check=True)
     objects = [arg for command in tests(build) for arg in ("-object", command[0])]
-    skip = r"^/(usr|opt)/|/\.gauntlet-out/"  # system headers and our own output
+    skip = r"^/(usr|opt)/|^/project/\.gauntlet-out/"  # system headers and our own output
     export = ["llvm-cov", "export", "-format=lcov", f"-instr-profile={merged}", f"-ignore-filename-regex={skip}"]
     with open(out, "wb") as f:
         subprocess.run([*export, *objects], check=True, stdout=f)

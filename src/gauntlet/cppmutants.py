@@ -18,15 +18,20 @@ from pathlib import Path
 
 TEST_TIMEOUT = 120  # seconds ctest gives one test; a mutant that makes a test hang is killed
 MUTANT_TIMEOUT = 1800  # seconds analyze_mutants gives one rebuild + test run
-SKIP_DIRS = {".git", ".gauntlet-out"}
+SKIP_DIRS = {".git"}  # anywhere
+OUT_DIR = ".gauntlet-out"  # our own output: skipped at the top level only, a nested one is project code
 LABEL_LIMIT = 80
+
+
+def _kept_dirs(dirs: list[str], top: bool) -> list[str]:
+    return sorted(d for d in dirs if d not in SKIP_DIRS and not (top and d == OUT_DIR))
 
 
 def sources(root: Path, suffixes: tuple[str, ...], tests: str) -> list[str]:
     """Project-relative source files to mutate: the language's suffixes, minus its test files."""
     found: list[str] = []
     for dirpath, dirs, names in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        dirs[:] = _kept_dirs(dirs, Path(dirpath) == root)
         rels = (Path(dirpath, n).relative_to(root).as_posix() for n in sorted(names))
         found += [r for r in rels if r.endswith(suffixes) and not re.search(tests, r)]
     return found
