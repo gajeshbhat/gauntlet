@@ -85,7 +85,7 @@ def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
     assert capsys.readouterr().out == f"gauntlet {version('gauntlet')}\n"
 
 
-@pytest.mark.parametrize("language", [n for n in languages.NAMES if n not in ("python", "go")])
+@pytest.mark.parametrize("language", [n for n in languages.NAMES if n not in ("python", "go", "cpp-clang")])
 def test_init_writes_a_config_for_every_other_language(tmp_path: Path, language: str) -> None:
     (tmp_path / languages.TABLE[language].markers[0].replace("*", "app")).write_text("")
     assert load(scaffold.write_config(tmp_path)).language == language

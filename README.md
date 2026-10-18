@@ -25,10 +25,11 @@ Every gate fails closed: checking nothing is an error, never a pass. Results are
 | C# | `dotnet test` + coverlet (the test project must reference `coverlet.collector`) | Stryker.NET | yes |
 | Java | Maven + JaCoCo (no pom edits) | PIT | yes |
 | Rust | cargo-llvm-cov | cargo-mutants | yes |
-| C / C++ | CMake + gcov + gcovr (CMake projects only) | none yet | yes (C only) |
+| C / C++ | CMake + gcov + gcovr (CMake projects only) | universalmutator (built-in rules) | yes (C only) |
+| C / C++ with clang (`language = "cpp-clang"`, never auto-detected) | CMake + clang source-based coverage, in `silkeh/clang:21-trixie` | Mull (pinned `.deb`, unpacked without root) | yes (C only) |
 | Dart | `dart test` + `coverage` (Flutter not yet; lizard reads Dart through its Java reader, so `=>` functions are not scored) | none yet | yes |
 
-Where `harden` has no tool (C/C++ and Dart), `run` reports it as skipped and **fails** unless your policy sets `allow_skipped_gates = true`.
+Where `harden` has no tool (Dart), `run` reports it as skipped and **fails** unless your policy sets `allow_skipped_gates = true`.
 `arch` (layers) works for Python and Go; other languages exit 2 until an import reader exists. Complexity comes from
 [lizard](https://github.com/terryyin/lizard) for every language.
 
@@ -94,7 +95,7 @@ agent needs an image that contains it; build one from [`examples/agent.Dockerfil
 `gauntlet.toml` in the project (strict: unknown keys are errors):
 
 ```toml
-language = "python"            # python, go, javascript, csharp, java, rust, cpp, dart
+language = "python"            # python, go, javascript, csharp, java, rust, cpp, cpp-clang, dart
 src = "src"                    # Python: where module names are rooted
 
 [layers]                       # optional: imports may only point down this list, outermost first

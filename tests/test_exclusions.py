@@ -201,6 +201,9 @@ def test_include_and_omit_settings_that_narrow_coverage_are_exclusions(tmp_path:
         ("rust", "Cargo.toml", "[package]", []),
         ("dart", "dart_test.yaml", "exclude_tags: slow", ["dart_test.yaml:1: exclude_tags: slow"]),
         ("cpp", "CMakeLists.txt", "project(x)", []),
+        ("cpp", "my.rules", "x ==> y", ["my.rules: coverage-affecting settings file"]),
+        ("cpp", "tools/c.rules", "x ==> y", ["tools/c.rules: coverage-affecting settings file"]),
+        ("cpp", "custom_handler.py", "x = 1", ["custom_handler.py: coverage-affecting settings file"]),
         (
             "javascript",
             "tools/nyc.config.js",

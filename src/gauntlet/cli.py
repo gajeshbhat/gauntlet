@@ -43,7 +43,8 @@ ARTIFACTS = {
     "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
     "java": ("jacoco.xml", "mutations.xml"),
     "rust": ("lcov.info", "mutants-outcomes.json"),
-    "cpp": ("lcov.info",),
+    "cpp": ("lcov.info", "cpp-mutants.json"),
+    "cpp-clang": ("lcov.info", "mull-report.json"),
     "dart": ("lcov.info",),
 }
 

@@ -1,0 +1,82 @@
+"""Fixed helper for the cpp-clang language, run inside the sandbox as `python3 -I -c <this file> <command> <args>`.
+
+Nothing here is chosen by the repository: the test executables come from `ctest --show-only=json-v1`, and only the ones
+the build directory produced are used.
+"""
+
+import glob
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import urllib.request
+
+CAUGHT = {"Killed", "Timeout", "RuntimeError"}  # the statuses the host reader counts as caught
+
+
+def tests(build):
+    """The distinct test commands (executable first) whose executable was built in `build`."""
+    out = subprocess.run(["ctest", "--test-dir", build, "--show-only=json-v1"], check=True, capture_output=True)
+    commands = {tuple(t["command"]) for t in json.loads(out.stdout)["tests"] if t.get("command")}
+    chosen = sorted(c for c in commands if os.path.realpath(c[0]).startswith(os.path.realpath(build) + "/"))
+    if not chosen:
+        raise SystemExit(f"ctest lists no test executable built in {build}")
+    return chosen
+
+
+def install(url, sha256, dest):
+    """Download a pinned Mull package, check its hash, unpack it without root."""
+    data = urllib.request.urlopen(url).read()
+    if hashlib.sha256(data).hexdigest() != sha256:
+        raise SystemExit(f"{url}: sha256 mismatch")
+    package = os.path.join(dest, "mull.deb")
+    os.makedirs(dest, exist_ok=True)
+    with open(package, "wb") as f:
+        f.write(data)
+    subprocess.run(["dpkg-deb", "-x", package, dest], check=True)
+
+
+def coverage(build, profiles, out):
+    """Merge the raw profiles the tests wrote and export line coverage of every test executable as lcov."""
+    raw = sorted(glob.glob(os.path.join(profiles, "*.profraw")))
+    if not raw:
+        raise SystemExit(f"no profile data in {profiles}")
+    merged = os.path.join(profiles, "merged.profdata")
+    subprocess.run(["llvm-profdata", "merge", "-sparse", *raw, "-o", merged], check=True)
+    objects = [arg for command in tests(build) for arg in ("-object", command[0])]
+    skip = r"^/(usr|opt)/|^/project/\.gauntlet-out/"  # system headers and our own output
+    export = ["llvm-cov", "export", "-format=lcov", f"-instr-profile={merged}", f"-ignore-filename-regex={skip}"]
+    with open(out, "wb") as f:
+        subprocess.run([*export, *objects], check=True, stdout=f)
+
+
+def merge(reports):
+    """One Elements report from several: a mutant is caught when any test executable caught it."""
+    files = {}
+    for report in reports:
+        for name, data in report["files"].items():
+            seen = files.setdefault(name, {"language": data["language"], "mutants": {}})["mutants"]
+            for mutant in data["mutants"]:
+                old = seen.get(mutant["id"])
+                if old is None or (mutant["status"] in CAUGHT and old["status"] not in CAUGHT):
+                    seen[mutant["id"]] = mutant
+    return {"schemaVersion": "2", "files": {n: {**d, "mutants": list(d["mutants"].values())} for n, d in files.items()}}
+
+
+def mutate(build, runner, scratch, out):
+    """Run Mull on each test executable, then merge the reports."""
+    reports = []
+    for number, (exe, *args) in enumerate(tests(build)):
+        where = os.path.join(scratch, str(number))
+        cmd = [runner, exe, "--reporters", "Elements", "--report-dir", where, "--report-name", "r", "--allow-surviving"]
+        subprocess.run([*cmd, "--", *args], check=True)
+        with open(os.path.join(where, "r.json")) as f:
+            reports.append(json.load(f))
+    with open(out, "w") as f:
+        json.dump(merge(reports), f)
+
+
+COMMANDS = {"install": install, "coverage": coverage, "mutate": mutate}
+if __name__ == "__main__":
+    COMMANDS[sys.argv[1]](*sys.argv[2:])

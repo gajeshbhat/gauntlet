@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
@@ -7,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from gauntlet import mutation, runner
+from gauntlet import cppmutants, mutation, runner
 from gauntlet.config import Config
 from gauntlet.provenance import MANIFEST, verify
 from gauntlet.sandbox import ExecResult
@@ -428,7 +429,7 @@ def test_a_step_with_output_but_no_capture_name_stores_nothing(repo: Path, tmp_p
 
 
 def test_cpp_steps_are_fixed_pinned_and_ignore_the_repos_gcovr_config(tmp_path: Path) -> None:
-    install, configure, build, tests, coverage = runner.steps(Config(language="cpp"), tmp_path)
+    install, configure, build, tests, coverage, put, mutate = runner.steps(Config(language="cpp"), tmp_path)
     assert install.argv[:2] == ("sh", "-c")
     assert "sha256sum -c -" in install.argv[2] and runner.PIP_SHA256 in install.argv[2]
     script = install.argv[2]
@@ -440,6 +441,17 @@ def test_cpp_steps_are_fixed_pinned_and_ignore_the_repos_gcovr_config(tmp_path: 
     assert coverage.argv[:6] == ("python3", "-P", "-m", "gcovr", "--config", "/project/.gauntlet-out/gcovr.cfg")
     assert coverage.argv[-2:] == ("--lcov", "/project/.gauntlet-out/lcov.info")
     assert dict(coverage.env) == {"PYTHONPATH": "/project/.gauntlet-out/py"}
+    assert "universalmutator==1.14.1" in install.argv[2]
+    assert put.argv[:3] == ("sh", "-c", 'printf %s "$1" > "$2"') and put.argv[-1] == runner.CPP_MUTANTS
+    assert put.argv[-2] == (Path(cppmutants.__file__)).read_text()  # the shipped file, not the repo's
+    assert mutate.argv == (
+        "python3", "-P", "/project/.gauntlet-out/cppmutants.py", "/project", "/project/.gauntlet-out",
+        "/project/.gauntlet-out/cpp-mutants.json", ".c,.h,.cc,.cpp,.cxx,.hpp", r"^tests?/",
+        "-DCMAKE_C_FLAGS=--coverage", "-DCMAKE_CXX_FLAGS=--coverage", "-DCMAKE_EXE_LINKER_FLAGS=--coverage",
+    )  # fmt: skip
+    assert (mutate.name, mutate.timeout, mutate.must_pass) == ("mutation", 7200, False)
+    assert dict(mutate.env) == {"PYTHONPATH": "/project/.gauntlet-out/py"}
+    assert "cpp-mutants.json" in runner.REQUIRED["cpp"] and "cpp-mutants.json" in runner.FILES["cpp"]
 
 
 def test_dart_steps(tmp_path: Path) -> None:
@@ -462,6 +474,9 @@ def test_the_cpp_lock_pins_every_requirement_with_hashes() -> None:
     entries = [line for line in lock.splitlines() if line and not line.startswith((" ", "#"))]
     assert entries and all("==" in line for line in entries)
     assert lock.count("--hash=sha256:") >= len(entries)
+    pins = {line.split("==")[0] for line in entries}
+    assert {"cmake", "gcovr", "universalmutator", "tabulate", "levenshtein", "rapidfuzz"} <= pins
+    assert "comby" not in pins  # only needed for `mutate --comby`, which we never run (and it pulls in `typing`)
 
 
 def test_a_mutation_report_planted_by_the_tests_does_not_survive_a_crashed_mutation_run(
@@ -519,6 +534,8 @@ def test_a_symlinked_output_directory_is_refused_before_anything_is_read(repo: P
         ("java", "target/pit-reports"),
         ("csharp", "/project/.gauntlet-out/stryker"),
         ("rust", "/project/.gauntlet-out/mutants"),
+        ("cpp", "/project/.gauntlet-out/mutwork"),
+        ("cpp", "/project/.gauntlet-out/mutbuild"),
     ],
 )
 def test_the_intermediate_files_the_copy_steps_read_are_cleared_with_the_report(
@@ -527,4 +544,58 @@ def test_the_intermediate_files_the_copy_steps_read_are_cleared_with_the_report(
     stale = runner._stale(language)  # pyright: ignore[reportPrivateUsage]
     assert intermediate in stale
     assert stale[0] == f"/project/.gauntlet-out/{mutation.TOOLS[language].artifact}"
-    assert runner._stale("cpp") == ()  # pyright: ignore[reportPrivateUsage]
+    assert runner._stale("dart") == ()  # pyright: ignore[reportPrivateUsage]  # no mutation tool yet
+
+
+def _clang_steps(tmp_path: Path) -> dict[str, runner.Step]:
+    return {s.name: s for s in runner.steps(Config(language="cpp-clang"), tmp_path)}
+
+
+def test_cpp_clang_steps_are_fixed_pinned_and_use_only_our_mull_config(tmp_path: Path) -> None:
+    steps = _clang_steps(tmp_path)
+    assert list(steps) == [
+        "install-mull", "configure", "build", "tests", "coverage",
+        "mull-config", "mull-configure", "mull-build", "mutation",
+    ]  # fmt: skip
+    install = steps["install-mull"].argv
+    assert install[:3] == ("python3", "-I", "-c") and install[4:] == (
+        "install", runner.MULL_URL, runner.MULL_SHA256, "/project/.gauntlet-out/mull",
+    )  # fmt: skip
+    assert "0.34.0" in runner.MULL_URL and "LLVM-21.1.8" in runner.MULL_URL and len(runner.MULL_SHA256) == 64
+    assert "-fprofile-instr-generate -fcoverage-mapping" in " ".join(steps["configure"].argv)
+    assert dict(steps["tests"].env) == {"LLVM_PROFILE_FILE": "/project/.gauntlet-out/prof/%p-%m.profraw"}
+    assert steps["tests"].argv[0] == "ctest" and steps["tests"].timeout == 3600
+    plugin = "-fpass-plugin=/project/.gauntlet-out/mull/usr/lib/mull-ir-frontend-21"
+    assert plugin in " ".join(steps["mull-configure"].argv) and "-O0 -g -grecord-command-line" in " ".join(
+        steps["mull-configure"].argv
+    )
+    for name in ("mull-configure", "mull-build", "mutation"):  # the compiler plugin and the runner read our file
+        assert dict(steps[name].env) == {"MULL_CONFIG": "/project/.gauntlet-out/mull.yml"}
+
+
+def test_cpp_clang_mutation_step_is_the_fixed_mull_run_and_may_fail(tmp_path: Path) -> None:
+    mutation_step = _clang_steps(tmp_path)["mutation"]
+    assert mutation_step.must_pass is False and mutation_step.timeout == 7200
+    assert mutation_step.argv[4:] == (
+        "mutate", "/project/.gauntlet-out/mull-build", "/project/.gauntlet-out/mull/usr/bin/mull-runner-21",
+        "/project/.gauntlet-out/mull-reports", "/project/.gauntlet-out/mull-report.json",
+    )  # fmt: skip
+
+
+def test_cpp_clang_mull_config_mutates_project_code_only() -> None:
+    config = json.loads(runner._mull_config())  # pyright: ignore[reportPrivateUsage]
+    assert config == {
+        "includePaths": ["^/project/"],
+        "excludePaths": [rf"^/project/(?:tests?/|{re.escape('.gauntlet-out')}/)"],
+    }
+    exclude = re.compile(config["excludePaths"][0])
+    assert exclude.search("/project/tests/t.c") and exclude.search("/project/test/t.c")
+    assert exclude.search("/project/.gauntlet-out/build/x.c")
+    assert not exclude.search("/project/src/tests/t.c") and not exclude.search("/project/src/demo.c")
+    assert not exclude.search("/project/src/.gauntlet-out/x.c") and not exclude.search("/project/xgauntlet-out/x.c")
+
+
+def test_cpp_clang_artifacts_and_stale_files() -> None:
+    assert runner.FILES["cpp-clang"] == runner.REQUIRED["cpp-clang"] == ("lcov.info", "mull-report.json")
+    stale = runner._stale("cpp-clang")  # pyright: ignore[reportPrivateUsage]
+    assert stale == ("/project/.gauntlet-out/mull-report.json", "/project/.gauntlet-out/mull-reports")

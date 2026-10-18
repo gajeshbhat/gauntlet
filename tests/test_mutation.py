@@ -257,3 +257,88 @@ def test_cargo_mutants_report_that_finished_fewer_mutants_than_planned_is_refuse
     partial = CARGO_REPORT.replace('"total_mutants": 3', '"total_mutants": 40')
     with pytest.raises(ValueError, match="finished 3 of 40 mutants: partial report"):
         mutation.cargo_mutants(partial, parse([]))
+
+
+# From a real universalmutator 1.14.1 run in the gcc image (cppmutants.py's report, trimmed to 5 of 120 mutants).
+UM_REPORT = json.dumps(
+    {
+        "mutants": [
+            {"file": "src/demo.c", "line": 2, "mutation": "if (x > 1) { return 1; } -> if (x < 1) { return 1; }",
+             "status": "killed"},
+            {"file": "src/demo.c", "line": 2, "mutation": "if (x > 1) { return 1; } -> if (x == 1) { return 1; }",
+             "status": "killed"},
+            {"file": "src/demo.c", "line": 10, "mutation": "if (a == 5) { return 5; } -> if (a < 5) { return 5; }",
+             "status": "survived"},
+            {"file": "src/demo.c", "line": 10, "mutation": "if (a == 5) { return 5; } -> if (a == 0) { return 5; }",
+             "status": "survived"},
+            {"file": "src/demo.c", "line": 11, "mutation": "return 0; -> return 1;", "status": "survived"},
+        ]
+    }
+)  # fmt: skip
+
+
+def test_universalmutator_report_scores_killed_over_all_and_lists_survivors_with_file_and_line() -> None:
+    m = mutation.universalmutator(UM_REPORT, parse([]))
+    assert (m.caught, m.total, m.pct) == (2, 5, 40.0)
+    assert m.survivors == [
+        "src/demo.c:10: if (a == 5) { return 5; } -> if (a < 5) { return 5; }: survived",
+        "src/demo.c:10: if (a == 5) { return 5; } -> if (a == 0) { return 5; }: survived",
+        "src/demo.c:11: return 0; -> return 1;: survived",
+    ]
+
+
+@pytest.mark.parametrize(("status", "caught"), [("killed", 1), ("survived", 0), ("timeout", 0), ("anything new", 0)])
+def test_universalmutator_statuses_only_killed_is_caught(status: str, caught: int) -> None:
+    report = json.dumps({"mutants": [{"file": "a.c", "line": 1, "mutation": "x -> y", "status": status}]})
+    assert mutation.universalmutator(report, parse([])).caught == caught
+
+
+def test_universalmutator_is_registered_and_an_empty_report_is_an_error() -> None:
+    tool = mutation.TOOLS["cpp"]
+    assert tool.artifact == "cpp-mutants.json"
+    assert tool.read(UM_REPORT, parse(["src/demo.c:10-11"]), Config(language="cpp")).total == 3
+    with pytest.raises(ValueError, match="no mutants in scope; check the scope and that universalmutator ran"):
+        tool.read('{"mutants": []}', parse([]), Config(language="cpp"))
+
+
+# A real Mull 0.34.0 run in the silkeh/clang:21 image (f is tested, risky is not), trimmed to the fields the reader uses.
+MULL_REPORT = (Path(__file__).parent / "fixtures" / "mull-report.json").read_text()
+
+
+def _mull(*statuses: str) -> str:
+    mutants = [{"mutatorName": "cxx_eq_to_ne", "status": s, "location": {"start": {"line": 3}}} for s in statuses]
+    return json.dumps({"files": {"/project/src/a.c": {"mutants": mutants}}})
+
+
+def test_mull_reader_scores_a_real_report() -> None:
+    m = mutation.TOOLS["cpp-clang"].read(MULL_REPORT, parse([]), Config(language="cpp-clang"))
+    assert (m.caught, m.total, round(m.pct, 1)) == (1, 7, 14.3)
+    assert m.survivors[0] == "src/demo.c:2: cxx_gt_to_ge Survived"
+    assert "src/demo.c:6: cxx_eq_to_ne Survived" in m.survivors  # risky is never called
+    assert not any("cxx_gt_to_le" in line for line in m.survivors)  # f's other boundary mutant was killed
+
+
+@pytest.mark.parametrize(
+    ("status", "caught", "total"),
+    [
+        ("Killed", 1, 1),
+        ("Timeout", 1, 1),
+        ("RuntimeError", 1, 1),
+        ("Survived", 0, 1),
+        ("NoCoverage", 0, 1),
+        ("SomethingNew", 0, 1),
+        ("CompileError", 0, 0),
+        ("Ignored", 0, 0),
+    ],
+)
+def test_mull_status_mapping_fails_closed(status: str, caught: int, total: int) -> None:
+    m = mutation.TOOLS["cpp-clang"].read(_mull(status, "Killed"), parse([]), Config(language="cpp-clang"))
+    assert (m.caught - 1, m.total - 1) == (caught, total)
+
+
+def test_mull_refuses_files_outside_the_project_and_an_empty_report_names_the_tool() -> None:
+    tool = mutation.TOOLS["cpp-clang"]
+    with pytest.raises(ValueError, match="outside /project/"):
+        tool.read(_mull("Killed").replace("/project/src", "/usr/include"), parse([]), Config(language="cpp-clang"))
+    with pytest.raises(ValueError, match="check the scope and that Mull ran"):
+        tool.read('{"files": {}}', parse([]), Config(language="cpp-clang"))
