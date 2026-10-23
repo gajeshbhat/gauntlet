@@ -1,13 +1,12 @@
 """Pins the exact output of things whose precise wording and shape other tools depend on."""
 
 import json
-import os
 import re
-import subprocess
 from importlib.metadata import version
 from pathlib import Path
 
 import pytest
+from helpers import git, tree
 
 from gauntlet import runner
 from gauntlet.cli import main
@@ -157,23 +156,13 @@ gauntlet run .
 # ---- every gate reports in the same, complete shape
 def committed(root: Path, files: dict[str, str]) -> Path:
     root.mkdir(parents=True, exist_ok=True)
-    env = {
-        **os.environ,
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@t",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@t",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-    }
-    for name, text in files.items():
-        (root / name).parent.mkdir(parents=True, exist_ok=True)
-        (root / name).write_text(text)
+    tree(root, files)
     for args in (
         ["init", "-q", "-b", "main"],
         ["add", "-A"],
         ["commit", "-q", "-m", "x", "--no-gpg-sign", "--allow-empty"],
     ):
-        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
+        git(root, *args)
     return root
 
 

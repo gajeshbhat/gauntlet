@@ -6,16 +6,11 @@ import sys
 from pathlib import Path
 
 import pytest
+from helpers import tree
 
 from gauntlet import cppmutants
 
 TESTS = r"^tests?/"
-
-
-def tree(root: Path, files: dict[str, str]) -> None:
-    for name, text in files.items():
-        (root / name).parent.mkdir(parents=True, exist_ok=True)
-        (root / name).write_text(text)
 
 
 def test_sources_are_the_languages_suffixes_minus_tests_and_our_own_directories(tmp_path: Path) -> None:

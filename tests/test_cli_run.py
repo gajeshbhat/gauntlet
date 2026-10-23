@@ -3,7 +3,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import pytest
-from cli_helpers import (
+from helpers import (
     Out,
     RunSandbox,
     committed_py_project,

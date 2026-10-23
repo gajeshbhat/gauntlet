@@ -1,17 +1,11 @@
 from pathlib import Path
 
 import pytest
+from helpers import tree
 
 from gauntlet.arch import Violation, check, imports, layer_of
 
 LAYERS = ("app.web", "app.service", "app.domain")  # outermost first
-
-
-def make(root: Path, files: dict[str, str]) -> None:
-    for rel, text in files.items():
-        path = root / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
 
 
 def test_imports_absolute_and_from() -> None:
@@ -29,7 +23,7 @@ def test_relative_import_with_module_part() -> None:
 
 
 def test_inward_imports_allowed(tmp_path: Path) -> None:
-    make(
+    tree(
         tmp_path,
         {
             "app/web/views.py": "from app.service import logic\nfrom app.domain import model\n",
@@ -41,7 +35,7 @@ def test_inward_imports_allowed(tmp_path: Path) -> None:
 
 
 def test_outward_import_is_a_violation(tmp_path: Path) -> None:
-    make(
+    tree(
         tmp_path,
         {
             "app/domain/model.py": "from app.web import views\n",
@@ -53,22 +47,22 @@ def test_outward_import_is_a_violation(tmp_path: Path) -> None:
 
 
 def test_same_layer_import_allowed(tmp_path: Path) -> None:
-    make(tmp_path, {"app/service/a.py": "from app.service import b\n", "app/service/b.py": ""})
+    tree(tmp_path, {"app/service/a.py": "from app.service import b\n", "app/service/b.py": ""})
     assert check(tmp_path, LAYERS).violations == []
 
 
 def test_modules_outside_layers_are_ignored(tmp_path: Path) -> None:
-    make(tmp_path, {"other/x.py": "from app.web import views\n", "app/domain/m.py": "import other\n"})
+    tree(tmp_path, {"other/x.py": "from app.web import views\n", "app/domain/m.py": "import other\n"})
     assert check(tmp_path, LAYERS).violations == []
 
 
 def test_no_layers_means_nothing_to_check(tmp_path: Path) -> None:
-    make(tmp_path, {"a.py": "import b\n"})
+    tree(tmp_path, {"a.py": "import b\n"})
     assert check(tmp_path, ()).violations == []
 
 
 def test_every_import_statement_counts(tmp_path: Path) -> None:
-    make(
+    tree(
         tmp_path,
         {
             "app/domain/m.py": "import app.web.a\nimport app.web.b\n",
@@ -80,19 +74,19 @@ def test_every_import_statement_counts(tmp_path: Path) -> None:
 
 
 def test_files_outside_layers_do_not_stop_the_scan(tmp_path: Path) -> None:
-    make(tmp_path, {"aaa/x.py": "", "app/domain/m.py": "from app.web import v\n", "app/web/v.py": ""})
+    tree(tmp_path, {"aaa/x.py": "", "app/domain/m.py": "from app.web import v\n", "app/web/v.py": ""})
     assert len(check(tmp_path, LAYERS).violations) == 1
 
 
 def test_package_init_is_named_after_its_package(tmp_path: Path) -> None:
-    make(tmp_path, {"app/domain/__init__.py": "from app.web import v\n", "app/web/v.py": ""})
+    tree(tmp_path, {"app/domain/__init__.py": "from app.web import v\n", "app/web/v.py": ""})
     (v,) = check(tmp_path, LAYERS).violations
     assert v.source == "app.domain"
     assert v.path == "app/domain/__init__.py"
 
 
 def test_relative_import_from_init_reaches_outer_layer(tmp_path: Path) -> None:
-    make(tmp_path, {"app/domain/__init__.py": "from ..web import v\n", "app/web/v.py": ""})
+    tree(tmp_path, {"app/domain/__init__.py": "from ..web import v\n", "app/web/v.py": ""})
     assert len(check(tmp_path, LAYERS).violations) == 1
 
 
@@ -101,7 +95,7 @@ def test_bare_relative_import_is_resolved() -> None:
 
 
 def test_a_single_file_module_is_its_own_layer(tmp_path: Path) -> None:
-    make(tmp_path, {"app/domain.py": "from app.web import v\n", "app/web/v.py": ""})
+    tree(tmp_path, {"app/domain.py": "from app.web import v\n", "app/web/v.py": ""})
     (v,) = check(tmp_path, LAYERS).violations
     assert v.source == "app.domain"
 
@@ -119,13 +113,13 @@ def test_longest_prefix_wins() -> None:
 
 
 def test_counts_the_modules_that_belong_to_a_layer(tmp_path: Path) -> None:
-    make(tmp_path, {"app/web/a.py": "", "app/domain/b.py": "", "other/c.py": ""})
+    tree(tmp_path, {"app/web/a.py": "", "app/domain/b.py": "", "other/c.py": ""})
     assert check(tmp_path, LAYERS).modules == 2
 
 
 def test_symlinks_leaving_the_root_are_refused(tmp_path: Path) -> None:
     root = tmp_path / "root"
-    make(root, {"app/domain/m.py": ""})
+    tree(root, {"app/domain/m.py": ""})
     outside = tmp_path / "outside.py"
     outside.write_text("import app.web\n")
     (root / "app" / "domain" / "link.py").symlink_to(outside)
@@ -134,19 +128,19 @@ def test_symlinks_leaving_the_root_are_refused(tmp_path: Path) -> None:
 
 
 def test_unparseable_layer_module_is_a_clean_error(tmp_path: Path) -> None:
-    make(tmp_path, {"app/domain/m.py": "def broken(:\n"})
+    tree(tmp_path, {"app/domain/m.py": "def broken(:\n"})
     with pytest.raises(ValueError, match=r"cannot analyse app/domain/m\.py"):
         check(tmp_path, LAYERS)
 
 
 def test_oversized_layer_module_is_rejected(tmp_path: Path) -> None:
-    make(tmp_path, {"app/domain/m.py": "x = 1\n" * 10})
+    tree(tmp_path, {"app/domain/m.py": "x = 1\n" * 10})
     with pytest.raises(ValueError, match="byte limit"):
         check(tmp_path, LAYERS, max_bytes=10)
 
 
 def test_layer_edges_are_collected(tmp_path: Path) -> None:
-    make(
+    tree(
         tmp_path,
         {
             "app/web/v.py": "from app.service import logic\nfrom app.domain import model\n",
@@ -158,5 +152,5 @@ def test_layer_edges_are_collected(tmp_path: Path) -> None:
 
 
 def test_same_layer_imports_are_not_edges(tmp_path: Path) -> None:
-    make(tmp_path, {"app/service/a.py": "from app.service import b\n", "app/service/b.py": ""})
+    tree(tmp_path, {"app/service/a.py": "from app.service import b\n", "app/service/b.py": ""})
     assert check(tmp_path, LAYERS).edges == frozenset()

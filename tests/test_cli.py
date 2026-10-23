@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from cli_helpers import (
+from helpers import (
     BRANCHY,
     Out,
     committed_py_project,
