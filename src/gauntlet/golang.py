@@ -8,6 +8,7 @@ mutation.json   gremlins unleash -o mutation.json .
 import json
 
 from gauntlet.arch import ArchResult, Violation, layer_of
+from gauntlet.errors import GauntletError
 from gauntlet.results import Mutation
 from gauntlet.scope import Scope
 
@@ -53,5 +54,5 @@ def harden_check(mutation_json: str, scope: Scope, base: str = "") -> Mutation:
             else:
                 bad.append(f"{name}:{m['line']}:{m['column']} {m['type']} {m['status']}")
     if total == 0:
-        raise ValueError("no mutants in scope; check the scope and that gremlins ran")
+        raise GauntletError("no mutants in scope; check the scope and that gremlins ran")
     return Mutation(100 * caught / total, bad, caught, total)

@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from gauntlet.errors import GauntletError
+
 MAX_SOURCE_BYTES = 5_000_000
 MAX_ARTIFACT_BYTES = 64_000_000
 SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".tox"}  # never project source, at any depth
@@ -23,18 +25,18 @@ def inside(root: Path, rel: str) -> Path:
     base = root.resolve()
     path = (base / rel).resolve()
     if not path.is_relative_to(base):
-        raise ValueError(f"{rel!r} escapes the project root")
+        raise GauntletError(f"{rel!r} escapes the project root")
     return path
 
 
 def read_text(path: Path, limit: int) -> str:
     size = path.stat().st_size
     if size > limit:
-        raise ValueError(f"{path} is {size} bytes, over the {limit} byte limit")
+        raise GauntletError(f"{path} is {size} bytes, over the {limit} byte limit")
     try:
         return path.read_text()
     except UnicodeDecodeError:
-        raise ValueError(f"{path} is not valid UTF-8") from None
+        raise GauntletError(f"{path} is not valid UTF-8") from None
 
 
 def source_files(root: Path, suffixes: tuple[str, ...]) -> list[str]:

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from gauntlet import languages
+from gauntlet.errors import GauntletError
 
 PYTHON = """language = "python"
 src = "{src}"
@@ -31,10 +32,10 @@ TEMPLATES = {"python": PYTHON, "go": GO}
 def _template(root: Path) -> str:
     found = languages.detect(root)
     if len(found) > 1:
-        raise ValueError(f"found {' and '.join(found)}; write gauntlet.toml yourself")
+        raise GauntletError(f"found {' and '.join(found)}; write gauntlet.toml yourself")
     if not found:
         markers = ", ".join(m for row in languages.TABLE.values() for m in row.markers)
-        raise ValueError(f"cannot tell the language of {root}: looked for {markers}")
+        raise GauntletError(f"cannot tell the language of {root}: looked for {markers}")
     template = TEMPLATES.get(found[0], OTHER)
     return template.format(language=found[0], src="src" if (root / "src").is_dir() else ".")
 
@@ -42,7 +43,7 @@ def _template(root: Path) -> str:
 def write_config(root: Path) -> Path:
     path = root / "gauntlet.toml"
     if path.exists():
-        raise ValueError(f"{path.name} already exists; edit it instead")
+        raise GauntletError(f"{path.name} already exists; edit it instead")
     text = _template(root)
     path.write_text(text)
     return path

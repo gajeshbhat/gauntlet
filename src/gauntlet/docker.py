@@ -12,6 +12,7 @@ import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from gauntlet.errors import GauntletError
 from gauntlet.names import IMAGE, MEMORY
 from gauntlet.sandbox import ExecResult, env_entries, validate_exec
 
@@ -72,7 +73,7 @@ class DockerSandbox:
             self.image, "sleep", "infinity",
         )  # fmt: skip
         if done.returncode != 0:
-            raise ValueError(f"{self.cli} run failed: {done.stderr.strip() or done.stdout.strip()}")
+            raise GauntletError(f"{self.cli} run failed: {done.stderr.strip() or done.stdout.strip()}")
 
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
         validate_exec(argv, timeout)

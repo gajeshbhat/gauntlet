@@ -7,6 +7,7 @@ from pathlib import Path
 from gauntlet import languages
 from gauntlet.config import Config
 from gauntlet.docker import DockerSandbox
+from gauntlet.errors import GauntletError
 from gauntlet.policy import Policy
 from gauntlet.sandbox import Sandbox, WorkshopSandbox
 
@@ -27,10 +28,10 @@ def pick(policy: Policy, which: Which = shutil.which) -> str:
         for name in ("workshop", "docker"):
             if installed[name]:
                 return name
-        raise ValueError(NO_SANDBOX)
+        raise GauntletError(NO_SANDBOX)
     if not installed[policy.sandbox]:
         tool = "workshop" if policy.sandbox == "workshop" else policy.container_cli
-        raise ValueError(f'sandbox = "{policy.sandbox}" but `{tool}` is not installed')
+        raise GauntletError(f'sandbox = "{policy.sandbox}" but `{tool}` is not installed')
     return policy.sandbox
 
 
@@ -52,5 +53,5 @@ def agent_sandbox(workspace: Path, cfg: Config, policy: Policy, which: Which = s
     if pick(policy, which) == "workshop":
         return WorkshopSandbox(workspace, name="gauntlet-agent", sdks=f"{languages.get(cfg.language).sdk},claude-code")
     if not policy.docker_image_agent:
-        raise ValueError("docker_image_agent is not set in the policy; build one from examples/agent.Dockerfile")
+        raise GauntletError("docker_image_agent is not set in the policy; build one from examples/agent.Dockerfile")
     return _docker(workspace, policy.docker_image_agent, policy)

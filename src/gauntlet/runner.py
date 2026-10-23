@@ -14,6 +14,7 @@ from pathlib import Path
 
 from gauntlet import languages, mutation
 from gauntlet.config import Config
+from gauntlet.errors import GauntletError
 from gauntlet.provenance import excluded, fingerprint, stamp
 from gauntlet.safefs import MAX_ARTIFACT_BYTES
 from gauntlet.sandbox import ExecResult, Sandbox
@@ -69,13 +70,13 @@ class Step:
 
 def _safe_path(value: str) -> str:
     if not PATH_OK.match(value) or ".." in value.split("/"):
-        raise ValueError(f"unsafe path {value!r}")
+        raise GauntletError(f"unsafe path {value!r}")
     return value
 
 
 def _safe_package(value: str) -> str:
     if not PACKAGE_OK.match(value) or ".." in value.replace("...", "").split("/"):
-        raise ValueError(f"unsafe package pattern {value!r}")
+        raise GauntletError(f"unsafe package pattern {value!r}")
     return value
 
 
@@ -413,7 +414,7 @@ def _stale(language: str) -> tuple[str, ...]:
 def _clear(box: Sandbox, stale: tuple[str, ...]) -> None:
     removal = box.exec(["rm", "-rf", "--", *stale], {}, 60)
     if removal.code != 0:
-        raise ValueError(f"could not clear the old mutation report: {output_tail(removal)}")
+        raise GauntletError(f"could not clear the old mutation report: {output_tail(removal)}")
 
 
 def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> dict[str, bytes]:
@@ -427,43 +428,44 @@ def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> d
             _clear(box, stale)
         done = box.exec(step.argv, dict(step.env), step.timeout)
         if done.code != 0 and step.must_pass:
-            raise ValueError(f"step {step.name!r} failed (exit {done.code}): {output_tail(done)}")
+            raise GauntletError(f"step {step.name!r} failed (exit {done.code}): {output_tail(done)}")
         if step.capture and done.stdout:
             captured[step.capture] = done.stdout.encode()
+            _check_size(step.capture, captured[step.capture])
     return captured
 
 
 def _check_size(name: str, data: bytes) -> None:
     if len(data) > MAX_ARTIFACT_BYTES:
-        raise ValueError(f"{name} is {len(data)} bytes, over the {MAX_ARTIFACT_BYTES} byte limit")
+        raise GauntletError(f"{name} is {len(data)} bytes, over the {MAX_ARTIFACT_BYTES} byte limit")
 
 
 def _read_artifact(path: Path) -> bytes | None:
     if path.is_symlink():
-        raise ValueError(f"{path.name} is a symlink")
+        raise GauntletError(f"{path.name} is a symlink")
     data = path.read_bytes() if path.is_file() else None
     if data is not None:
         _check_size(path.name, data)
     return data
 
 
+def _written(snap: Path, names: list[str]) -> dict[str, bytes]:
+    """The artifacts the sandbox wrote to its output directory."""
+    if (snap / OUT_DIR).is_symlink():  # the tests swapped the output directory for a link to somewhere on the host
+        raise GauntletError(f"{OUT_DIR} is a symlink")
+    found = {name: _read_artifact(snap / OUT_DIR / name) for name in names}
+    return {name: data for name, data in found.items() if data is not None}
+
+
 def _collect(snap: Path, language: str, plan: list[Step], captured: dict[str, bytes]) -> dict[str, bytes]:
     """The row's artifacts: a step's captured stdout, else the file the sandbox wrote. A file never stands in for a
     captured artifact, so the tests cannot forge one by leaving it in the output directory."""
-    if (snap / OUT_DIR).is_symlink():  # the tests swapped the output directory for a link to somewhere on the host
-        raise ValueError(f"{OUT_DIR} is a symlink")
     row = languages.get(language)
     stdout = {step.capture for step in plan}
-    found = dict(captured)
-    for name in row.artifacts:
-        data = None if name in stdout else _read_artifact(snap / OUT_DIR / name)
-        if data is not None:
-            found[name] = data
-    for name, data in captured.items():
-        _check_size(name, data)
+    found = {**_written(snap, [n for n in row.artifacts if n not in stdout]), **captured}
     missing = [n for n in row.artifacts if n not in row.optional and n not in found]
     if missing:
-        raise ValueError(f"the sandbox did not produce {', '.join(missing)}")
+        raise GauntletError(f"the sandbox did not produce {', '.join(missing)}")
     return found
 
 
@@ -484,7 +486,7 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
             box.remove()
         found = _collect(snap, cfg.language, plan, captured)
     if fingerprint(source, skip) != before:
-        raise ValueError("source changed while the gauntlet ran; rerun it")
+        raise GauntletError("source changed while the gauntlet ran; rerun it")
     out.mkdir(parents=True, exist_ok=True)
     for name, data in found.items():
         (out / name).write_bytes(data)

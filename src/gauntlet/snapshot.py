@@ -6,6 +6,7 @@ The sandbox never sees the real checkout: it cannot edit gauntlet's own sandbox 
 import shutil
 from pathlib import Path
 
+from gauntlet.errors import GauntletError
 from gauntlet.provenance import git_output
 from gauntlet.safefs import inside
 
@@ -20,10 +21,10 @@ def _listed(source: Path) -> list[str]:
 
 def snapshot(source: Path, dest: Path, max_bytes: int = MAX_BYTES, max_files: int = MAX_FILES) -> int:
     if dest.exists() and any(dest.iterdir()):
-        raise ValueError(f"{dest} is not empty")
+        raise GauntletError(f"{dest} is not empty")
     names = _listed(source)
     if len(names) > max_files:
-        raise ValueError(f"{source} has more than {max_files} files")
+        raise GauntletError(f"{source} has more than {max_files} files")
     dest.mkdir(mode=0o700, parents=True, exist_ok=True)
     dest.chmod(0o700)
     total, copied = 0, 0
@@ -33,7 +34,7 @@ def snapshot(source: Path, dest: Path, max_bytes: int = MAX_BYTES, max_files: in
         src = inside(source, name)  # resolves symlinks; refuses any that leave the repo
         total += src.stat().st_size
         if total > max_bytes:
-            raise ValueError(f"{source} is over the {max_bytes} byte limit")
+            raise GauntletError(f"{source} is over the {max_bytes} byte limit")
         target = dest / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, target)

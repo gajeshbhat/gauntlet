@@ -8,6 +8,7 @@ from typing import Any
 
 from gauntlet import golang, harden
 from gauntlet.config import Config
+from gauntlet.errors import GauntletError
 from gauntlet.linecov import parse_xml
 from gauntlet.results import Mutation
 from gauntlet.scope import Scope
@@ -25,7 +26,7 @@ def tally(mutants: Iterable[Mutant], scope: Scope, tool: str) -> Mutation:
     """The score over the mutants in scope. Readers leave out mutants that do not count (compile errors, say)."""
     chosen = [m for m in mutants if scope.contains(m.file, m.line)]
     if not chosen:
-        raise ValueError(f"no mutants in scope; check the scope and that {tool} ran")
+        raise GauntletError(f"no mutants in scope; check the scope and that {tool} ran")
     caught = sum(m.caught for m in chosen)
     survivors = [f"{m.file}:{m.line}: {m.label}" for m in chosen if not m.caught]
     return Mutation(100 * caught / len(chosen), survivors, caught, len(chosen))
@@ -49,7 +50,7 @@ def pit(text: str, scope: Scope, cfg: Config) -> Mutation:  # noqa: ARG001
 def _pit_mutant(el: ET.Element) -> Mutant:
     status = el.get("status", "")
     if status not in PIT_CAUGHT | PIT_SURVIVED:
-        raise ValueError(f"unknown PIT mutation status {status!r}")
+        raise GauntletError(f"unknown PIT mutation status {status!r}")
     package = (el.findtext("mutatedClass") or "").rpartition(".")[0]
     file = "/".join(p for p in (PIT_SOURCES, *package.split("."), el.findtext("sourceFile") or "") if p)
     label = f"{el.findtext('mutator', '').rpartition('.')[2]} in {el.findtext('mutatedMethod')}: {status}"
@@ -71,7 +72,9 @@ def cargo_mutants(text: str, scope: Scope) -> Mutation:
     report = json.loads(text)
     outcomes = [o for o in report["outcomes"] if isinstance(o["scenario"], dict)]
     if len(outcomes) < report["total_mutants"]:
-        raise ValueError(f"cargo-mutants finished {len(outcomes)} of {report['total_mutants']} mutants: partial report")
+        raise GauntletError(
+            f"cargo-mutants finished {len(outcomes)} of {report['total_mutants']} mutants: partial report"
+        )
     outcomes = [o for o in outcomes if o["summary"] != "Unviable"]
     mutants = [_cargo_mutant(o["scenario"]["Mutant"], o["summary"]) for o in outcomes]
     return tally(mutants, scope, "cargo-mutants")
@@ -108,7 +111,7 @@ def _stryker_path(name: str) -> str:
     if not name.startswith("/"):
         return name
     if not name.startswith(SANDBOX_ROOT):
-        raise ValueError(f"Stryker reported {name}, outside {SANDBOX_ROOT}")
+        raise GauntletError(f"Stryker reported {name}, outside {SANDBOX_ROOT}")
     return name.removeprefix(SANDBOX_ROOT)
 
 

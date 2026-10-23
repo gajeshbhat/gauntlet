@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from gauntlet import languages
+from gauntlet.errors import GauntletError
 from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text, source_files
 from gauntlet.scope import Scope
 
@@ -21,7 +22,7 @@ def _python_comments(rel: str, text: str) -> list[tuple[int, str]]:
         tokens = tokenize.generate_tokens(io.StringIO(text).readline)
         return [(t.start[0], t.string) for t in tokens if t.type == tokenize.COMMENT]
     except (tokenize.TokenError, SyntaxError):
-        raise ValueError(f"cannot analyse {rel}") from None
+        raise GauntletError(f"cannot analyse {rel}") from None
 
 
 def _comments(rel: str, text: str, language: str) -> list[tuple[int, str]]:
@@ -52,7 +53,7 @@ def _pyproject(root: Path) -> list[str]:
     try:
         data: dict[str, Any] = tomllib.loads(read_text(path, MAX_SOURCE_BYTES))
     except tomllib.TOMLDecodeError:
-        raise ValueError("cannot read pyproject.toml") from None
+        raise GauntletError("cannot read pyproject.toml") from None
     tool: dict[str, Any] = data.get("tool", {})
     coverage: dict[str, Any] = tool.get("coverage", {})
     wanted = [(_label(sec, key), coverage.get(sec, {}).get(key, [])) for sec, key in COVERAGE_KEYS]

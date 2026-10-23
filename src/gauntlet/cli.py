@@ -29,6 +29,7 @@ from gauntlet import (
     spec,
 )
 from gauntlet.config import Config, load
+from gauntlet.errors import GauntletError
 from gauntlet.policy import Policy
 from gauntlet.results import GateResult
 from gauntlet.safefs import read_artifact, read_text
@@ -58,16 +59,16 @@ def _trusted(run: Run, names: list[str]) -> None:
 def _arch_result(run: Run) -> arch.ArchResult:
     cfg = run.cfg
     if not cfg.layers:
-        raise ValueError("no layers configured: add [layers] order to gauntlet.toml")
+        raise GauntletError("no layers configured: add [layers] order to gauntlet.toml")
     if cfg.language not in ("python", "go"):
-        raise ValueError(f"arch has no import reader for {cfg.language} yet")
+        raise GauntletError(f"arch has no import reader for {cfg.language} yet")
     if cfg.language == "go":
         _trusted(run, ["imports.txt"])
         result = golang.arch_check(read_artifact(run.art, "imports.txt", IMPORTS_HOW), cfg.layers)
     else:
         result = arch.check(run.root / cfg.src, cfg.layers)
     if result.modules == 0:
-        raise ValueError("no module belongs to any configured layer; check [layers] and src")
+        raise GauntletError("no module belongs to any configured layer; check [layers] and src")
     return result
 
 
@@ -96,7 +97,7 @@ def _clean_result(run: Run) -> clean.CleanResult:
 def _clean(run: Run) -> GateResult:
     result = _clean_result(run)
     if result.evaluated == 0:
-        raise ValueError("no functions were evaluated: empty coverage data, or --only matched nothing")
+        raise GauntletError("no functions were evaluated: empty coverage data, or --only matched nothing")
     found = tuple(
         f"{path}:{f.line}: {f.name} CRAP {f.crap:.1f} > {run.cfg.crap_max} "
         f"(complexity {f.complexity}, coverage {f.coverage:.0%})"
@@ -119,7 +120,7 @@ def _harden(run: Run) -> GateResult:
     cfg = run.cfg
     tool = mutation.TOOLS.get(cfg.language)
     if tool is None:
-        raise ValueError(f"harden is not available for {cfg.language} yet")
+        raise GauntletError(f"harden is not available for {cfg.language} yet")
     _trusted(run, [tool.artifact])
     m = tool.read(read_artifact(run.art, tool.artifact, tool.how), run.scope, cfg)
     ok = m.pct >= cfg.mutation_min
@@ -289,9 +290,9 @@ def _loop_stages(run: Run, args: argparse.Namespace, agent: loop.Agent, workspac
 
 def _loop(run: Run, args: argparse.Namespace) -> int:
     if not run.policy.agent_command:
-        raise ValueError(loop.NO_AGENT)
+        raise GauntletError(loop.NO_AGENT)
     if not (args.requirement or args.spec):
-        raise ValueError("give --requirement (to write a spec) or --spec (an approved spec to implement)")
+        raise GauntletError("give --requirement (to write a spec) or --spec (an approved spec to implement)")
     out: Path = args.out or run.root / ".gauntlet-loop"
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="gauntlet-loop-") as tmp:
@@ -356,6 +357,10 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         return _dispatch(args)
-    except (OSError, ValueError, KeyError, TypeError) as e:
-        print(f"gauntlet: {e if not isinstance(e, KeyError) else f'malformed input, missing {e}'}", file=sys.stderr)
-        return 2
+    except (OSError, GauntletError) as e:
+        print(f"gauntlet: {e}", file=sys.stderr)
+    except KeyError as e:  # an artifact without a field its reader needs
+        print(f"gauntlet: malformed input, missing {e}", file=sys.stderr)
+    except (ValueError, TypeError) as e:  # an artifact the reader cannot parse (json.JSONDecodeError is a ValueError)
+        print(f"gauntlet: malformed input: {e}", file=sys.stderr)
+    return 2

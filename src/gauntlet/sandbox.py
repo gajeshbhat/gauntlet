@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from gauntlet.errors import GauntletError
 from gauntlet.names import ENV_NAME
 
 NAME = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
@@ -38,26 +39,26 @@ def env_entries(env: Mapping[str, str | None]) -> list[str]:
     entries: list[str] = []
     for name, value in env.items():
         if not ENV_NAME.match(name):
-            raise ValueError(f"bad environment variable name {name!r}")
+            raise GauntletError(f"bad environment variable name {name!r}")
         entries.append(name if value is None else f"{name}={value}")
     return entries
 
 
 def validate_exec(argv: Sequence[str], timeout: int) -> None:
     if not argv:
-        raise ValueError("empty command")
+        raise GauntletError("empty command")
     if any("\0" in a for a in argv):
-        raise ValueError("NUL in command")
+        raise GauntletError("NUL in command")
     if not 0 < timeout <= MAX_TIMEOUT:
-        raise ValueError(f"timeout must be between 1 and {MAX_TIMEOUT} seconds")
+        raise GauntletError(f"timeout must be between 1 and {MAX_TIMEOUT} seconds")
 
 
 class WorkshopSandbox:
     def __init__(self, project: Path, name: str = "gauntlet", sdks: str = "uv", run: Runner = subprocess.run) -> None:
         if not NAME.match(name):
-            raise ValueError(f"bad workshop name {name!r}")
+            raise GauntletError(f"bad workshop name {name!r}")
         if not SDKS.match(sdks):
-            raise ValueError(f"bad sdk list {sdks!r}")
+            raise GauntletError(f"bad sdk list {sdks!r}")
         self.project, self.name, self.sdks, self._run = project, name, sdks, run
 
     def _workshop(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -67,11 +68,11 @@ class WorkshopSandbox:
 
     def ensure(self) -> None:
         if (self.project / ".workshop" / f"{self.name}.yaml").exists():
-            raise ValueError(f"{self.project} already has a workshop definition for {self.name!r}")
+            raise GauntletError(f"{self.project} already has a workshop definition for {self.name!r}")
         for step in (("init", self.name, "--sdks", self.sdks), ("launch", self.name)):
             done = self._workshop(*step)
             if done.returncode != 0:
-                raise ValueError(f"workshop {step[0]} failed: {done.stderr.strip() or done.stdout.strip()}")
+                raise GauntletError(f"workshop {step[0]} failed: {done.stderr.strip() or done.stdout.strip()}")
 
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
         validate_exec(argv, timeout)

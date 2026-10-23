@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from gauntlet.errors import GauntletError
+
 ConfigScan = tuple[str, str]  # (file glob, regex a line must match; empty: the file's existence is the finding)
 
 
@@ -204,7 +206,7 @@ NAMES = tuple(TABLE)
 
 def get(name: str) -> Language:
     if name not in TABLE:
-        raise ValueError(f"unsupported language {name!r}, expected one of {', '.join(NAMES)}")
+        raise GauntletError(f"unsupported language {name!r}, expected one of {', '.join(NAMES)}")
     return TABLE[name]
 
 

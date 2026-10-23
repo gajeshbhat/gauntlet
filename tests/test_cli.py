@@ -244,6 +244,18 @@ def test_go_harden_reads_gremlins_json(tmp_path: Path, capsys: Out, cli_run: Cal
     assert "a.go:3:1 X LIVED" in capsys.readouterr().out
 
 
+def test_an_unparsable_artifact_is_named_malformed_input(
+    tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
+) -> None:
+    root = go_project(tmp_path)
+    (root / "mutation.json").write_text("not json")
+    assert cli_run("harden", root) == 2
+    assert capsys.readouterr().err.startswith("gauntlet: malformed input: Expecting value")
+    (root / "mutation.json").write_text("{}")
+    assert cli_run("harden", root) == 2
+    assert capsys.readouterr().err == "gauntlet: malformed input, missing 'files'\n"
+
+
 def test_go_harden_uses_mutation_dir_for_scope(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
     root = go_project(tmp_path, '[go]\nmutation_dir = "lxd/device"\n')
     muts = [{"type": "X", "status": "LIVED", "line": 3, "column": 1}]
