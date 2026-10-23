@@ -71,8 +71,8 @@ def control_files(patch_text: str) -> list[str]:
     return sorted(p for p in paths if any(p == c or (c.endswith("/") and p.startswith(c)) for c in CONTROL))
 
 
-def _failed(agent_name: str, done: ExecResult) -> ValueError:
-    return ValueError(f"{agent_name} failed (exit {done.code}): {output_tail(done)}")
+def _failed(agent_name: str, done: ExecResult) -> GauntletError:
+    return GauntletError(f"{agent_name} failed (exit {done.code}): {output_tail(done)}")
 
 
 def specify(agent: Agent, roles: Roles, requirement: str, workspace: Path) -> str:

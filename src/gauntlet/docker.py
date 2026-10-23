@@ -29,8 +29,8 @@ def _default_user() -> str:
     return f"{os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") else ""  # no uid on Windows: Docker Desktop maps it
 
 
-def _bad(kind: str, value: str) -> ValueError:
-    return ValueError(f"bad {kind} {value!r}")
+def _bad(kind: str, value: str) -> GauntletError:
+    return GauntletError(f"bad {kind} {value!r}")
 
 
 class DockerSandbox:

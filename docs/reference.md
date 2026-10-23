@@ -48,18 +48,19 @@
 
 ## Languages
 
-| `language` | Tests and coverage | Mutation (`harden`) | Artifacts |
-|---|---|---|---|
-| `python` | pytest + coverage.py | mutmut | `coverage.json`, `mutmut-results.txt` |
-| `go` | `go test -coverprofile` | gremlins | `cover.out`, `imports.txt`, `mutation.json` |
-| `javascript` | `npm ci --ignore-scripts`, `npm test` under c8 | Stryker | `lcov.info`, `stryker.json` |
-| `csharp` | `dotnet test` + coverlet (the test project must reference `coverlet.collector`) | Stryker.NET | `coverage.cobertura.xml`, `stryker-report.json` |
-| `java` | Maven + JaCoCo (no pom edits) | PIT | `jacoco.xml`, `mutations.xml` |
-| `rust` | cargo-llvm-cov | cargo-mutants | `lcov.info`, `mutants-outcomes.json` |
-| `cpp` | CMake + gcov + gcovr | universalmutator (built-in rules) | `lcov.info`, `cpp-mutants.json` |
-| `cpp-clang` | CMake + clang source-based coverage | Mull | `lcov.info`, `mull-report.json` |
-| `dart` | `dart test` + `coverage` (no Flutter) | none | `lcov.info` |
+| `language` | Tests and coverage | Mutation (`harden`) | Artifacts | Proven in a real container |
+|---|---|---|---|---|
+| `python` | pytest + coverage.py | mutmut | `coverage.json`, `mutmut-results.txt` | yes (gauntlet runs itself) |
+| `go` | `go test -coverprofile` | gremlins | `cover.out`, `imports.txt`, `mutation.json` | yes |
+| `javascript` | `npm ci --ignore-scripts`, `npm test` under c8 | Stryker | `lcov.info`, `stryker.json` | JavaScript yes, TypeScript no |
+| `csharp` | `dotnet test` + coverlet (the test project must reference `coverlet.collector`) | Stryker.NET | `coverage.cobertura.xml`, `stryker-report.json` | yes |
+| `java` | Maven + JaCoCo (no pom edits) | PIT | `jacoco.xml`, `mutations.xml` | yes |
+| `rust` | cargo-llvm-cov | cargo-mutants | `lcov.info`, `mutants-outcomes.json` | yes |
+| `cpp` | CMake + gcov + gcovr (CMake projects only) | universalmutator (built-in rules) | `lcov.info`, `cpp-mutants.json` | C yes, C++ no |
+| `cpp-clang` | CMake + clang source-based coverage, in `silkeh/clang:21-trixie` | Mull (pinned `.deb`, unpacked without root) | `lcov.info`, `mull-report.json` | C yes, C++ no |
+| `dart` | `dart test` + `coverage` (no Flutter) | none | `lcov.info` | yes |
 
+- `cpp` is detected from `CMakeLists.txt`, `Makefile` or `meson.build`, but `run` builds with CMake only.
 - `cpp-clang` is never detected: set it in `gauntlet.toml`.
 - Dart has no mutation tool: `run` reports `harden` as skipped and fails, unless the policy sets
   `allow_skipped_gates = true`. lizard reads Dart through its Java reader, so `=>` functions are not scored.

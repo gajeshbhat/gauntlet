@@ -80,8 +80,10 @@ go test -coverprofile=cover.out ./...
 go list -e -f '{{.ImportPath}} {{join .Imports " "}}' ./... > imports.txt
 gremlins unleash -o mutation.json .
 gauntlet stamp .
-gauntlet check .
+gauntlet check . --artifacts .
 ```
+
+Pass `--artifacts .`: after an earlier `gauntlet run`, `check` would otherwise read `.gauntlet/`.
 
 The [artifacts table](reference.md#languages) lists each language's files. When one is missing, the error message shows
 the command that makes it. `stamp` binds the artifacts to the current source, so the project must be a git repository.

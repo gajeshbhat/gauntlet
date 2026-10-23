@@ -150,7 +150,7 @@ def test_loop_agent_failure_is_an_error(
 ) -> None:
     root, pol, _ = loop_setup(tmp_path, monkeypatch, write_policy, lambda p, d: ExecResult(7, "", "agent crashed"))
     assert main(["loop", str(root), "--requirement", "x", "--policy", str(pol)]) == 2
-    assert "specifier failed (exit 7): agent crashed" in capsys.readouterr().err
+    assert capsys.readouterr().err == "gauntlet: specifier failed (exit 7): agent crashed\n"
 
 
 def test_loop_prints_exact_summary_and_writes_a_complete_evidence_report(

@@ -14,6 +14,8 @@ uv tool install git+https://github.com/gajeshbhat/gauntlet
 gauntlet --version
 ```
 
+If the repository is private to you, install with `git+ssh://git@github.com/gajeshbhat/gauntlet` instead.
+
 ## 2. Point it at a project
 
 Use any Python, Go, JavaScript, C#, Java, Rust, C/C++ (CMake) or Dart project that is a git repository.

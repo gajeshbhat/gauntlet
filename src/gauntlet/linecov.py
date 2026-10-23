@@ -17,12 +17,12 @@ Lines = dict[str, dict[int, int]]
 GO_BLOCK = re.compile(r"^(?P<file>.+):(?P<a>\d+)\.\d+,(?P<b>\d+)\.\d+ \d+ (?P<count>\d+)$")
 
 
-class UnsafeXml(ValueError):
+class UnsafeXml(GauntletError):
     """An XML report that declares entities or a DOCTYPE: refused rather than risk entity expansion."""
 
 
-def _bad(fmt: str) -> ValueError:
-    return ValueError(f"cannot read {fmt} report")
+def _bad(fmt: str) -> GauntletError:
+    return GauntletError(f"cannot read {fmt} report")
 
 
 def coveragepy(text: str) -> Lines:

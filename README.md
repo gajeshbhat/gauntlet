@@ -13,7 +13,7 @@ gauntlet init .
 gauntlet run . --report EVIDENCE.md
 ```
 
-`run` needs [Canonical Workshop](https://snapcraft.io/workshop) or Docker. In Claude Code:
+`run` needs [Canonical Workshop](https://snapcraft.io/workshop) or Docker. In Claude Code 2.1.275 or later:
 `/plugin install gauntlet --marketplace gajeshbhat/gauntlet`, then `/gauntlet`.
 
 ## Documentation
