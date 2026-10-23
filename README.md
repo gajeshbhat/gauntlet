@@ -6,13 +6,6 @@ gauntlet runs tests, coverage and mutation testing in a sandbox, then fails loud
 tests, when tests let planted bugs survive, or when code is hidden from the checks. It works on Python, Go,
 JavaScript/TypeScript, C#, Java, Rust, C/C++ and Dart projects, with no code changes.
 
-```sh
-uv tool install git+https://github.com/gajeshbhat/gauntlet
-cd your-project
-gauntlet init .
-gauntlet run . --report EVIDENCE.md
-```
-
 ```mermaid
 flowchart LR
     repo["Your repository"] --> copy["Private copy"]
@@ -35,8 +28,20 @@ flowchart LR
     style box stroke:#5b8def,stroke-width:2px
 ```
 
-`run` needs [Canonical Workshop](https://snapcraft.io/workshop) or Docker. In Claude Code 2.1.275 or later:
-`/plugin install gauntlet --marketplace gajeshbhat/gauntlet`, then `/gauntlet`.
+## Quickstart
+
+You need `git`, [`uv`](https://docs.astral.sh/uv/) and a sandbox: [Canonical Workshop](https://snapcraft.io/workshop)
+on Linux (`sudo snap install workshop --classic`), or Docker or Podman on any OS.
+
+```sh
+uv tool install git+https://github.com/gajeshbhat/gauntlet
+gauntlet --version                     # check the install
+cd your-project                        # a git repository
+gauntlet init .                        # detect the language, write gauntlet.toml
+gauntlet run . --report EVIDENCE.md    # exit 0: every gate passed
+```
+
+In Claude Code 2.1.275 or later: `/plugin install gauntlet --marketplace gajeshbhat/gauntlet`, then `/gauntlet`.
 
 ## Documentation
 

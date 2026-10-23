@@ -4,28 +4,38 @@ You will install gauntlet, run it on a project, read the result, fix a failure, 
 
 ## 1. Install
 
-You need `git` and [`uv`](https://docs.astral.sh/uv/), plus a sandbox for running project code:
+You need:
 
-- Ubuntu / Linux: `sudo snap install workshop --classic` ([Canonical Workshop](https://snapcraft.io/workshop))
-- Linux, macOS, Windows: [Docker](https://docs.docker.com/get-docker/) (or Podman, or Colima)
+- `git`.
+- [`uv`](https://docs.astral.sh/uv/). gauntlet needs Python 3.12 or later; uv fetches it if you lack it.
+- A sandbox, where your project's code runs:
+  - Linux: [Canonical Workshop](https://snapcraft.io/workshop), `sudo snap install workshop --classic`.
+  - Any OS: [Docker](https://docs.docker.com/get-docker/) (Docker Desktop or Colima) or Podman.
+
+gauntlet uses Workshop if it is installed, else Docker. For Podman, set `container_cli = "podman"` in your policy
+([choose the sandbox](how-to.md#choose-the-sandbox)).
+
+Install gauntlet and check that it works:
 
 ```sh
 uv tool install git+https://github.com/gajeshbhat/gauntlet
 gauntlet --version
 ```
 
-If the repository is private to you, install with `git+ssh://git@github.com/gajeshbhat/gauntlet` instead.
+`--version` prints `gauntlet` and its version. If the repository is private to you, install from
+`git+ssh://git@github.com/gajeshbhat/gauntlet` instead.
 
 ## 2. Point it at a project
 
-Use any Python, Go, JavaScript, C#, Java, Rust, C/C++ (CMake) or Dart project that is a git repository.
+Use a git repository in any [supported language](reference.md#languages).
 
 ```sh
 cd your-project
 gauntlet init .
 ```
 
-`init` detects the language and writes `gauntlet.toml`. It never overwrites one.
+`init` detects the language and writes `gauntlet.toml`. It never overwrites one. If it finds no language, or more
+than one, it stops: write `gauntlet.toml` yourself with one line, such as `language = "go"`.
 
 ## 3. Run the gauntlet
 
@@ -34,7 +44,8 @@ gauntlet run . --report EVIDENCE.md
 ```
 
 gauntlet copies your tree, runs the tests with coverage and the mutation tool inside the sandbox, copies the results
-to `.gauntlet/`, stamps them, and runs every gate. The output looks like this:
+to `.gauntlet/`, stamps them, and runs every gate. The first run is slow: the sandbox fetches its image and tools.
+The output looks like this:
 
 ```
 produced coverage.json, mutmut-results.txt
@@ -58,7 +69,7 @@ Do not add ignore comments or relax a limit: the `exclusions` gate counts those.
 ## 5. Check again
 
 ```sh
-gauntlet run .
+gauntlet run . --report EVIDENCE.md
 ```
 
 The run passes with exit `0`. `EVIDENCE.md` holds a report you can attach to a pull request.
