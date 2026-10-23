@@ -39,6 +39,26 @@ Exit `0` passes the job; any other code fails it. See [exit codes](reference.md#
 
 ## Let an agent implement an approved spec
 
+```mermaid
+flowchart TD
+    req["You give a requirement"] --> specifier["Specifier writes spec.feature"]
+    specifier -->|"exit 3"| approve["You review and<br/>approve the spec"]
+    approve -->|"loop --spec"| coder["Coder implements it<br/>in a copy of your repo"]
+    coder --> gates{"Every gate<br/>passes?"}
+    gates -->|"no, rounds left"| fixer["Fixer repairs<br/>the failures"]
+    fixer --> gates
+    gates -->|"yes, or out of rounds"| patch["loop.patch and EVIDENCE.md"]
+    patch --> review["You review the patch<br/>and apply it"]
+
+    classDef default fill:#ffffff,stroke:#9ca3af,color:#1f2937
+    classDef you fill:#fff4d6,stroke:#c99a00,color:#3d2e00
+    classDef agent fill:#eef4ff,stroke:#5b8def,color:#1b2f5c
+    class req,approve,review you
+    class specifier,coder,fixer agent
+```
+
+The yellow steps are yours; the blue ones run in the sandbox.
+
 1. Set the agent in your policy (see `agent_command` and `agent_env` in
    [`examples/policy.toml`](../examples/policy.toml)).
 2. Ask for a spec:

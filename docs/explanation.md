@@ -36,6 +36,28 @@ ever runs.
 
 ## Project code runs only in the sandbox
 
+```mermaid
+flowchart LR
+    gauntlet["gauntlet<br/>fixed commands<br/>pinned tools"]
+    subgraph box["Sandbox: project code runs here"]
+        direction TB
+        copy["Private copy<br/>of the repository"] --> code["Tests, mutation tool,<br/>agent"]
+    end
+    subgraph host["Your machine: files are only read"]
+        direction TB
+        stamp["Stamp<br/>hash artifacts and source"] --> gates["Gates"]
+        policy["Your policy"] --> gates
+    end
+    gauntlet -->|runs| copy
+    code -->|artifacts copied out| stamp
+
+    classDef default fill:#ffffff,stroke:#9ca3af,color:#1f2937
+    classDef you fill:#fff4d6,stroke:#c99a00,color:#3d2e00
+    class policy you
+    style host fill:#f4f5f7,stroke:#6b7280,color:#1f2937
+    style box fill:#eef4ff,stroke:#5b8def,color:#1b2f5c
+```
+
 The gates only read files. Tests, mutation runs and agents execute in a sandbox (Workshop or Docker) on a private copy of
 the repository. The commands and tool versions are fixed in gauntlet, so nothing in the repository chooses what runs.
 The sandbox protects your machine, not the numbers: code under test can still forge its own results. The full threat
