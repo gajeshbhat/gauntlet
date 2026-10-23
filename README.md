@@ -26,14 +26,13 @@ flowchart LR
     gates -->|pass| pass["Exit 0<br/>EVIDENCE.md"]
     gates -->|fail| fail["Exit 1<br/>file:line findings"]
 
-    classDef default fill:#ffffff,stroke:#9ca3af,color:#1f2937
-    classDef you fill:#fff4d6,stroke:#c99a00,color:#3d2e00
-    classDef good fill:#e3f6e8,stroke:#2f9e57,color:#0f3d1f
-    classDef bad fill:#fde7e7,stroke:#d64545,color:#4d0f0f
+    classDef you stroke:#c99a00,stroke-width:2px
+    classDef good stroke:#2f9e57,stroke-width:2px
+    classDef bad stroke:#d64545,stroke-width:2px
     class repo,policy you
     class pass good
     class fail bad
-    style box fill:#eef4ff,stroke:#5b8def,color:#1b2f5c
+    style box stroke:#5b8def,stroke-width:2px
 ```
 
 `run` needs [Canonical Workshop](https://snapcraft.io/workshop) or Docker. In Claude Code 2.1.275 or later:
