@@ -342,3 +342,60 @@ def test_mull_refuses_files_outside_the_project_and_an_empty_report_names_the_to
         tool.read(_mull("Killed").replace("/project/src", "/usr/include"), parse([]), Config(language="cpp-clang"))
     with pytest.raises(ValueError, match="check the scope and that Mull ran"):
         tool.read('{"files": {}}', parse([]), Config(language="cpp-clang"))
+
+
+def gremlins_json(*muts: tuple[str, str, int]) -> str:
+    files: dict[str, list[dict[str, object]]] = {}
+    for name, status, line in muts:
+        files.setdefault(name, []).append({"type": "ARITHMETIC_BASE", "status": status, "line": line, "column": 3})
+    return json.dumps({"files": [{"file_name": n, "mutations": m} for n, m in files.items()]})
+
+
+def test_harden_counts_not_covered_as_failures() -> None:
+    text = gremlins_json(
+        ("a.go", "KILLED", 1),
+        ("a.go", "KILLED", 2),
+        ("a.go", "LIVED", 3),
+        ("a.go", "NOT COVERED", 4),
+        ("a.go", "NOT COVERED", 5),
+    )
+    pct, bad, *_ = mutation.gremlins(text, parse([]))
+    assert pct == 40.0
+    assert bad == [
+        "a.go:3:3 ARITHMETIC_BASE LIVED",
+        "a.go:4:3 ARITHMETIC_BASE NOT COVERED",
+        "a.go:5:3 ARITHMETIC_BASE NOT COVERED",
+    ]
+
+
+def test_harden_timeouts_count_as_killed_and_unviable_are_ignored() -> None:
+    text = gremlins_json(("a.go", "TIMED OUT", 1), ("a.go", "NOT VIABLE", 2), ("a.go", "SKIPPED", 3))
+    assert mutation.gremlins(text, parse([])) == (100.0, [], 1, 1)
+
+
+def test_harden_scope_filters_by_file_and_line() -> None:
+    text = gremlins_json(("a.go", "LIVED", 5), ("a.go", "KILLED", 50), ("b.go", "LIVED", 1))
+    pct, bad, *_ = mutation.gremlins(text, parse(["a.go:40-60"]))
+    assert (pct, bad) == (100.0, [])
+
+
+def test_harden_without_mutants_in_scope_is_an_error() -> None:
+    with pytest.raises(ValueError, match="no mutants"):
+        mutation.gremlins(gremlins_json(("a.go", "KILLED", 1)), parse(["zzz.go"]))
+
+
+def test_harden_no_mutants_message() -> None:
+    with pytest.raises(ValueError, match=r"^no mutants in scope; check the scope and that gremlins ran$"):
+        mutation.gremlins(gremlins_json(("a.go", "KILLED", 1)), parse(["zzz.go"]))
+
+
+def test_harden_paths_are_relative_to_the_mutation_dir() -> None:
+    text = gremlins_json(("disk.go", "LIVED", 5))
+    pct, bad, *_ = mutation.gremlins(text, parse(["lxd/device/disk.go:1-9"]), base="lxd/device")
+    assert pct == 0.0
+    assert bad == ["lxd/device/disk.go:5:3 ARITHMETIC_BASE LIVED"]
+
+
+def test_harden_without_base_keeps_paths_as_reported() -> None:
+    _, bad, *_ = mutation.gremlins(gremlins_json(("disk.go", "LIVED", 5)), parse([]))
+    assert bad == ["disk.go:5:3 ARITHMETIC_BASE LIVED"]

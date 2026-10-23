@@ -51,4 +51,4 @@ testpaths = ["tests"]
 
 [tool.mutmut]
 source_paths = ["src/gauntlet/"]
-pytest_add_cli_args = ["--no-cov", "--ignore=tests/test_e2e.py"]
+pytest_add_cli_args = ["--no-cov"]

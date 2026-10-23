@@ -11,6 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from gauntlet import spec
+from gauntlet.errors import GauntletError
 from gauntlet.provenance import git_output
 from gauntlet.results import GateResult
 from gauntlet.runner import output_tail
@@ -42,7 +43,7 @@ class Agent:
 
     def __init__(self, sandbox: Sandbox, command: Sequence[str], env: Sequence[str], timeout: int) -> None:
         if not command:
-            raise ValueError(NO_AGENT)
+            raise GauntletError(NO_AGENT)
         self.sandbox, self.command, self.env, self.timeout = sandbox, tuple(command), tuple(env), timeout
 
     def run(self, role: str, task: str) -> ExecResult:
@@ -70,8 +71,8 @@ def control_files(patch_text: str) -> list[str]:
     return sorted(p for p in paths if any(p == c or (c.endswith("/") and p.startswith(c)) for c in CONTROL))
 
 
-def _failed(agent_name: str, done: ExecResult) -> ValueError:
-    return ValueError(f"{agent_name} failed (exit {done.code}): {output_tail(done)}")
+def _failed(agent_name: str, done: ExecResult) -> GauntletError:
+    return GauntletError(f"{agent_name} failed (exit {done.code}): {output_tail(done)}")
 
 
 def specify(agent: Agent, roles: Roles, requirement: str, workspace: Path) -> str:
@@ -80,10 +81,10 @@ def specify(agent: Agent, roles: Roles, requirement: str, workspace: Path) -> st
         raise _failed("specifier", done)
     path = workspace / "spec.feature"
     if not path.is_file():
-        raise ValueError("the specifier did not write spec.feature")
+        raise GauntletError("the specifier did not write spec.feature")
     problems = spec.check(path, workspace, trace=False)
     if problems:
-        raise ValueError("the spec is not valid: " + "; ".join(problems))
+        raise GauntletError("the spec is not valid: " + "; ".join(problems))
     return path.read_text()
 
 

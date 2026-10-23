@@ -6,8 +6,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from gauntlet import golang, harden
+from gauntlet import harden
 from gauntlet.config import Config
+from gauntlet.errors import GauntletError
 from gauntlet.linecov import parse_xml
 from gauntlet.results import Mutation
 from gauntlet.scope import Scope
@@ -19,16 +20,45 @@ class Mutant:
     line: int
     label: str  # what was changed and what happened, for the survivor list
     caught: bool  # the tests noticed; a mutant nothing exercised is NOT caught (fail closed)
+    column: int | None = None  # gremlins reports one: its survivors read `file:line:column label`
+
+    @property
+    def survivor(self) -> str:
+        if self.column is None:
+            return f"{self.file}:{self.line}: {self.label}"
+        return f"{self.file}:{self.line}:{self.column} {self.label}"
 
 
 def tally(mutants: Iterable[Mutant], scope: Scope, tool: str) -> Mutation:
     """The score over the mutants in scope. Readers leave out mutants that do not count (compile errors, say)."""
     chosen = [m for m in mutants if scope.contains(m.file, m.line)]
     if not chosen:
-        raise ValueError(f"no mutants in scope; check the scope and that {tool} ran")
+        raise GauntletError(f"no mutants in scope; check the scope and that {tool} ran")
     caught = sum(m.caught for m in chosen)
-    survivors = [f"{m.file}:{m.line}: {m.label}" for m in chosen if not m.caught]
+    survivors = [m.survivor for m in chosen if not m.caught]
     return Mutation(100 * caught / len(chosen), survivors, caught, len(chosen))
+
+
+GREMLINS_CAUGHT = {"KILLED", "TIMED OUT"}
+GREMLINS_IGNORED = {"NOT VIABLE", "SKIPPED"}
+
+
+def gremlins(text: str, scope: Scope, base: str = "") -> Mutation:
+    """gremlins' mutation.json, its file names relative to `base` (the directory gremlins ran in). KILLED and
+    TIMED OUT are caught; NOT VIABLE and SKIPPED are left out; any other status (LIVED, NOT COVERED) is not caught."""
+    mutants = (
+        Mutant(
+            f"{base}/{f['file_name']}" if base else f["file_name"],
+            m["line"],
+            f"{m['type']} {m['status']}",
+            m["status"] in GREMLINS_CAUGHT,
+            m["column"],
+        )
+        for f in json.loads(text)["files"]
+        for m in f["mutations"]
+        if m["status"] not in GREMLINS_IGNORED
+    )
+    return tally(mutants, scope, "gremlins")
 
 
 PIT_CAUGHT = {"KILLED", "TIMED_OUT", "MEMORY_ERROR"}
@@ -49,7 +79,7 @@ def pit(text: str, scope: Scope, cfg: Config) -> Mutation:  # noqa: ARG001
 def _pit_mutant(el: ET.Element) -> Mutant:
     status = el.get("status", "")
     if status not in PIT_CAUGHT | PIT_SURVIVED:
-        raise ValueError(f"unknown PIT mutation status {status!r}")
+        raise GauntletError(f"unknown PIT mutation status {status!r}")
     package = (el.findtext("mutatedClass") or "").rpartition(".")[0]
     file = "/".join(p for p in (PIT_SOURCES, *package.split("."), el.findtext("sourceFile") or "") if p)
     label = f"{el.findtext('mutator', '').rpartition('.')[2]} in {el.findtext('mutatedMethod')}: {status}"
@@ -71,7 +101,9 @@ def cargo_mutants(text: str, scope: Scope) -> Mutation:
     report = json.loads(text)
     outcomes = [o for o in report["outcomes"] if isinstance(o["scenario"], dict)]
     if len(outcomes) < report["total_mutants"]:
-        raise ValueError(f"cargo-mutants finished {len(outcomes)} of {report['total_mutants']} mutants: partial report")
+        raise GauntletError(
+            f"cargo-mutants finished {len(outcomes)} of {report['total_mutants']} mutants: partial report"
+        )
     outcomes = [o for o in outcomes if o["summary"] != "Unviable"]
     mutants = [_cargo_mutant(o["scenario"]["Mutant"], o["summary"]) for o in outcomes]
     return tally(mutants, scope, "cargo-mutants")
@@ -108,7 +140,7 @@ def _stryker_path(name: str) -> str:
     if not name.startswith("/"):
         return name
     if not name.startswith(SANDBOX_ROOT):
-        raise ValueError(f"Stryker reported {name}, outside {SANDBOX_ROOT}")
+        raise GauntletError(f"Stryker reported {name}, outside {SANDBOX_ROOT}")
     return name.removeprefix(SANDBOX_ROOT)
 
 
@@ -142,7 +174,7 @@ TOOLS: dict[str, Tool] = {
     "go": Tool(
         "mutation.json",
         "gremlins unleash -o mutation.json .",
-        lambda text, scope, cfg: golang.harden_check(text, scope, cfg.mutation_dir),
+        lambda text, scope, cfg: gremlins(text, scope, cfg.mutation_dir),
     ),
     "javascript": Tool(
         "stryker.json",

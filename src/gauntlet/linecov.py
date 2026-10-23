@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET  # noqa: N817
 from collections import defaultdict
 from collections.abc import Callable
 
+from gauntlet.errors import GauntletError
 from gauntlet.safefs import SKIP_DIRS
 
 MAX_LINES = 5_000_000  # line entries one report may expand to
@@ -16,12 +17,12 @@ Lines = dict[str, dict[int, int]]
 GO_BLOCK = re.compile(r"^(?P<file>.+):(?P<a>\d+)\.\d+,(?P<b>\d+)\.\d+ \d+ (?P<count>\d+)$")
 
 
-class UnsafeXml(ValueError):
+class UnsafeXml(GauntletError):
     """An XML report that declares entities or a DOCTYPE: refused rather than risk entity expansion."""
 
 
-def _bad(fmt: str) -> ValueError:
-    return ValueError(f"cannot read {fmt} report")
+def _bad(fmt: str) -> GauntletError:
+    return GauntletError(f"cannot read {fmt} report")
 
 
 def coveragepy(text: str) -> Lines:
@@ -38,11 +39,11 @@ def gocover(text: str) -> Lines:
     for raw in text.splitlines()[1:]:  # the first line is "mode: ..."
         block = GO_BLOCK.match(raw)
         if block is None:
-            raise ValueError(raw)
+            raise GauntletError(raw)
         first, last = int(block["a"]), int(block["b"])
         total += last - first + 1
         if last < first or total > MAX_LINES:  # a hostile profile must not make us expand billions of lines
-            raise ValueError(f"implausible block {raw!r}")
+            raise GauntletError(f"implausible block {raw!r}")
         hit = int(block["count"]) > 0
         for n in range(first, last + 1):
             lines[block["file"]][n] = max(lines[block["file"]].get(n, 0), int(hit))
@@ -110,7 +111,7 @@ PARSERS: dict[str, Callable[[str], Lines]] = {
 
 def parse(fmt: str, text: str) -> Lines:
     if fmt not in PARSERS:
-        raise ValueError(f"unknown coverage format {fmt!r}; expected one of {', '.join(PARSERS)}")
+        raise GauntletError(f"unknown coverage format {fmt!r}; expected one of {', '.join(PARSERS)}")
     try:
         return PARSERS[fmt](text)
     except UnsafeXml:
@@ -124,7 +125,7 @@ def _clean_key(key: str) -> tuple[str, bool]:
     foreign_root = key.startswith("/") and not key.startswith("/project/")
     key = key.removeprefix("/project/").lstrip("/")
     if ".." in key.split("/"):
-        raise ValueError(f"{key!r} escapes the project root")
+        raise GauntletError(f"{key!r} escapes the project root")
     return key, foreign_root
 
 
@@ -144,7 +145,7 @@ def locate(key: str, files: list[str], prefixed: bool = False) -> str | None:
         return key
     shorter = [f for f in files if f.endswith("/" + key)]
     if len(shorter) > 1:
-        raise ValueError(f"coverage path {key!r} matches more than one file: {', '.join(sorted(shorter))}")
+        raise GauntletError(f"coverage path {key!r} matches more than one file: {', '.join(sorted(shorter))}")
     if shorter:
         return shorter[0]
     return _longest_under_prefix(key, files) if prefixed or foreign_root else None

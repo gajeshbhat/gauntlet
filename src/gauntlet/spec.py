@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from gauntlet.safefs import inside, read_text
+from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text
 
 MAX_SPEC_BYTES = 100_000
 STEP = re.compile(r"^(Given|When|Then|And|But|\*)\s+(.*)$")
@@ -153,7 +153,7 @@ def _trace(ref: str, root: Path) -> list[str]:
         return [str(e)]
     if not target.is_file():
         return [f"{path} does not exist"]
-    if name and name.split("::")[-1] not in read_text(target, MAX_SPEC_BYTES * 50):
+    if name and name.split("::")[-1] not in read_text(target, MAX_SOURCE_BYTES):
         return [f"{name} is not in {path}"]
     return []
 

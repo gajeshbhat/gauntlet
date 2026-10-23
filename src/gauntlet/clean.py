@@ -9,6 +9,7 @@ from typing import Any, cast
 import lizard  # pyright: ignore[reportMissingTypeStubs]
 
 from gauntlet import linecov
+from gauntlet.errors import GauntletError
 from gauntlet.languages import Language
 from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text, source_files
 from gauntlet.scope import Scope
@@ -17,7 +18,7 @@ from gauntlet.scope import Scope
 def crap_score(complexity: int, coverage: float) -> float:
     """complexity^2 * (1 - coverage)^3 + complexity: risky code is complex and untested."""
     if not 0.0 <= coverage <= 1.0:
-        raise ValueError(f"coverage must be within 0..1, got {coverage}")
+        raise GauntletError(f"coverage must be within 0..1, got {coverage}")
     return complexity**2 * (1 - coverage) ** 3 + complexity
 
 
@@ -115,7 +116,7 @@ def _measured(lines: linecov.Lines, files: list[str], prefixed: bool) -> linecov
     """The coverage report keyed by project-relative source path; a report that names none of them is wrong."""
     found = {rel: hits for key, hits in lines.items() if (rel := linecov.locate(key, files, prefixed)) is not None}
     if not found:
-        raise ValueError("the coverage report mentions no source file of this project: wrong report or empty tests")
+        raise GauntletError("the coverage report mentions no source file of this project: wrong report or empty tests")
     return found
 
 

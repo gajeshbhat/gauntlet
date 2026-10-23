@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from gauntlet.errors import GauntletError
+
 ConfigScan = tuple[str, str]  # (file glob, regex a line must match; empty: the file's existence is the finding)
 
 
@@ -16,6 +18,8 @@ class Language:
     coverage_format: str  # ... and its format (a key of linecov.PARSERS)
     sdk: str  # the Canonical Workshop SDK
     image: str  # the default Docker image (the policy can override it per language)
+    artifacts: tuple[str, ...]  # every file the gates read; `stamp` binds these
+    optional: tuple[str, ...] = ()  # artifacts `run` may not produce (their tool is allowed to fail)
     config_scan: tuple[ConfigScan, ...] = ()  # build settings that can hide code from coverage
     parse_as: str = ""  # lizard has no reader for the suffixes: parse them with this other language's reader
 
@@ -51,6 +55,7 @@ TABLE: dict[str, Language] = {
         coverage_format="coveragepy",
         sdk="uv",
         image="ghcr.io/astral-sh/uv:python3.12-bookworm",
+        artifacts=("coverage.json", "mutmut-results.txt"),
     ),
     "go": Language(
         suffixes=(".go",),
@@ -61,6 +66,8 @@ TABLE: dict[str, Language] = {
         coverage_format="gocover",
         sdk="go",
         image="golang:1.27",
+        artifacts=("cover.out", "imports.txt", "mutation.json"),
+        optional=("mutation.json",),
     ),
 }
 TABLE["javascript"] = Language(
@@ -75,6 +82,7 @@ TABLE["javascript"] = Language(
     coverage_format="lcov",
     sdk="node",
     image="node:22-bookworm",
+    artifacts=("lcov.info", "stryker.json"),
     config_scan=(
         (".c8rc*", ""),
         (".nycrc*", ""),
@@ -98,6 +106,7 @@ TABLE["csharp"] = Language(
     coverage_format="cobertura",
     sdk="dotnet",
     image="mcr.microsoft.com/dotnet/sdk:8.0.426",
+    artifacts=("coverage.cobertura.xml", "stryker-report.json"),
     config_scan=(
         ("*.runsettings", ""),
         ("*.testsettings", ""),
@@ -121,6 +130,8 @@ TABLE["java"] = Language(
     coverage_format="jacoco",
     sdk="java",
     image="maven:3.9-eclipse-temurin-21",
+    artifacts=("jacoco.xml", "mutations.xml"),
+    optional=("mutations.xml",),
     config_scan=(  # the pom's own JaCoCo/Surefire settings and source layout, and Maven's project-level overrides
         (
             "pom.xml",
@@ -143,6 +154,7 @@ TABLE["rust"] = Language(
     coverage_format="lcov",
     sdk="rust",
     image="rust:1.93-bookworm",
+    artifacts=("lcov.info", "mutants-outcomes.json"),
     config_scan=(  # repo-level cargo and toolchain settings change how the measured build is compiled
         (".cargo/config*", ""),
         ("rust-toolchain*", ""),
@@ -159,6 +171,7 @@ TABLE["cpp"] = Language(
     coverage_format="lcov",
     sdk="cpp",
     image="gcc:14.3-bookworm",
+    artifacts=("lcov.info", "cpp-mutants.json"),
     config_scan=CPP_CONFIG_SCAN,
 )
 TABLE["cpp-clang"] = Language(  # clang coverage and Mull mutation; chosen with `language = "cpp-clang"`, never detected
@@ -170,6 +183,7 @@ TABLE["cpp-clang"] = Language(  # clang coverage and Mull mutation; chosen with 
     coverage_format="lcov",
     sdk="cpp",
     image="silkeh/clang:21-trixie@sha256:7cb6d48fa9882b0956f09e6e722f38c9cef11fb676f60db2b9ce612f4ff9e58d",
+    artifacts=("lcov.info", "mull-report.json"),
     config_scan=CPP_CONFIG_SCAN,
 )
 TABLE["dart"] = Language(
@@ -183,6 +197,7 @@ TABLE["dart"] = Language(
     coverage_format="lcov",
     sdk="dart",
     image="dart:3.9.4",
+    artifacts=("lcov.info",),
     config_scan=(("dart_test.yaml", r"exclude|skip"),),
     parse_as="java",
 )
@@ -191,7 +206,7 @@ NAMES = tuple(TABLE)
 
 def get(name: str) -> Language:
     if name not in TABLE:
-        raise ValueError(f"unsupported language {name!r}, expected one of {', '.join(NAMES)}")
+        raise GauntletError(f"unsupported language {name!r}, expected one of {', '.join(NAMES)}")
     return TABLE[name]
 
 

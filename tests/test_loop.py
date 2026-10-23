@@ -1,25 +1,13 @@
-import os
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import pytest
+from helpers import git
 
 from gauntlet import loop
 from gauntlet.results import GateResult
 from gauntlet.sandbox import ExecResult
-
-GITENV = {
-    "GIT_AUTHOR_NAME": "t",
-    "GIT_AUTHOR_EMAIL": "t@t",
-    "GIT_COMMITTER_NAME": "t",
-    "GIT_COMMITTER_EMAIL": "t@t",
-    "GIT_CONFIG_GLOBAL": "/dev/null",
-}
-
-
-def git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env={**os.environ, **GITENV})
 
 
 @pytest.fixture

@@ -30,4 +30,5 @@ order = [
   "gauntlet.results",
   "gauntlet.safefs",
   "gauntlet.names",
+  "gauntlet.errors",
 ]

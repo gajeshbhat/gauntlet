@@ -14,6 +14,7 @@ from pathlib import Path
 
 from gauntlet import languages, mutation
 from gauntlet.config import Config
+from gauntlet.errors import GauntletError
 from gauntlet.provenance import excluded, fingerprint, stamp
 from gauntlet.safefs import MAX_ARTIFACT_BYTES
 from gauntlet.sandbox import ExecResult, Sandbox
@@ -23,6 +24,7 @@ OUT_DIR = ".gauntlet-out"
 IN_SANDBOX = f"/project/{OUT_DIR}"
 GOBIN = f"{IN_SANDBOX}/bin"
 UV = ("uv", "run", "--project", "/project")
+WRITE_FILE = 'printf %s "$1" > "$2"'  # writes $1 to the file $2
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
 C8 = "c8@10.1.3"
@@ -69,13 +71,13 @@ class Step:
 
 def _safe_path(value: str) -> str:
     if not PATH_OK.match(value) or ".." in value.split("/"):
-        raise ValueError(f"unsafe path {value!r}")
+        raise GauntletError(f"unsafe path {value!r}")
     return value
 
 
 def _safe_package(value: str) -> str:
     if not PACKAGE_OK.match(value) or ".." in value.replace("...", "").split("/"):
-        raise ValueError(f"unsafe package pattern {value!r}")
+        raise GauntletError(f"unsafe package pattern {value!r}")
     return value
 
 
@@ -152,7 +154,7 @@ def _js_steps() -> list[Step]:
         Step("install", ("npm", "ci", "--ignore-scripts")),  # lockfile only; dependency scripts never run
         Step("tests", ("npx", "--yes", C8, "--reporter=lcovonly", report, "npm", "test"), timeout=3600),
         Step("install-stryker", install),
-        Step("stryker-config", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", _stryker_config(), conf)),
+        Step("stryker-config", ("sh", "-c", WRITE_FILE, "sh", _stryker_config(), conf)),
         Step("mutation", ("node", f"{tool}/node_modules/.bin/stryker", "run", conf), timeout=7200, must_pass=False),
     ]
 
@@ -267,7 +269,7 @@ def _cpp_mutation_steps(env: tuple[tuple[str, str], ...]) -> list[Step]:
     script = (files("gauntlet") / "cppmutants.py").read_text()
     args = (IN_SANDBOX, f"{IN_SANDBOX}/{mutation.TOOLS['cpp'].artifact}", ",".join(row.suffixes), row.tests)
     return [
-        Step("mutation-script", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", script, CPP_MUTANTS)),
+        Step("mutation-script", ("sh", "-c", WRITE_FILE, "sh", script, CPP_MUTANTS)),
         Step("mutation", ("python3", "-P", CPP_MUTANTS, "/project", *args, *CPP_FLAGS),
              timeout=7200, must_pass=False, env=env),
     ]  # fmt: skip
@@ -330,7 +332,7 @@ def _cpp_clang_steps() -> list[Step]:
             env=(("LLVM_PROFILE_FILE", f"{profiles}/%p-%m.profraw"),),
         ),
         Step("coverage", (*helper, "coverage", build, profiles, f"{IN_SANDBOX}/lcov.info")),
-        Step("mull-config", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", _mull_config(), MULL_CONFIG)),
+        Step("mull-config", ("sh", "-c", WRITE_FILE, "sh", _mull_config(), MULL_CONFIG)),
         Step("mull-configure", configure(mull_build, plugin), env=env),
         Step("mull-build", ("cmake", "--build", mull_build), timeout=3600, env=env),
         Step(
@@ -374,45 +376,21 @@ def _dart_steps() -> list[Step]:
     ]
 
 
-BUILDERS: dict[str, Callable[[], list[Step]]] = {
-    "csharp": _dotnet_steps,
-    "java": _java_steps,
-    "rust": _rust_steps,
-    "cpp": _cpp_steps,
-    "cpp-clang": _cpp_clang_steps,
-    "dart": _dart_steps,
-    "javascript": _js_steps,
+BUILDERS: dict[str, Callable[[Config, Path], list[Step]]] = {  # one per row of languages.TABLE
+    "python": lambda cfg, snap: _python_steps(cfg),  # noqa: ARG005
+    "go": _go_steps,
+    "javascript": lambda cfg, snap: _js_steps(),  # noqa: ARG005
+    "csharp": lambda cfg, snap: _dotnet_steps(),  # noqa: ARG005
+    "java": lambda cfg, snap: _java_steps(),  # noqa: ARG005
+    "rust": lambda cfg, snap: _rust_steps(),  # noqa: ARG005
+    "cpp": lambda cfg, snap: _cpp_steps(),  # noqa: ARG005
+    "cpp-clang": lambda cfg, snap: _cpp_clang_steps(),  # noqa: ARG005
+    "dart": lambda cfg, snap: _dart_steps(),  # noqa: ARG005
 }
 
 
 def steps(cfg: Config, snap: Path) -> list[Step]:
-    if cfg.language == "go":
-        return _go_steps(cfg, snap)
-    return BUILDERS[cfg.language]() if cfg.language in BUILDERS else _python_steps(cfg)
-
-
-FILES = {
-    "python": ("coverage.json",),
-    "go": ("cover.out", "mutation.json"),
-    "javascript": ("lcov.info", "stryker.json"),
-    "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
-    "java": ("jacoco.xml", "mutations.xml"),
-    "rust": ("lcov.info", "mutants-outcomes.json"),
-    "cpp": ("lcov.info", "cpp-mutants.json"),
-    "cpp-clang": ("lcov.info", "mull-report.json"),
-    "dart": ("lcov.info",),
-}  # artifacts the sandbox writes itself
-REQUIRED = {
-    "python": ("coverage.json", "mutmut-results.txt"),
-    "go": ("cover.out", "imports.txt"),
-    "javascript": ("lcov.info", "stryker.json"),
-    "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
-    "java": ("jacoco.xml",),
-    "rust": ("lcov.info", "mutants-outcomes.json"),
-    "cpp": ("lcov.info", "cpp-mutants.json"),
-    "cpp-clang": ("lcov.info", "mull-report.json"),
-    "dart": ("lcov.info",),
-}
+    return BUILDERS[cfg.language](cfg, snap)
 
 
 def output_tail(done: ExecResult) -> str:
@@ -437,7 +415,7 @@ def _stale(language: str) -> tuple[str, ...]:
 def _clear(box: Sandbox, stale: tuple[str, ...]) -> None:
     removal = box.exec(["rm", "-rf", "--", *stale], {}, 60)
     if removal.code != 0:
-        raise ValueError(f"could not clear the old mutation report: {output_tail(removal)}")
+        raise GauntletError(f"could not clear the old mutation report: {output_tail(removal)}")
 
 
 def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> dict[str, bytes]:
@@ -451,39 +429,44 @@ def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> d
             _clear(box, stale)
         done = box.exec(step.argv, dict(step.env), step.timeout)
         if done.code != 0 and step.must_pass:
-            raise ValueError(f"step {step.name!r} failed (exit {done.code}): {output_tail(done)}")
+            raise GauntletError(f"step {step.name!r} failed (exit {done.code}): {output_tail(done)}")
         if step.capture and done.stdout:
             captured[step.capture] = done.stdout.encode()
+            _check_size(step.capture, captured[step.capture])
     return captured
 
 
 def _check_size(name: str, data: bytes) -> None:
     if len(data) > MAX_ARTIFACT_BYTES:
-        raise ValueError(f"{name} is {len(data)} bytes, over the {MAX_ARTIFACT_BYTES} byte limit")
+        raise GauntletError(f"{name} is {len(data)} bytes, over the {MAX_ARTIFACT_BYTES} byte limit")
 
 
 def _read_artifact(path: Path) -> bytes | None:
     if path.is_symlink():
-        raise ValueError(f"{path.name} is a symlink")
+        raise GauntletError(f"{path.name} is a symlink")
     data = path.read_bytes() if path.is_file() else None
     if data is not None:
         _check_size(path.name, data)
     return data
 
 
-def _collect(snap: Path, language: str, captured: dict[str, bytes]) -> dict[str, bytes]:
+def _written(snap: Path, names: list[str]) -> dict[str, bytes]:
+    """The artifacts the sandbox wrote to its output directory."""
     if (snap / OUT_DIR).is_symlink():  # the tests swapped the output directory for a link to somewhere on the host
-        raise ValueError(f"{OUT_DIR} is a symlink")
-    found = dict(captured)
-    for name in FILES[language]:
-        data = _read_artifact(snap / OUT_DIR / name)
-        if data is not None:
-            found[name] = data
-    for name, data in captured.items():
-        _check_size(name, data)
-    missing = [n for n in REQUIRED[language] if n not in found]
+        raise GauntletError(f"{OUT_DIR} is a symlink")
+    found = {name: _read_artifact(snap / OUT_DIR / name) for name in names}
+    return {name: data for name, data in found.items() if data is not None}
+
+
+def _collect(snap: Path, language: str, plan: list[Step], captured: dict[str, bytes]) -> dict[str, bytes]:
+    """The row's artifacts: a step's captured stdout, else the file the sandbox wrote. A file never stands in for a
+    captured artifact, so the tests cannot forge one by leaving it in the output directory."""
+    row = languages.get(language)
+    stdout = {step.capture for step in plan}
+    found = {**_written(snap, [n for n in row.artifacts if n not in stdout]), **captured}
+    missing = [n for n in row.artifacts if n not in row.optional and n not in found]
     if missing:
-        raise ValueError(f"the sandbox did not produce {', '.join(missing)}")
+        raise GauntletError(f"the sandbox did not produce {', '.join(missing)}")
     return found
 
 
@@ -495,15 +478,16 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         snap = Path(tmp) / "project"
         snapshot(source, snap)
         (snap / OUT_DIR).mkdir()
+        plan = steps(cfg, snap)
         box = make_sandbox(snap)
         box.ensure()
         try:
-            captured = _run_steps(box, steps(cfg, snap), _stale(cfg.language))
+            captured = _run_steps(box, plan, _stale(cfg.language))
         finally:
             box.remove()
-        found = _collect(snap, cfg.language, captured)
+        found = _collect(snap, cfg.language, plan, captured)
     if fingerprint(source, skip) != before:
-        raise ValueError("source changed while the gauntlet ran; rerun it")
+        raise GauntletError("source changed while the gauntlet ran; rerun it")
     out.mkdir(parents=True, exist_ok=True)
     for name, data in found.items():
         (out / name).write_bytes(data)

@@ -8,6 +8,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+from gauntlet.errors import GauntletError
 from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text
 
 
@@ -77,7 +78,7 @@ def _imports_of(root: Path, rel: Path, package: list[str], max_bytes: int) -> li
     try:
         return _imports_at(read_text(inside(root, str(rel)), max_bytes), package)
     except (SyntaxError, RecursionError, MemoryError) as e:
-        raise ValueError(f"cannot analyse {rel}: {type(e).__name__}") from None
+        raise GauntletError(f"cannot analyse {rel}: {type(e).__name__}") from None
 
 
 def check(root: Path, layers: tuple[str, ...], max_bytes: int = MAX_SOURCE_BYTES) -> ArchResult:

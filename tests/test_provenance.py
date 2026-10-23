@@ -1,24 +1,13 @@
 import json
-import os
 import stat
 import subprocess
 from pathlib import Path
 
 import pytest
+from helpers import git
 
-from gauntlet.provenance import MANIFEST, fingerprint, stamp, verify
-
-
-def git(root: Path, *args: str) -> None:
-    env = {
-        **os.environ,
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@t",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@t",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-    }
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
+from gauntlet import provenance
+from gauntlet.provenance import MANIFEST, fingerprint, git_output, stamp, verify
 
 
 @pytest.fixture
@@ -28,6 +17,26 @@ def repo(tmp_path: Path) -> Path:
     git(tmp_path, "add", "a.py")
     git(tmp_path, "commit", "-q", "-m", "init", "--no-gpg-sign")
     return tmp_path
+
+
+def test_git_ignores_system_and_global_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[object] = []
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        seen.append(kwargs["env"])
+        return subprocess.CompletedProcess(argv, 0, b"")
+
+    monkeypatch.setattr(provenance.subprocess, "run", run)
+    git_output(tmp_path, "ls-files")
+    assert seen == [
+        {
+            "PATH": "/usr/bin:/bin",
+            "HOME": "/nonexistent",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_ATTR_NOSYSTEM": "1",
+        }
+    ]
 
 
 def test_fingerprint_is_stable(repo: Path) -> None:

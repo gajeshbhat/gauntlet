@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from gauntlet.errors import GauntletError
+
 Entry = tuple[str, tuple[int, int] | None]
 
 
@@ -26,14 +28,14 @@ def _entry(item: str) -> Entry:
     if not sep:
         name, span = item, ""
     if not name:
-        raise ValueError(f"bad scope entry {item!r}: empty path")
+        raise GauntletError(f"bad scope entry {item!r}: empty path")
     if not span:
         return name, None
     if name.endswith("/"):
-        raise ValueError(f"bad scope entry {item!r}: a directory takes no line range")
+        raise GauntletError(f"bad scope entry {item!r}: a directory takes no line range")
     lo, _, hi = span.partition("-")
     if not (lo.isdigit() and hi.isdigit() and int(lo) <= int(hi)):
-        raise ValueError(f"bad scope entry {item!r}: expected path or path:lo-hi")
+        raise GauntletError(f"bad scope entry {item!r}: expected path or path:lo-hi")
     return name, (int(lo), int(hi))
 
 

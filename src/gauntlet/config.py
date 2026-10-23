@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from gauntlet import languages
+from gauntlet.errors import GauntletError
 
 KEYS = {
     "": {"language", "src", "crap", "mutation", "layers", "go"},
@@ -34,21 +35,21 @@ def _section(path: Path, data: dict[str, Any], name: str) -> dict[str, Any]:
     unknown = sorted(set(table) - KEYS[name])
     if unknown:
         where = f"[{name}]" if name else "the top level"
-        raise ValueError(f"{path}: unknown key(s) {', '.join(unknown)} in {where}")
+        raise GauntletError(f"{path}: unknown key(s) {', '.join(unknown)} in {where}")
     return table
 
 
 def _int(path: Path, table: dict[str, Any], key: str, default: int, lo: int, hi: int) -> int:
     value = table.get(key, default)
     if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
-        raise ValueError(f"{path}: {key} must be an integer between {lo} and {hi}")
+        raise GauntletError(f"{path}: {key} must be an integer between {lo} and {hi}")
     return value
 
 
 def _text(path: Path, table: dict[str, Any], key: str, default: str) -> str:
     value = table.get(key, default)
     if not isinstance(value, str):
-        raise ValueError(f"{path}: {key} must be a string")
+        raise GauntletError(f"{path}: {key} must be a string")
     return value
 
 
@@ -56,7 +57,7 @@ def _layers(path: Path, table: dict[str, Any]) -> tuple[str, ...]:
     order: Any = table.get("order", [])
     items: list[Any] = list(order) if isinstance(order, list) else []  # pyright: ignore[reportUnknownArgumentType]
     if not isinstance(order, list) or not all(isinstance(x, str) and x for x in items):
-        raise ValueError(f"{path}: layers.order must be a list of non-empty strings")
+        raise GauntletError(f"{path}: layers.order must be a list of non-empty strings")
     return tuple(str(x) for x in items)
 
 
@@ -64,7 +65,7 @@ def _strings(path: Path, table: dict[str, Any], key: str, default: tuple[str, ..
     value: Any = table.get(key, list(default))
     items: list[Any] = list(value) if isinstance(value, list) else []  # pyright: ignore[reportUnknownArgumentType]
     if not isinstance(value, list) or not all(isinstance(x, str) and x for x in items):
-        raise ValueError(f"{path}: {key} must be a list of non-empty strings")
+        raise GauntletError(f"{path}: {key} must be a list of non-empty strings")
     return tuple(str(x) for x in items)
 
 
@@ -74,11 +75,11 @@ def load(path: Path) -> Config:
     sections = {name: _section(path, data, name) for name in KEYS if name}
     language = top.get("language")
     if language is None:
-        raise ValueError(f"{path}: 'language' is required")
+        raise GauntletError(f"{path}: 'language' is required")
     try:
         languages.get(language)
     except ValueError as e:
-        raise ValueError(f"{path}: {e}") from None
+        raise GauntletError(f"{path}: {e}") from None
     return Config(
         language=language,
         crap_max=_int(path, sections["crap"], "max", Config.crap_max, 1, 1000),

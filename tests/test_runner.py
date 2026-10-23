@@ -1,29 +1,16 @@
 import json
-import os
 import re
 import shutil
-import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import pytest
+from helpers import git
 
-from gauntlet import cppmutants, mutation, runner
+from gauntlet import cppmutants, languages, mutation, runner
 from gauntlet.config import Config
 from gauntlet.provenance import MANIFEST, verify
 from gauntlet.sandbox import ExecResult
-
-GITENV = {
-    "GIT_AUTHOR_NAME": "t",
-    "GIT_AUTHOR_EMAIL": "t@t",
-    "GIT_COMMITTER_NAME": "t",
-    "GIT_COMMITTER_EMAIL": "t@t",
-    "GIT_CONFIG_GLOBAL": "/dev/null",
-}
-
-
-def git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env={**os.environ, **GITENV})
 
 
 @pytest.fixture
@@ -152,7 +139,8 @@ def test_javascript_mutation_steps_are_fixed_pinned_and_use_our_own_stryker_conf
         "/project/.gauntlet-out/stryker.conf.json",
     )  # an explicit config path: a repo's stryker.conf.* is never read
     assert (mutation.timeout, mutation.must_pass) == (7200, False)
-    assert runner.REQUIRED["javascript"] == ("lcov.info", "stryker.json")
+    assert languages.TABLE["javascript"].artifacts == ("lcov.info", "stryker.json")
+    assert languages.TABLE["javascript"].optional == ()
 
 
 def test_csharp_steps(tmp_path: Path) -> None:
@@ -190,7 +178,7 @@ def test_csharp_mutation_steps_pin_the_tool_and_use_only_our_config(tmp_path: Pa
     assert dict(mutation.env) == dict(install.env) and "XDG_RUNTIME_DIR" in dict(install.env)
     assert collect.argv == ("cp", f"{out}/stryker/reports/mutation-report.json", f"{out}/stryker-report.json")
     assert collect.must_pass is False
-    assert "stryker-report.json" in runner.REQUIRED["csharp"] + runner.FILES["csharp"]
+    assert "stryker-report.json" in languages.TABLE["csharp"].artifacts
 
 
 def test_java_steps(tmp_path: Path) -> None:
@@ -237,7 +225,8 @@ def test_rust_steps(tmp_path: Path) -> None:
     )  # fmt: skip
     assert (mutation.timeout, mutation.must_pass, report.must_pass) == (7200, False, False)
     assert report.argv[0] == "cp" and report.argv[2] == "/project/.gauntlet-out/mutants-outcomes.json"
-    assert "mutants-outcomes.json" in runner.REQUIRED["rust"] and "mutants-outcomes.json" in runner.FILES["rust"]
+    rust = languages.TABLE["rust"]
+    assert "mutants-outcomes.json" in rust.artifacts and "mutants-outcomes.json" not in rust.optional
 
 
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
@@ -340,6 +329,26 @@ def test_go_pipeline_collects_captured_and_written_artifacts(repo: Path, tmp_pat
     names = runner.produce(repo, Config(language="go"), tmp_path / "out", factory)
     assert names == ["cover.out", "imports.txt", "mutation.json"]
     assert (tmp_path / "out" / "imports.txt").read_text() == "m/a fmt\n"
+
+
+def test_a_file_the_tests_leave_never_stands_in_for_a_captured_artifact(repo: Path, tmp_path: Path) -> None:
+    def forge(argv: Sequence[str], project: Path) -> ExecResult:
+        if "pytest" in argv:
+            (project / runner.OUT_DIR / "mutmut-results.txt").write_text("p.x: killed\n")
+        return python_behaviour(argv, project) if "pytest" in argv else ExecResult(0, "", "")
+
+    factory, _ = make(forge)
+    with pytest.raises(ValueError, match=r"^the sandbox did not produce mutmut-results\.txt$"):
+        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+
+
+@pytest.mark.parametrize("name", languages.NAMES)
+def test_every_language_has_steps_and_its_artifacts_are_complete(name: str, tmp_path: Path) -> None:
+    row = languages.TABLE[name]
+    assert runner.steps(Config(language=name), tmp_path)
+    assert row.artifacts[0] == row.coverage_file and set(row.optional) <= set(row.artifacts)
+    tool = mutation.TOOLS.get(name)
+    assert tool is None or tool.artifact in row.artifacts
 
 
 def test_the_snapshot_directory_is_cleaned_up(repo: Path, tmp_path: Path) -> None:
@@ -451,7 +460,8 @@ def test_cpp_steps_are_fixed_pinned_and_ignore_the_repos_gcovr_config(tmp_path: 
     )  # fmt: skip
     assert (mutate.name, mutate.timeout, mutate.must_pass) == ("mutation", 7200, False)
     assert dict(mutate.env) == {"PYTHONPATH": "/project/.gauntlet-out/py"}
-    assert "cpp-mutants.json" in runner.REQUIRED["cpp"] and "cpp-mutants.json" in runner.FILES["cpp"]
+    cpp = languages.TABLE["cpp"]
+    assert "cpp-mutants.json" in cpp.artifacts and "cpp-mutants.json" not in cpp.optional
 
 
 def test_dart_steps(tmp_path: Path) -> None:
@@ -596,6 +606,7 @@ def test_cpp_clang_mull_config_mutates_project_code_only() -> None:
 
 
 def test_cpp_clang_artifacts_and_stale_files() -> None:
-    assert runner.FILES["cpp-clang"] == runner.REQUIRED["cpp-clang"] == ("lcov.info", "mull-report.json")
+    clang = languages.TABLE["cpp-clang"]
+    assert (clang.artifacts, clang.optional) == (("lcov.info", "mull-report.json"), ())
     stale = runner._stale("cpp-clang")  # pyright: ignore[reportPrivateUsage]
     assert stale == ("/project/.gauntlet-out/mull-report.json", "/project/.gauntlet-out/mull-reports")

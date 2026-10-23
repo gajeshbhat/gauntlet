@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from gauntlet.errors import GauntletError
+
 MANIFEST = "gauntlet-manifest.json"
 SAFE_GIT = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
 GIT_ENV = {
@@ -29,10 +31,10 @@ def git_output(source: Path, *args: str) -> bytes:
     done = subprocess.run(
         ["git", *SAFE_GIT, "-C", str(source), *args],
         capture_output=True,
-        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+        env=GIT_ENV,
     )
     if done.returncode != 0:
-        raise ValueError(f"{source} is not a git repository (or git refused to read it)")
+        raise GauntletError(f"{source} is not a git repository (or git refused to read it)")
     return done.stdout
 
 
@@ -91,15 +93,15 @@ def stamp(art: Path, source: Path, files: list[str], exclude: tuple[str, ...] = 
 def verify(art: Path, source: Path, files: list[str], exclude: tuple[str, ...] = ()) -> dict[str, Any]:
     path = art / MANIFEST
     if not path.is_file():
-        raise ValueError(
+        raise GauntletError(
             f"{art} is not stamped (no {MANIFEST}); run `gauntlet stamp` right after producing the artifacts"
         )
     manifest: dict[str, Any] = json.loads(path.read_text())
     for name in files:
         if name not in manifest["files"]:
-            raise ValueError(f"{name} is not covered by the manifest")
+            raise GauntletError(f"{name} is not covered by the manifest")
         if _digest(art / name) != manifest["files"][name]:
-            raise ValueError(f"{name} changed since it was stamped")
+            raise GauntletError(f"{name} changed since it was stamped")
     if fingerprint(source, excluded(art, source, exclude)) != manifest["fingerprint"]:
-        raise ValueError("artifacts are stale: the source changed since they were stamped")
+        raise GauntletError("artifacts are stale: the source changed since they were stamped")
     return manifest

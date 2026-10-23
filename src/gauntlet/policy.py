@@ -6,7 +6,6 @@ The repo's `gauntlet.toml` may tighten these limits, never weaken them, and can 
 import hashlib
 import json
 import os
-import re
 import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -14,13 +13,13 @@ from typing import Any
 
 from gauntlet import languages
 from gauntlet.config import Config
-from gauntlet.names import IMAGE, MEMORY
+from gauntlet.errors import GauntletError
+from gauntlet.names import ENV_NAME, IMAGE, MEMORY
 
 BOOLS = ("allow_config_excludes", "allow_skipped_gates", "allow_unstamped", "require_pin")
 INTS = ("crap_ceiling", "mutation_floor", "max_exclusions")
 RANGES = {"agent_timeout": (1, 86_400), "max_rounds": (1, 20)}
 LISTS = ("agent_command", "agent_env")
-ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 CHOICES = {
     "sandbox": ("auto", "workshop", "docker"),
     "container_cli": ("docker", "podman"),
@@ -59,38 +58,37 @@ def default_path() -> Path:
     return (Path(base) if base else Path.home() / ".config") / "gauntlet" / "policy.toml"
 
 
-def _bad_int(value: Any) -> bool:
-    return isinstance(value, bool) or not isinstance(value, int) or value < 0
-
-
 def _check_values(path: Path, data: dict[str, Any]) -> None:
     unknown = sorted(set(data) - {*BOOLS, *INTS, *RANGES, *LISTS, *CHOICES, *IMAGES, *STRINGS, "pins", "docker_images"})
     if unknown:
-        raise ValueError(f"{path}: unknown key(s) {', '.join(unknown)}")
+        raise GauntletError(f"{path}: unknown key(s) {', '.join(unknown)}")
     _check_ints(path, data)
     _check_bools(path, data)
     _check_ranges(path, data)
     _check_lists(path, data)
-    _check_strings(path, data)
+    _check_choices(path, data)
+    _check_memory(path, data)
+    _check_images(path, data)
 
 
 def _check_ints(path: Path, data: dict[str, Any]) -> None:
     for key in INTS:
-        if _bad_int(data.get(key, 0)):
-            raise ValueError(f"{path}: {key} must be an integer >= 0")
+        value = data.get(key, 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise GauntletError(f"{path}: {key} must be an integer >= 0")
 
 
 def _check_bools(path: Path, data: dict[str, Any]) -> None:
     for key in BOOLS:
         if not isinstance(data.get(key, False), bool):
-            raise ValueError(f"{path}: {key} must be true or false")
+            raise GauntletError(f"{path}: {key} must be true or false")
 
 
 def _check_ranges(path: Path, data: dict[str, Any]) -> None:
     for key, (lo, hi) in RANGES.items():
         value = data.get(key, lo)
         if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
-            raise ValueError(f"{path}: {key} must be an integer between {lo} and {hi}")
+            raise GauntletError(f"{path}: {key} must be an integer between {lo} and {hi}")
 
 
 def _strings(value: Any) -> list[str] | None:
@@ -101,84 +99,60 @@ def _strings(value: Any) -> list[str] | None:
 
 def _check_lists(path: Path, data: dict[str, Any]) -> None:
     if _strings(data.get("agent_command", [])) is None:
-        raise ValueError(f"{path}: agent_command must be a list of non-empty strings")
+        raise GauntletError(f"{path}: agent_command must be a list of non-empty strings")
     env = _strings(data.get("agent_env", []))
     if env is None or not all(ENV_NAME.match(name) for name in env):
-        raise ValueError(f"{path}: agent_env must be a list of environment variable names")
+        raise GauntletError(f"{path}: agent_env must be a list of environment variable names")
 
 
 def _check_choices(path: Path, data: dict[str, Any]) -> None:
     for key, allowed in CHOICES.items():
         if data.get(key, allowed[0]) not in allowed:
-            raise ValueError(f"{path}: {key} must be one of {', '.join(allowed)}")
+            raise GauntletError(f"{path}: {key} must be one of {', '.join(allowed)}")
 
 
 def _check_memory(path: Path, data: dict[str, Any]) -> None:
     memory = data.get("docker_memory", "")
     if not isinstance(memory, str):
-        raise ValueError(f"{path}: docker_memory must be a string")
+        raise GauntletError(f"{path}: docker_memory must be a string")
     if memory and not MEMORY.match(memory):
-        raise ValueError(f"{path}: docker_memory must look like 512m or 4g")
+        raise GauntletError(f"{path}: docker_memory must look like 512m or 4g")
 
 
 def _check_images(path: Path, data: dict[str, Any]) -> None:
-    for key in IMAGES:
-        value = data.get(key, "x")
-        unset_ok = key == "docker_image_agent" and value == ""
-        if not isinstance(value, str) or not (IMAGE.match(value) or unset_ok):
-            raise ValueError(f"{path}: {key} must be a container image name")
-
-
-def _check_strings(path: Path, data: dict[str, Any]) -> None:
-    _check_choices(path, data)
-    _check_memory(path, data)
-    _check_images(path, data)
+    value = data.get("docker_image_agent", "")
+    if not isinstance(value, str) or (value and not IMAGE.match(value)):
+        raise GauntletError(f"{path}: docker_image_agent must be a container image name")
 
 
 def _images(path: Path, data: dict[str, Any]) -> dict[str, str]:
     table: Any = data.get("docker_images", {})
     if not isinstance(table, dict):
-        raise ValueError(f"{path}: docker_images must be a table of language = image")
+        raise GauntletError(f"{path}: docker_images must be a table of language = image")
     for name, image in table.items():  # pyright: ignore[reportUnknownVariableType]
         if name not in languages.TABLE:
-            raise ValueError(
+            raise GauntletError(
                 f"{path}: docker_images has unknown language {name!r}, expected one of {', '.join(languages.NAMES)}"
             )
         if not isinstance(image, str) or not IMAGE.match(image):
-            raise ValueError(f"{path}: docker_images.{name} must be a container image name")
+            raise GauntletError(f"{path}: docker_images.{name} must be a container image name")
     return {str(k): str(v) for k, v in table.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
 
 
 def _pins(path: Path, data: dict[str, Any]) -> dict[str, str]:
     raw = data.get("pins", {})
     if not isinstance(raw, dict) or not all(isinstance(v, str) and v.startswith("sha256:") for v in raw.values()):  # pyright: ignore[reportUnknownVariableType]
-        raise ValueError(f"{path}: pins must map a config path to 'sha256:<hex>'")
+        raise GauntletError(f"{path}: pins must map a config path to 'sha256:<hex>'")
     return {str(k): str(v) for k, v in raw.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
 
 
 def _checked(path: Path, data: dict[str, Any]) -> Policy:
     _check_values(path, data)
-    d = Policy()
-    return Policy(
-        crap_ceiling=int(data.get("crap_ceiling", d.crap_ceiling)),
-        mutation_floor=int(data.get("mutation_floor", d.mutation_floor)),
-        max_exclusions=int(data.get("max_exclusions", d.max_exclusions)),
-        allow_config_excludes=bool(data.get("allow_config_excludes", d.allow_config_excludes)),
-        allow_skipped_gates=bool(data.get("allow_skipped_gates", d.allow_skipped_gates)),
-        allow_unstamped=bool(data.get("allow_unstamped", d.allow_unstamped)),
-        require_pin=bool(data.get("require_pin", d.require_pin)),
-        pins=_pins(path, data),
-        agent_command=tuple(data.get("agent_command", ())),
-        agent_env=tuple(data.get("agent_env", ())),
-        agent_timeout=int(data.get("agent_timeout", d.agent_timeout)),
-        max_rounds=int(data.get("max_rounds", d.max_rounds)),
-        sandbox=data.get("sandbox", d.sandbox),
-        container_cli=data.get("container_cli", d.container_cli),
-        docker_network=data.get("docker_network", d.docker_network),
-        docker_memory=data.get("docker_memory", d.docker_memory),
-        docker_images=_images(path, data),
-        docker_image_agent=data.get("docker_image_agent", d.docker_image_agent),
-    )
+    pins, images = _pins(path, data), _images(path, data)
+    kw: dict[str, Any] = {
+        k: tuple(v) if k in LISTS else v for k, v in data.items() if k not in {"pins", "docker_images"}
+    }
+    return Policy(**kw, pins=pins, docker_images=images)
 
 
 def load(path: Path | None, missing_ok: bool = False) -> Policy:
@@ -208,11 +182,11 @@ def apply(cfg: Config, p: Policy) -> Config:
     crap, mutation = p.crap_ceiling, p.mutation_floor
     if "crap" in cfg.explicit:
         if cfg.crap_max > p.crap_ceiling:
-            raise ValueError(f"crap.max = {cfg.crap_max} is weaker than the policy ceiling {p.crap_ceiling}")
+            raise GauntletError(f"crap.max = {cfg.crap_max} is weaker than the policy ceiling {p.crap_ceiling}")
         crap = cfg.crap_max
     if "mutation" in cfg.explicit:
         if cfg.mutation_min < p.mutation_floor:
-            raise ValueError(
+            raise GauntletError(
                 f"mutation.min_score = {cfg.mutation_min} is weaker than the policy floor {p.mutation_floor}"
             )
         mutation = cfg.mutation_min
@@ -227,10 +201,10 @@ def check_pin(p: Policy, config: Path) -> None:
     pinned = p.pins.get(str(config.resolve()))
     if pinned is None:
         if p.require_pin:
-            raise ValueError(f"{config} is not pinned; review it, then run `gauntlet pin`")
+            raise GauntletError(f"{config} is not pinned; review it, then run `gauntlet pin`")
         return
     if pinned != _hash(config):
-        raise ValueError(f"{config} changed since it was pinned; review the change, then run `gauntlet pin`")
+        raise GauntletError(f"{config} changed since it was pinned; review the change, then run `gauntlet pin`")
 
 
 def pin(p: Policy, config: Path, path: Path) -> Policy:
