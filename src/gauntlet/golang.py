@@ -5,22 +5,14 @@ imports.txt     go list -e -f '{{.ImportPath}} {{join .Imports " "}}' ./...
 mutation.json   gremlins unleash -o mutation.json .
 """
 
-import json
-
 from gauntlet.arch import ArchResult, Violation, layer_of
-from gauntlet.errors import GauntletError
-from gauntlet.results import Mutation
-from gauntlet.scope import Scope
-
-CAUGHT = {"KILLED", "TIMED OUT"}
-IGNORED = {"NOT VIABLE", "SKIPPED"}
 
 
 def _outward(package: str, imported: list[str], layers: tuple[str, ...]) -> list[Violation]:
     own = layer_of(package, layers, "/")
     if own is None:
         return []
-    outer = {t for t in (layer_of(name, layers, "/") for name in imported) if t is not None and t < own}
+    outer = {t for t in _targets(imported, layers) if t < own}
     return [Violation(package, 0, layers[own], layers[t]) for t in sorted(outer)]
 
 
@@ -38,21 +30,3 @@ def arch_check(imports: str, layers: tuple[str, ...]) -> ArchResult:
     modules = sum(layer_of(r[0], layers, "/") is not None for r in rows)
     violations = [v for package, *imported in rows for v in _outward(package, imported, layers)]
     return ArchResult(modules, violations, _edges(rows, layers))
-
-
-def harden_check(mutation_json: str, scope: Scope, base: str = "") -> Mutation:
-    caught, total = 0, 0
-    bad: list[str] = []
-    for file in json.loads(mutation_json)["files"]:
-        name = f"{base}/{file['file_name']}" if base else file["file_name"]
-        for m in file["mutations"]:
-            if not scope.contains(name, m["line"]) or m["status"] in IGNORED:
-                continue
-            total += 1
-            if m["status"] in CAUGHT:
-                caught += 1
-            else:
-                bad.append(f"{name}:{m['line']}:{m['column']} {m['type']} {m['status']}")
-    if total == 0:
-        raise GauntletError("no mutants in scope; check the scope and that gremlins ran")
-    return Mutation(100 * caught / total, bad, caught, total)

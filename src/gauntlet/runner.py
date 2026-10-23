@@ -24,6 +24,7 @@ OUT_DIR = ".gauntlet-out"
 IN_SANDBOX = f"/project/{OUT_DIR}"
 GOBIN = f"{IN_SANDBOX}/bin"
 UV = ("uv", "run", "--project", "/project")
+WRITE_FILE = 'printf %s "$1" > "$2"'  # writes $1 to the file $2
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
 C8 = "c8@10.1.3"
@@ -153,7 +154,7 @@ def _js_steps() -> list[Step]:
         Step("install", ("npm", "ci", "--ignore-scripts")),  # lockfile only; dependency scripts never run
         Step("tests", ("npx", "--yes", C8, "--reporter=lcovonly", report, "npm", "test"), timeout=3600),
         Step("install-stryker", install),
-        Step("stryker-config", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", _stryker_config(), conf)),
+        Step("stryker-config", ("sh", "-c", WRITE_FILE, "sh", _stryker_config(), conf)),
         Step("mutation", ("node", f"{tool}/node_modules/.bin/stryker", "run", conf), timeout=7200, must_pass=False),
     ]
 
@@ -268,7 +269,7 @@ def _cpp_mutation_steps(env: tuple[tuple[str, str], ...]) -> list[Step]:
     script = (files("gauntlet") / "cppmutants.py").read_text()
     args = (IN_SANDBOX, f"{IN_SANDBOX}/{mutation.TOOLS['cpp'].artifact}", ",".join(row.suffixes), row.tests)
     return [
-        Step("mutation-script", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", script, CPP_MUTANTS)),
+        Step("mutation-script", ("sh", "-c", WRITE_FILE, "sh", script, CPP_MUTANTS)),
         Step("mutation", ("python3", "-P", CPP_MUTANTS, "/project", *args, *CPP_FLAGS),
              timeout=7200, must_pass=False, env=env),
     ]  # fmt: skip
@@ -331,7 +332,7 @@ def _cpp_clang_steps() -> list[Step]:
             env=(("LLVM_PROFILE_FILE", f"{profiles}/%p-%m.profraw"),),
         ),
         Step("coverage", (*helper, "coverage", build, profiles, f"{IN_SANDBOX}/lcov.info")),
-        Step("mull-config", ("sh", "-c", 'printf %s "$1" > "$2"', "sh", _mull_config(), MULL_CONFIG)),
+        Step("mull-config", ("sh", "-c", WRITE_FILE, "sh", _mull_config(), MULL_CONFIG)),
         Step("mull-configure", configure(mull_build, plugin), env=env),
         Step("mull-build", ("cmake", "--build", mull_build), timeout=3600, env=env),
         Step(

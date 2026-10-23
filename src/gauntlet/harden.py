@@ -10,7 +10,7 @@ CAUGHT = {"killed", "timeout", "segfault"}
 IGNORED = {"skipped"}
 
 
-def score(results: str) -> tuple[int, int, list[str]]:
+def check(results: str) -> Mutation:
     caught, total = 0, 0
     bad: list[str] = []
     for line in results.splitlines():
@@ -24,9 +24,4 @@ def score(results: str) -> tuple[int, int, list[str]]:
             bad.append(f"{name}: {status}")
     if total == 0:
         raise GauntletError("no mutants found; is [tool.mutmut] configured in the target repo?")
-    return caught, total, bad
-
-
-def check(results: str) -> Mutation:
-    caught, total, bad = score(results)
     return Mutation(100 * caught / total, bad, caught, total)

@@ -31,7 +31,7 @@ def git_output(source: Path, *args: str) -> bytes:
     done = subprocess.run(
         ["git", *SAFE_GIT, "-C", str(source), *args],
         capture_output=True,
-        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+        env=GIT_ENV,
     )
     if done.returncode != 0:
         raise GauntletError(f"{source} is not a git repository (or git refused to read it)")

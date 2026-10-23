@@ -38,13 +38,14 @@ def test_copies_the_working_tree_state(repo: Path, tmp_path: Path) -> None:
     (repo / "ignored.txt").write_text("ignored\n")  # git-ignored
     (repo / "gone.py").unlink()  # deleted
     dest = tmp_path / "snap"
-    count = snapshot(repo, dest)
+    snapshot(repo, dest)
     assert (dest / "pkg" / "a.py").read_text() == "a = 2\n"
     assert (dest / "new.py").read_text() == "new\n"
     assert not (dest / "ignored.txt").exists()
     assert not (dest / "gone.py").exists()
     assert not (dest / ".git").exists()
-    assert count == 3  # a.py, new.py, .gitignore
+    copied = sorted(p.relative_to(dest).as_posix() for p in dest.rglob("*") if p.is_file())
+    assert copied == [".gitignore", "new.py", "pkg/a.py"]
 
 
 def test_the_destination_is_private(repo: Path, tmp_path: Path) -> None:

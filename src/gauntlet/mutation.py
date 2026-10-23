@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from gauntlet import golang, harden
+from gauntlet import harden
 from gauntlet.config import Config
 from gauntlet.errors import GauntletError
 from gauntlet.linecov import parse_xml
@@ -20,6 +20,13 @@ class Mutant:
     line: int
     label: str  # what was changed and what happened, for the survivor list
     caught: bool  # the tests noticed; a mutant nothing exercised is NOT caught (fail closed)
+    column: int | None = None  # gremlins reports one: its survivors read `file:line:column label`
+
+    @property
+    def survivor(self) -> str:
+        if self.column is None:
+            return f"{self.file}:{self.line}: {self.label}"
+        return f"{self.file}:{self.line}:{self.column} {self.label}"
 
 
 def tally(mutants: Iterable[Mutant], scope: Scope, tool: str) -> Mutation:
@@ -28,8 +35,30 @@ def tally(mutants: Iterable[Mutant], scope: Scope, tool: str) -> Mutation:
     if not chosen:
         raise GauntletError(f"no mutants in scope; check the scope and that {tool} ran")
     caught = sum(m.caught for m in chosen)
-    survivors = [f"{m.file}:{m.line}: {m.label}" for m in chosen if not m.caught]
+    survivors = [m.survivor for m in chosen if not m.caught]
     return Mutation(100 * caught / len(chosen), survivors, caught, len(chosen))
+
+
+GREMLINS_CAUGHT = {"KILLED", "TIMED OUT"}
+GREMLINS_IGNORED = {"NOT VIABLE", "SKIPPED"}
+
+
+def gremlins(text: str, scope: Scope, base: str = "") -> Mutation:
+    """gremlins' mutation.json, its file names relative to `base` (the directory gremlins ran in). KILLED and
+    TIMED OUT are caught; NOT VIABLE and SKIPPED are left out; any other status (LIVED, NOT COVERED) is not caught."""
+    mutants = (
+        Mutant(
+            f"{base}/{f['file_name']}" if base else f["file_name"],
+            m["line"],
+            f"{m['type']} {m['status']}",
+            m["status"] in GREMLINS_CAUGHT,
+            m["column"],
+        )
+        for f in json.loads(text)["files"]
+        for m in f["mutations"]
+        if m["status"] not in GREMLINS_IGNORED
+    )
+    return tally(mutants, scope, "gremlins")
 
 
 PIT_CAUGHT = {"KILLED", "TIMED_OUT", "MEMORY_ERROR"}
@@ -145,7 +174,7 @@ TOOLS: dict[str, Tool] = {
     "go": Tool(
         "mutation.json",
         "gremlins unleash -o mutation.json .",
-        lambda text, scope, cfg: golang.harden_check(text, scope, cfg.mutation_dir),
+        lambda text, scope, cfg: gremlins(text, scope, cfg.mutation_dir),
     ),
     "javascript": Tool(
         "stryker.json",

@@ -9,12 +9,12 @@ import os
 import re
 import secrets
 import subprocess
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from gauntlet.errors import GauntletError
 from gauntlet.names import IMAGE, MEMORY
-from gauntlet.sandbox import ExecResult, env_entries, validate_exec
+from gauntlet.sandbox import ExecResult, Runner, env_entries, validate_exec
 
 CLI = re.compile(r"^[a-z][a-z0-9-]*$")
 NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,62}$")
@@ -22,15 +22,9 @@ NETWORKS = ("bridge", "none")
 GRACE = 10  # seconds `timeout` waits after TERM before KILL
 BACKSTOP = 60  # extra seconds before we give up on the docker CLI itself
 
-Runner = Callable[..., "subprocess.CompletedProcess[str]"]
-
 
 def _default_user() -> str:
     return f"{os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") else ""  # no uid on Windows: Docker Desktop maps it
-
-
-def _bad(kind: str, value: str) -> GauntletError:
-    return GauntletError(f"bad {kind} {value!r}")
 
 
 class DockerSandbox:
@@ -55,7 +49,7 @@ class DockerSandbox:
             ("name", name, NAME.match(name)),
         ):
             if not ok:
-                raise _bad(kind, value)
+                raise GauntletError(f"bad {kind} {value!r}")
         self.project, self.image, self.cli, self.network, self.memory = project, image, cli, network, memory
         self.name, self.user, self._run = name, _default_user() if user is None else user, run
 

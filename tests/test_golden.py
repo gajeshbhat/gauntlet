@@ -253,7 +253,12 @@ def test_arch_with_layers_matching_nothing_message(
 def test_snapshot_creates_nested_destinations_and_nested_files(tmp_path: Path) -> None:
     repo = committed(tmp_path / "repo", {"a/b/c.py": "1\n", "a/b/d.py": "2\n", "a/e.py": "3\n"})
     dest = tmp_path / "deep" / "er" / "snap"
-    assert snapshot(repo, dest) == 3
+    snapshot(repo, dest)
+    assert sorted(p.relative_to(dest).as_posix() for p in dest.rglob("*") if p.is_file()) == [
+        "a/b/c.py",
+        "a/b/d.py",
+        "a/e.py",
+    ]
     assert (dest / "a" / "b" / "c.py").read_text() == "1\n"
     assert (dest / "a" / "b" / "d.py").read_text() == "2\n"
     assert dest.stat().st_mode & 0o777 == 0o700
@@ -263,12 +268,14 @@ def test_snapshot_accepts_an_existing_empty_destination(tmp_path: Path) -> None:
     repo = committed(tmp_path / "repo", {"a.py": "1\n"})
     dest = tmp_path / "snap"
     dest.mkdir()
-    assert snapshot(repo, dest) == 1
+    snapshot(repo, dest)
+    assert (dest / "a.py").read_text() == "1\n"
 
 
 def test_snapshot_limits_are_exact(tmp_path: Path) -> None:
     repo = committed(tmp_path / "repo", {"a.py": "x" * 10, "b.py": "y" * 10})
-    assert snapshot(repo, tmp_path / "ok1", max_bytes=20, max_files=2) == 2  # exactly at both limits
+    snapshot(repo, tmp_path / "ok1", max_bytes=20, max_files=2)  # exactly at both limits
+    assert sorted(p.name for p in (tmp_path / "ok1").iterdir()) == ["a.py", "b.py"]
     with pytest.raises(ValueError, match="over the 19 byte limit"):
         snapshot(repo, tmp_path / "bad1", max_bytes=19, max_files=2)
     with pytest.raises(ValueError, match="more than 1 files"):

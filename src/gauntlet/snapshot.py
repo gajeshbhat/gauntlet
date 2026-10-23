@@ -19,7 +19,7 @@ def _listed(source: Path) -> list[str]:
     return sorted({n.decode() for n in raw.split(b"\0") if n})
 
 
-def snapshot(source: Path, dest: Path, max_bytes: int = MAX_BYTES, max_files: int = MAX_FILES) -> int:
+def snapshot(source: Path, dest: Path, max_bytes: int = MAX_BYTES, max_files: int = MAX_FILES) -> None:
     if dest.exists() and any(dest.iterdir()):
         raise GauntletError(f"{dest} is not empty")
     names = _listed(source)
@@ -27,7 +27,7 @@ def snapshot(source: Path, dest: Path, max_bytes: int = MAX_BYTES, max_files: in
         raise GauntletError(f"{source} has more than {max_files} files")
     dest.mkdir(mode=0o700, parents=True, exist_ok=True)
     dest.chmod(0o700)
-    total, copied = 0, 0
+    total = 0
     for name in names:
         if not (source / name).exists():  # tracked but deleted in the working tree
             continue
@@ -38,5 +38,3 @@ def snapshot(source: Path, dest: Path, max_bytes: int = MAX_BYTES, max_files: in
         target = dest / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, target)
-        copied += 1
-    return copied

@@ -1,6 +1,6 @@
 import pytest
 
-from gauntlet.harden import check, score
+from gauntlet.harden import check
 
 RESULTS = """
     pkg.x_a__mutmut_1: killed
@@ -12,12 +12,14 @@ RESULTS = """
 
 
 def test_score_counts_killed_and_timeout_and_ignores_skipped() -> None:
-    assert score(RESULTS) == (2, 4, ["pkg.x_a__mutmut_2: survived", "pkg.x_c__mutmut_1: no tests"])
+    result = check(RESULTS)
+    assert (result.caught, result.total) == (2, 4)
+    assert result.survivors == ["pkg.x_a__mutmut_2: survived", "pkg.x_c__mutmut_1: no tests"]
 
 
 def test_score_of_nothing_is_an_error() -> None:
     with pytest.raises(ValueError, match=r"^no mutants found; is \[tool.mutmut\] configured in the target repo\?$"):
-        score("")
+        check("")
 
 
 def test_check_turns_results_into_a_mutation_result() -> None:
