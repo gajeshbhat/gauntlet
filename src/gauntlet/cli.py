@@ -4,7 +4,7 @@ import json
 import sys
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from importlib.metadata import version
 from pathlib import Path
@@ -209,22 +209,23 @@ def _fingerprint(run: Run) -> str:
         return "unavailable (not a git repository)"
 
 
+def _evidence(run: Run, results: list[GateResult], fingerprinted: Run, command: str) -> str:
+    return report.render(
+        results,
+        language=run.cfg.language,
+        fingerprint=_fingerprint(fingerprinted),
+        config_sha256=hashlib.sha256((run.root / "gauntlet.toml").read_bytes()).hexdigest(),
+        policy=run.policy,
+        created=datetime.now(UTC).isoformat(timespec="seconds"),
+        command=command,
+    )
+
+
 def _write_outputs(run: Run, args: argparse.Namespace, results: list[GateResult]) -> None:
     if args.json:
-        args.json.write_text(json.dumps([r.as_dict() for r in results], indent=2) + "\n")
+        args.json.write_text(json.dumps([asdict(r) for r in results], indent=2) + "\n")
     if args.report:
-        config_hash = hashlib.sha256((run.root / "gauntlet.toml").read_bytes()).hexdigest()
-        args.report.write_text(
-            report.render(
-                results,
-                language=run.cfg.language,
-                fingerprint=_fingerprint(run),
-                config_sha256=config_hash,
-                policy=run.policy,
-                created=datetime.now(UTC).isoformat(timespec="seconds"),
-                command=f"gauntlet {args.gate} {args.root}",
-            )
-        )
+        args.report.write_text(_evidence(run, results, run, f"gauntlet {args.gate} {args.root}"))
 
 
 def _stamp(run: Run) -> int:
@@ -256,24 +257,13 @@ def _loop_finish(run: Run, args: argparse.Namespace, workspace: Path, out: Path,
     diff = loop.patch(workspace)
     (out / "loop.patch").write_text(diff)
     sub = replace(run, source=workspace, art=out / "artifacts")
-    config_hash = hashlib.sha256((run.root / "gauntlet.toml").read_bytes()).hexdigest()
     command = f"gauntlet loop {args.root} --spec {args.spec}"
-    created = datetime.now(UTC).isoformat(timespec="seconds")
-    text = report.render(
-        result.results,
-        language=run.cfg.language,
-        fingerprint=_fingerprint(sub),
-        config_sha256=config_hash,
-        policy=run.policy,
-        created=created,
-        command=command,
-    )
-    (out / "EVIDENCE.md").write_text(text)
+    (out / "EVIDENCE.md").write_text(_evidence(run, result.results, sub, command))
     code = _emit(result.results)
     print(f"fixer rounds: {result.rounds}; patch: {out / 'loop.patch'}; evidence: {out / 'EVIDENCE.md'}")
     if control := loop.control_files(diff):
         print(f"warning: the patch touches control files: {', '.join(control)} (review these first)")
-    return code if result.ok else 1
+    return code
 
 
 def _loop_stages(run: Run, args: argparse.Namespace, agent: loop.Agent, workspace: Path, out: Path) -> int:

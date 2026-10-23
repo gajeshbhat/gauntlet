@@ -44,6 +44,5 @@ def write_config(root: Path) -> Path:
     path = root / "gauntlet.toml"
     if path.exists():
         raise GauntletError(f"{path.name} already exists; edit it instead")
-    text = _template(root)
-    path.write_text(text)
+    path.write_text(_template(root))
     return path

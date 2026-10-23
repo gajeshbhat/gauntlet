@@ -6,7 +6,6 @@ The repo's `gauntlet.toml` may tighten these limits, never weaken them, and can 
 import hashlib
 import json
 import os
-import re
 import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -15,13 +14,12 @@ from typing import Any
 from gauntlet import languages
 from gauntlet.config import Config
 from gauntlet.errors import GauntletError
-from gauntlet.names import IMAGE, MEMORY
+from gauntlet.names import ENV_NAME, IMAGE, MEMORY
 
 BOOLS = ("allow_config_excludes", "allow_skipped_gates", "allow_unstamped", "require_pin")
 INTS = ("crap_ceiling", "mutation_floor", "max_exclusions")
 RANGES = {"agent_timeout": (1, 86_400), "max_rounds": (1, 20)}
 LISTS = ("agent_command", "agent_env")
-ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 CHOICES = {
     "sandbox": ("auto", "workshop", "docker"),
     "container_cli": ("docker", "podman"),
@@ -60,10 +58,6 @@ def default_path() -> Path:
     return (Path(base) if base else Path.home() / ".config") / "gauntlet" / "policy.toml"
 
 
-def _bad_int(value: Any) -> bool:
-    return isinstance(value, bool) or not isinstance(value, int) or value < 0
-
-
 def _check_values(path: Path, data: dict[str, Any]) -> None:
     unknown = sorted(set(data) - {*BOOLS, *INTS, *RANGES, *LISTS, *CHOICES, *IMAGES, *STRINGS, "pins", "docker_images"})
     if unknown:
@@ -72,12 +66,15 @@ def _check_values(path: Path, data: dict[str, Any]) -> None:
     _check_bools(path, data)
     _check_ranges(path, data)
     _check_lists(path, data)
-    _check_strings(path, data)
+    _check_choices(path, data)
+    _check_memory(path, data)
+    _check_images(path, data)
 
 
 def _check_ints(path: Path, data: dict[str, Any]) -> None:
     for key in INTS:
-        if _bad_int(data.get(key, 0)):
+        value = data.get(key, 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise GauntletError(f"{path}: {key} must be an integer >= 0")
 
 
@@ -123,17 +120,9 @@ def _check_memory(path: Path, data: dict[str, Any]) -> None:
 
 
 def _check_images(path: Path, data: dict[str, Any]) -> None:
-    for key in IMAGES:
-        value = data.get(key, "x")
-        unset_ok = key == "docker_image_agent" and value == ""
-        if not isinstance(value, str) or not (IMAGE.match(value) or unset_ok):
-            raise GauntletError(f"{path}: {key} must be a container image name")
-
-
-def _check_strings(path: Path, data: dict[str, Any]) -> None:
-    _check_choices(path, data)
-    _check_memory(path, data)
-    _check_images(path, data)
+    value = data.get("docker_image_agent", "")
+    if not isinstance(value, str) or (value and not IMAGE.match(value)):
+        raise GauntletError(f"{path}: docker_image_agent must be a container image name")
 
 
 def _images(path: Path, data: dict[str, Any]) -> dict[str, str]:
@@ -159,27 +148,11 @@ def _pins(path: Path, data: dict[str, Any]) -> dict[str, str]:
 
 def _checked(path: Path, data: dict[str, Any]) -> Policy:
     _check_values(path, data)
-    d = Policy()
-    return Policy(
-        crap_ceiling=int(data.get("crap_ceiling", d.crap_ceiling)),
-        mutation_floor=int(data.get("mutation_floor", d.mutation_floor)),
-        max_exclusions=int(data.get("max_exclusions", d.max_exclusions)),
-        allow_config_excludes=bool(data.get("allow_config_excludes", d.allow_config_excludes)),
-        allow_skipped_gates=bool(data.get("allow_skipped_gates", d.allow_skipped_gates)),
-        allow_unstamped=bool(data.get("allow_unstamped", d.allow_unstamped)),
-        require_pin=bool(data.get("require_pin", d.require_pin)),
-        pins=_pins(path, data),
-        agent_command=tuple(data.get("agent_command", ())),
-        agent_env=tuple(data.get("agent_env", ())),
-        agent_timeout=int(data.get("agent_timeout", d.agent_timeout)),
-        max_rounds=int(data.get("max_rounds", d.max_rounds)),
-        sandbox=data.get("sandbox", d.sandbox),
-        container_cli=data.get("container_cli", d.container_cli),
-        docker_network=data.get("docker_network", d.docker_network),
-        docker_memory=data.get("docker_memory", d.docker_memory),
-        docker_images=_images(path, data),
-        docker_image_agent=data.get("docker_image_agent", d.docker_image_agent),
-    )
+    pins, images = _pins(path, data), _images(path, data)
+    kw: dict[str, Any] = {
+        k: tuple(v) if k in LISTS else v for k, v in data.items() if k not in {"pins", "docker_images"}
+    }
+    return Policy(**kw, pins=pins, docker_images=images)
 
 
 def load(path: Path | None, missing_ok: bool = False) -> Policy:
