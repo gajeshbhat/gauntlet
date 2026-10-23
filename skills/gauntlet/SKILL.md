@@ -1,7 +1,7 @@
 ---
 name: gauntlet
 description: Prove that code written by an AI agent works, instead of reading it. Runs CRAP (complexity x coverage), mutation, architecture, exclusion-budget and spec gates on a Python, Go, JavaScript/TypeScript, C#, Java, Rust, C/C++ or Dart project in a sandbox (Workshop or Docker), and can run a Specifier/Coder/Fixer agent loop that ends in a patch for the user to review. Use when the user says "gauntlet", "prove this works", "run the quality gates", or wants a spec-first agent workflow.
-argument-hint: [init|run|check|loop] [path]
+argument-hint: "[init|run|check|loop] [path]"
 ---
 Work from the project root. The rules the user set live in `~/.config/gauntlet/policy.toml`: never edit it, never copy it
 into a repository, and never edit a repo's `gauntlet.toml` to make a gate pass.
