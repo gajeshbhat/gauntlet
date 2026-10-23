@@ -25,7 +25,7 @@ into a repository, and never edit a repo's `gauntlet.toml` to make a gate pass.
   2. `gauntlet loop . --spec <approved.feature>` implements it and writes `.gauntlet-loop/loop.patch` and `EVIDENCE.md`.
   The agent needs the user's `agent_command` in the policy and `CLAUDE_CODE_OAUTH_TOKEN` in the environment of that one
   command (from `claude setup-token`); never print or store the token.
-- Languages without a mutation tool (everything but Python and Go) show `harden: SKIPPED` and fail unless the user's
+- Languages without a mutation tool (Dart) show `harden: SKIPPED` and fail unless the user's
   policy sets `allow_skipped_gates = true`; tell the user, never set it yourself. Build settings that hide code from coverage
   (`.c8rc`, runsettings, pom/JaCoCo, cargo config, ...) are reported by the exclusions gate; never add them to pass.
 - Report gate output verbatim. Do not describe a failure as a pass.

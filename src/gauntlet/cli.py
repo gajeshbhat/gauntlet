@@ -328,7 +328,7 @@ def _build_run(args: argparse.Namespace, pol: Policy) -> Run:
 def _init(args: argparse.Namespace) -> int:
     path = scaffold.write_config(args.root)
     print(f"wrote {path}")
-    print("next: gauntlet run .   (needs Canonical Workshop; see the README), then read EVIDENCE with --report")
+    print("next: gauntlet run . --report EVIDENCE.md   (needs Workshop or Docker; see docs/tutorial.md)")
     return 0
 
 
