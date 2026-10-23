@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "accepts-invalid-input", "base": "reference", "note": "re.IGNORECASE accepts 1H"}

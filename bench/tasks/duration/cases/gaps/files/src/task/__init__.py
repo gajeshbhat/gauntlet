@@ -1,0 +1,20 @@
+import re
+
+UNITS = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+ORDER = list(UNITS)
+PART = re.compile(r"(\d+)([dhms])")
+
+
+def parse_duration(text: str) -> int:
+    if not text:
+        raise ValueError("empty duration")
+    total, position, last = 0, 0, -1
+    for match in PART.finditer(text):
+        rank = ORDER.index(match.group(2))
+        if rank <= last:
+            raise ValueError("units out of order or repeated")
+        total += int(match.group(1)) * UNITS[match.group(2)]
+        position, last = match.end(), rank
+    if position != len(text):
+        raise ValueError(f"unexpected text at {position}")
+    return total

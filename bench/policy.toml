@@ -1,0 +1,2 @@
+# The policy every benchmark case runs under: gauntlet's defaults, in Docker.
+sandbox = "docker"

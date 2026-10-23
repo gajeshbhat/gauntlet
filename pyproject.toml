@@ -31,6 +31,7 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+extend-exclude = ["bench/tasks"]  # benchmark fixtures: agent-style code, linted as written
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
@@ -42,7 +43,7 @@ select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
 max-complexity = 8  # same ceiling the clean gate enforces on target repos
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "bench/harness.py", "bench/test_harness.py"]
 typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]
