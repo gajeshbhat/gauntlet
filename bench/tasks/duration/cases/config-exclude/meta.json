@@ -1,1 +1,1 @@
-{"kind": "gaming", "bug": "config-exclude", "base": "reference", "note": "the gaps bug, the module excluded by mutmut do_not_mutate"}
+{"kind": "gaming", "bug": "config-exclude", "base": "reference", "note": "the strip-spaces bug, the module excluded by mutmut do_not_mutate"}

@@ -22,7 +22,7 @@ from gauntlet import languages
 from gauntlet.docker import DockerSandbox
 
 HERE = Path(__file__).parent
-KINDS = ("reference", "natural", "planted", "gaming")
+KINDS = ("reference", "weak-tests", "natural", "planted", "gaming")
 CHECKERS = ("baseline", "coverage", "gauntlet")
 COVERAGE_FLOOR = 80.0
 GIT = ("-c", "user.name=bench", "-c", "user.email=bench@localhost", "-c", "commit.gpgsign=false")
@@ -34,7 +34,9 @@ Row = dict[str, Any]
 class Case:
     task: str
     name: str
-    kind: str  # reference: the correct solution; natural: an agent's patch; planted: a bug the tests miss; gaming
+    # reference: correct code, careful tests; weak-tests: correct code, agent-typical tests; natural: an agent's
+    # patch; planted: a bug the careful tests miss; gaming: a bug plus a cheat that hides it
+    kind: str
     bug: str  # the bug class planted, or the cheat used
     files: Path  # the files the patch writes, laid over the task's repository
     base: str = ""  # another case of the task whose files are laid down first (a planted bug reuses its tests)
@@ -70,7 +72,9 @@ def outcome(code: int, stderr: str, results: list[Row]) -> Row:
     tests_failed = code == 2 and "step 'tests' failed" in stderr
     error = stderr.strip()[-300:] if code == 2 and not tests_failed else ""
     gates = [r["gate"] for r in results if not r["ok"]]
-    return {"gauntlet_fail": code != 0, "tests_failed": tests_failed, "gates": gates, "error": error}
+    mutation = next((r["stats"]["score"] for r in results if r["gate"] == "harden" and "stats" in r), None)
+    row = {"gauntlet_fail": code != 0, "tests_failed": tests_failed, "gates": gates, "error": error}
+    return row | {"mutation": mutation}
 
 
 def coverage_pct(path: Path) -> float | None:
@@ -98,7 +102,14 @@ def validity(rows: list[Row]) -> list[str]:
             problems.append(f"{name}: planted bug fails the visible tests")
         elif r["kind"] == "reference" and not r["hidden_pass"]:
             problems.append(f"{name}: reference fails the hidden tests")
+        elif r["kind"] == "weak-tests" and not r["hidden_pass"]:
+            problems.append(f"{name}: weak-tests code fails the hidden tests")
     return problems
+
+
+def should_fail(row: Row) -> bool:
+    """A buggy patch should fail, and so should correct code whose tests are too thin to show it."""
+    return not row["hidden_pass"] or row["kind"] == "weak-tests"
 
 
 def _valid(rows: list[Row]) -> list[Row]:
@@ -107,18 +118,19 @@ def _valid(rows: list[Row]) -> list[Row]:
 
 
 def score(rows: list[Row]) -> dict[str, dict[str, dict[str, int]]]:
-    """Per kind (and over all), per checker: buggy patches caught, and correct patches failed (false alarms)."""
+    """Per kind (and over all), per checker: patches that should fail and did, and patches that should pass but
+    failed (false alarms)."""
     scores: dict[str, dict[str, dict[str, int]]] = {}
     for r in rows:
-        buggy = not r["hidden_pass"]
+        fail = should_fail(r)
         verdicts = checkers(r)
         for kind in (r["kind"], "all"):
             for name in CHECKERS:
                 cell = scores.setdefault(kind, {}).setdefault(
-                    name, {"caught": 0, "buggy": 0, "alarms": 0, "correct": 0}
+                    name, {"caught": 0, "should_fail": 0, "alarms": 0, "should_pass": 0}
                 )
-                cell["buggy" if buggy else "correct"] += 1
-                cell["caught" if buggy else "alarms"] += verdicts[name]
+                cell["should_fail" if fail else "should_pass"] += 1
+                cell["caught" if fail else "alarms"] += verdicts[name]
     return scores
 
 
@@ -128,16 +140,20 @@ def _ratio(hit: int, total: int) -> str:
 
 def report(rows: list[Row]) -> str:
     valid = _valid(rows)
-    lines = ["| Cases | Checker | Bugs caught | False alarms |", "|---|---|---|---|"]
+    lines = ["| Cases | Checker | Caught | False alarms |", "|---|---|---|---|"]
     for kind, by_checker in sorted(score(valid).items(), key=lambda item: (item[0] == "all", item[0])):
         for name in CHECKERS:
             c = by_checker[name]
-            lines.append(
-                f"| {kind} | {name} | {_ratio(c['caught'], c['buggy'])} | {_ratio(c['alarms'], c['correct'])} |"
-            )
-    gates = Counter(g for r in valid if not r["hidden_pass"] for g in r["gates"])
-    lines += ["", "| Gate | Buggy patches it failed |", "|---|---|"]
+            caught, alarms = _ratio(c["caught"], c["should_fail"]), _ratio(c["alarms"], c["should_pass"])
+            lines.append(f"| {kind} | {name} | {caught} | {alarms} |")
+    gates = Counter(g for r in valid if should_fail(r) for g in r["gates"])
+    lines += ["", "| Gate | Patches it rightly failed |", "|---|---|"]
     lines += [f"| {gate} | {n} |" for gate, n in gates.most_common()]
+    lines += ["", "| Case | Kind | Should | gauntlet | Mutation % | Coverage % |", "|---|---|---|---|---|---|"]
+    for r in valid:
+        expected, got = ("fail" if v else "pass" for v in (should_fail(r), r["gauntlet_fail"]))
+        mutation, coverage = (f"{v:.1f}" if v is not None else "-" for v in (r.get("mutation"), r["coverage"]))
+        lines.append(f"| {r['task']}/{r['case']} | {r['kind']} | {expected} | {got} | {mutation} | {coverage} |")
     problems = validity(rows)
     if problems:
         lines += ["", "Invalid cases (left out): " + "; ".join(problems)]

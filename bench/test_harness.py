@@ -54,10 +54,12 @@ def test_assemble_lays_template_then_task_repo_then_case_and_commits(tmp_path: P
 
 
 def test_outcome_separates_failed_tests_errors_and_failed_gates() -> None:
-    results = [{"gate": "clean", "ok": True}, {"gate": "harden", "ok": False}]
-    assert outcome(1, "", results) == {"gauntlet_fail": True, "tests_failed": False, "gates": ["harden"], "error": ""}
+    results = [{"gate": "clean", "ok": True}, {"gate": "harden", "ok": False, "stats": {"score": 84.4}}]
+    assert outcome(1, "", results) == {
+        "gauntlet_fail": True, "tests_failed": False, "gates": ["harden"], "error": "", "mutation": 84.4
+    }  # fmt: skip
     tests = outcome(2, "gauntlet: step 'tests' failed (exit 1): boom\n", [])
-    assert tests == {"gauntlet_fail": True, "tests_failed": True, "gates": [], "error": ""}
+    assert tests == {"gauntlet_fail": True, "tests_failed": True, "gates": [], "error": "", "mutation": None}
     other = outcome(2, "gauntlet: no functions were evaluated\n", [])
     assert other["error"] == "gauntlet: no functions were evaluated" and not other["tests_failed"]
     assert outcome(0, "", [{"gate": "clean", "ok": True}])["gauntlet_fail"] is False
@@ -87,17 +89,19 @@ def test_checkers_fail_a_patch_from_their_own_evidence() -> None:
     }
 
 
-def test_score_counts_catches_on_buggy_patches_and_alarms_on_correct_ones() -> None:
+def test_score_counts_catches_where_a_patch_should_fail_and_alarms_where_it_should_pass() -> None:
     rows = [
         row("planted", False, gauntlet_fail=True),
         row("planted", False),
         row("reference", True, gauntlet_fail=True),
         row("reference", True),
+        row("weak-tests", True, gauntlet_fail=True),  # correct code, tests too thin: failing it is right
     ]
     scores = score(rows)
-    assert scores["planted"]["gauntlet"] == {"caught": 1, "buggy": 2, "alarms": 0, "correct": 0}
-    assert scores["reference"]["gauntlet"] == {"caught": 0, "buggy": 0, "alarms": 1, "correct": 2}
-    assert scores["all"]["gauntlet"] == {"caught": 1, "buggy": 2, "alarms": 1, "correct": 2}
+    assert scores["planted"]["gauntlet"] == {"caught": 1, "should_fail": 2, "alarms": 0, "should_pass": 0}
+    assert scores["reference"]["gauntlet"] == {"caught": 0, "should_fail": 0, "alarms": 1, "should_pass": 2}
+    assert scores["weak-tests"]["gauntlet"] == {"caught": 1, "should_fail": 1, "alarms": 0, "should_pass": 0}
+    assert scores["all"]["gauntlet"] == {"caught": 2, "should_fail": 3, "alarms": 1, "should_pass": 2}
 
 
 def test_invalid_cases_are_named() -> None:
@@ -108,11 +112,13 @@ def test_invalid_cases_are_named() -> None:
         row("planted", False, case="fine"),
         row("gaming", False, case="g"),
         row("natural", False, case="n", tests_failed=True),
+        row("weak-tests", False, case="broken"),  # weak tests must sit on correct code
     ]
     assert validity(rows) == [
         "t/escaped: planted bug passes the hidden tests",
         "t/loud: planted bug fails the visible tests",
         "t/wrong: reference fails the hidden tests",
+        "t/broken: weak-tests code fails the hidden tests",
     ]
 
 
@@ -123,3 +129,4 @@ def test_report_is_a_markdown_table_with_invalid_cases_left_out() -> None:
     assert "| planted | gauntlet | 1/1 | - |" in text
     assert "Invalid cases (left out): t/escaped: planted bug passes the hidden tests" in text
     assert "| harden | 1 |" in text
+    assert "| t/c | planted | fail | fail | - | 100.0 |" in text  # per case: expected, gauntlet, mutation, coverage

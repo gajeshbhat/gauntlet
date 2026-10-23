@@ -6,14 +6,16 @@ PART = re.compile(r"(\d+)([dhms])")
 
 
 def parse_duration(text: str) -> int:
+    text = text.replace(" ", "")  # pragma: no mutate
     if not text:
         raise ValueError("empty duration")
-    total, position, last = 0, 0, -1
+    total, position = 0, 0
+    last: int | None = None
     for match in PART.finditer(text):
         if match.start() != position:
             raise ValueError(f"unexpected text at {position}")
         rank = ORDER.index(match.group(2))
-        if rank < last:  # pragma: no mutate
+        if last is not None and rank <= last:
             raise ValueError("units out of order or repeated")
         total += int(match.group(1)) * UNITS[match.group(2)]
         position, last = match.end(), rank
