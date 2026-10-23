@@ -52,4 +52,17 @@ flowchart LR
 ./check.sh     # ruff, pyright (strict), pytest at 100% branch coverage, then gauntlet checks itself
 ```
 
-[MIT](LICENSE). The idea is Robert C. Martin's; see [credits](docs/explanation.md#credits).
+## Credits
+
+The idea comes from Robert C. Martin: instead of reading the code an agent writes, surround the agent with strict
+constraints and make its work run a gauntlet. He describes it in an
+[interview with Matt Pocock](https://youtu.be/zcLPGC-tvgk) and in
+[this post](https://x.com/unclebobmartin/status/2080257779395154409).
+
+[old-coder](https://github.com/amazingang/old-coder) by AmazingAng applies the same idea as an agent skill. gauntlet
+borrows some of its ideas: a spec a person approves first, gates that fail closed, negative controls and an evidence
+report. It uses none of its code or text.
+
+## License
+
+gauntlet is released under the [MIT License](LICENSE). Copyright © 2026 Gajesh Bhat.

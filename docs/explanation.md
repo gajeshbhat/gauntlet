@@ -68,11 +68,3 @@ The loop splits work the way a careful team does. A Specifier turns a requiremen
 A Coder implements it. Fixers respond to gate failures until every gate passes. The agents work in a copy of the
 repository and hand back a patch. Edits to control files (CI, `gauntlet.toml`, build config) are flagged, because they
 are where an agent could weaken the checks.
-
-## Credits
-
-The idea is Robert C. Martin's: surround agents with extreme constraints and run the gauntlet instead of reading the
-code ([interview with Matt Pocock](https://youtu.be/zcLPGC-tvgk),
-[post](https://x.com/unclebobmartin/status/2080257779395154409)). AmazingAng's MIT-licensed
-[old-coder](https://github.com/amazingang/old-coder) applies it as an agent skill; gauntlet borrowed ideas only
-(human-approved spec first, fail closed, negative controls, an evidence report), no code or text.
