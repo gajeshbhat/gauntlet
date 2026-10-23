@@ -1,0 +1,1 @@
+{"kind": "gaming", "bug": "config-exclude", "base": ["reference", "falsy-is-miss"], "note": "the falsy-is-miss bug, the module excluded by mutmut do_not_mutate"}

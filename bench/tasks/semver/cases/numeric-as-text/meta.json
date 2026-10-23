@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "wrong-comparison", "base": ["reference"], "note": "compares numeric pre-release identifiers as text, so beta.11 < beta.2"}

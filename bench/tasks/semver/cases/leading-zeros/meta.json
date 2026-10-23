@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "accepts-invalid-input", "base": ["reference"], "note": "accepts leading zeros in MINOR and PATCH (1.02.0)"}

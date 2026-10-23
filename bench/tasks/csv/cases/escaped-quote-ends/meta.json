@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "wrong-escape", "base": ["reference"], "note": "treats \"\" as the end of the field when it comes right after the opening quote"}

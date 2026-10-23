@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "boundary", "base": ["reference"], "note": "drops the empty field after a trailing comma when the line ends right after a quoted field"}

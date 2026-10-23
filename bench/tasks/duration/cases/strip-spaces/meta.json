@@ -1,1 +1,1 @@
-{"kind": "planted", "bug": "accepts-invalid-input", "base": "reference", "note": "strips spaces first, so 1h 30m is accepted"}
+{"kind": "planted", "bug": "accepts-invalid-input", "base": ["reference"], "note": "strips spaces first, so 1h 30m is accepted"}

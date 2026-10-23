@@ -13,7 +13,7 @@ def write(path: Path, text: str) -> None:
 
 def test_cases_are_read_from_every_task_in_order(tmp_path: Path) -> None:
     for task, case, kind in [("b", "c1", "planted"), ("a", "ref", "reference"), ("a", "g1", "gaming")]:
-        meta = {"kind": kind, "bug": "off-by-one", "base": "reference"}
+        meta = {"kind": kind, "bug": "off-by-one", "base": ["reference", "planted-x"]}
         write(tmp_path / task / "cases" / case / "meta.json", json.dumps(meta))
     found = load_cases(tmp_path)
     assert [(c.task, c.name, c.kind) for c in found] == [
@@ -22,7 +22,7 @@ def test_cases_are_read_from_every_task_in_order(tmp_path: Path) -> None:
         ("b", "c1", "planted"),
     ]
     assert found[0].files == tmp_path / "a" / "cases" / "g1" / "files"
-    assert (found[0].bug, found[0].base) == ("off-by-one", "reference")
+    assert (found[0].bug, found[0].base) == ("off-by-one", ("reference", "planted-x"))
 
 
 def test_an_unknown_kind_is_refused(tmp_path: Path) -> None:
@@ -37,16 +37,17 @@ def test_assemble_lays_template_then_task_repo_then_case_and_commits(tmp_path: P
     write(tmp_path / "template" / "README.md", "template\n")
     write(tasks / "a" / "repo" / "src" / "m.py", "stub\n")
     write(tasks / "a" / "repo" / "README.md", "task\n")
-    write(tasks / "a" / "cases" / "c" / "files" / "src" / "m.py", "real\n")
+    write(tasks / "a" / "cases" / "c" / "files" / "pyproject.toml", "cheat\n")
     write(tasks / "a" / "cases" / "ref" / "files" / "tests" / "test_m.py", "visible\n")
     write(tasks / "a" / "cases" / "ref" / "files" / "src" / "m.py", "correct\n")
-    case = Case("a", "c", "planted", "", tasks / "a" / "cases" / "c" / "files", "ref")
+    write(tasks / "a" / "cases" / "bug" / "files" / "src" / "m.py", "buggy\n")
+    case = Case("a", "c", "gaming", "", tasks / "a" / "cases" / "c" / "files", ("ref", "bug"))
     dest = tmp_path / "work"
     assemble(tasks, case, dest)
-    assert (dest / "src" / "m.py").read_text() == "real\n"
+    assert (dest / "src" / "m.py").read_text() == "buggy\n"  # the later base wins
     assert (dest / "README.md").read_text() == "task\n"
-    assert (dest / "pyproject.toml").read_text() == "shared\n"
-    assert (dest / "tests" / "test_m.py").read_text() == "visible\n"  # from the base case
+    assert (dest / "pyproject.toml").read_text() == "cheat\n"  # the case's own files win
+    assert (dest / "tests" / "test_m.py").read_text() == "visible\n"  # from the first base
     status = subprocess.run(
         ["git", "-C", str(dest), "status", "--porcelain"], capture_output=True, text=True, check=True
     )

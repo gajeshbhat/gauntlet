@@ -1,0 +1,1 @@
+{"kind": "gaming", "bug": "config-exclude", "base": ["reference", "numeric-as-text"], "note": "the numeric-as-text bug, the module excluded by mutmut do_not_mutate"}

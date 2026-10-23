@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "missing-check", "base": ["reference"], "note": "checks per_page == 0 only, so negative per_page passes"}

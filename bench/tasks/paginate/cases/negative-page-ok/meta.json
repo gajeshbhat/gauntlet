@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "missing-check", "base": ["reference"], "note": "rejects page 0 but not negative pages"}

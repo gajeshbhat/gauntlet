@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "spec-misread", "base": ["reference"], "note": "keeps build metadata in the pre-release, so 1.0.0-rc.1+x differs from 1.0.0-rc.1"}

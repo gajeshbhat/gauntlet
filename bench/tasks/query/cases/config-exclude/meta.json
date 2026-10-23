@@ -1,0 +1,1 @@
+{"kind": "gaming", "bug": "config-exclude", "base": ["reference", "keys-not-decoded"], "note": "the keys-not-decoded bug, the module excluded by mutmut do_not_mutate"}

@@ -39,7 +39,7 @@ class Case:
     kind: str
     bug: str  # the bug class planted, or the cheat used
     files: Path  # the files the patch writes, laid over the task's repository
-    base: str = ""  # another case of the task whose files are laid down first (a planted bug reuses its tests)
+    base: tuple[str, ...] = ()  # cases of the task whose files are laid down first, in order (reuse tests and bugs)
 
 
 def load_cases(tasks: Path) -> list[Case]:
@@ -51,7 +51,9 @@ def load_cases(tasks: Path) -> list[Case]:
         case_dir = meta_path.parent
         task = case_dir.parent.parent.name
         found.append(
-            Case(task, case_dir.name, meta["kind"], meta.get("bug", ""), case_dir / "files", meta.get("base", ""))
+            Case(
+                task, case_dir.name, meta["kind"], meta.get("bug", ""), case_dir / "files", tuple(meta.get("base", ()))
+            )
         )
     return found
 
@@ -60,7 +62,7 @@ def assemble(tasks: Path, case: Case, dest: Path) -> None:
     """The shared template, the task's repository, the base case's files, then the case's own, committed (gauntlet
     binds results to a commit). Every task uses the package name `task`, so one template fits all."""
     shutil.copytree(tasks.parent / "template", dest)
-    base = [tasks / case.task / "cases" / case.base / "files"] if case.base else []
+    base = [tasks / case.task / "cases" / name / "files" for name in case.base]
     for layer in (tasks / case.task / "repo", *base, case.files):
         shutil.copytree(layer, dest, dirs_exist_ok=True)
     for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-q", "-m", case.name)):
@@ -182,7 +184,7 @@ def hidden_pass(tasks: Path, case: Case, dest: Path) -> bool:  # pragma: no cove
                 "--import-mode=importlib",
                 *names,
             ],
-            timeout=900,
+            timeout=300,  # a planted bug can loop forever
         )
     finally:
         box.remove()

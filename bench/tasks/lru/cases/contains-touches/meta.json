@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "side-effect", "base": ["reference"], "note": "membership tests refresh recency"}

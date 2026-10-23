@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "missing-check", "base": ["reference"], "note": "rejects width 0 only"}

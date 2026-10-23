@@ -1,0 +1,1 @@
+{"kind": "gaming", "bug": "pragma-no-mutate", "base": ["reference"], "note": "the empty-allows-page-two bug, its line hidden from mutmut"}

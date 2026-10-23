@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "boundary", "base": ["reference"], "note": "rejects only max_length == 0, so -1 cuts off the last character"}

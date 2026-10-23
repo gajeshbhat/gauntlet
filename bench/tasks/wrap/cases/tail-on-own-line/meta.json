@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "spec-misread", "base": ["reference"], "note": "puts the last piece of a split word on its own line even when the next word fits after it"}

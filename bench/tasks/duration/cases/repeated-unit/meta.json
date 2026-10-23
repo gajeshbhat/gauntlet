@@ -1,1 +1,1 @@
-{"kind": "planted", "bug": "boundary", "base": "reference", "note": "rank < last accepts a repeated unit (1h1h)"}
+{"kind": "planted", "bug": "boundary", "base": ["reference"], "note": "rank < last accepts a repeated unit (1h1h)"}

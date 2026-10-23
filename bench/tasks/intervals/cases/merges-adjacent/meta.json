@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "off-by-one", "base": ["reference"], "note": "merges (1, 2) and (3, 4), which only sit next to each other"}

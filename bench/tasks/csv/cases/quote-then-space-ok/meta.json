@@ -1,0 +1,1 @@
+{"kind": "planted", "bug": "accepts-invalid-input", "base": ["reference"], "note": "allows spaces between a closing quote and the comma"}
