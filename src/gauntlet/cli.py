@@ -36,17 +36,6 @@ from gauntlet.sandbox import Sandbox
 from gauntlet.scope import Scope, parse
 
 IMPORTS_HOW = "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."
-ARTIFACTS = {
-    "python": ("coverage.json", "mutmut-results.txt"),
-    "go": ("cover.out", "imports.txt", "mutation.json"),
-    "javascript": ("lcov.info", "stryker.json"),
-    "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
-    "java": ("jacoco.xml", "mutations.xml"),
-    "rust": ("lcov.info", "mutants-outcomes.json"),
-    "cpp": ("lcov.info", "cpp-mutants.json"),
-    "cpp-clang": ("lcov.info", "mull-report.json"),
-    "dart": ("lcov.info",),
-}
 
 
 @dataclass(frozen=True)
@@ -238,11 +227,10 @@ def _write_outputs(run: Run, args: argparse.Namespace, results: list[GateResult]
 
 
 def _stamp(run: Run) -> int:
-    names = [n for n in ARTIFACTS[run.cfg.language] if (run.art / n).is_file()]
+    expected = languages.get(run.cfg.language).artifacts
+    names = [n for n in expected if (run.art / n).is_file()]
     if not names:
-        raise FileNotFoundError(
-            f"no artifacts to stamp in {run.art}: expected some of {', '.join(ARTIFACTS[run.cfg.language])}"
-        )
+        raise FileNotFoundError(f"no artifacts to stamp in {run.art}: expected some of {', '.join(expected)}")
     provenance.stamp(run.art, run.source, names)
     print(f"stamped {', '.join(names)}")
     return 0

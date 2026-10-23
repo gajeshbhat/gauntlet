@@ -374,45 +374,21 @@ def _dart_steps() -> list[Step]:
     ]
 
 
-BUILDERS: dict[str, Callable[[], list[Step]]] = {
-    "csharp": _dotnet_steps,
-    "java": _java_steps,
-    "rust": _rust_steps,
-    "cpp": _cpp_steps,
-    "cpp-clang": _cpp_clang_steps,
-    "dart": _dart_steps,
-    "javascript": _js_steps,
+BUILDERS: dict[str, Callable[[Config, Path], list[Step]]] = {  # one per row of languages.TABLE
+    "python": lambda cfg, snap: _python_steps(cfg),  # noqa: ARG005
+    "go": _go_steps,
+    "javascript": lambda cfg, snap: _js_steps(),  # noqa: ARG005
+    "csharp": lambda cfg, snap: _dotnet_steps(),  # noqa: ARG005
+    "java": lambda cfg, snap: _java_steps(),  # noqa: ARG005
+    "rust": lambda cfg, snap: _rust_steps(),  # noqa: ARG005
+    "cpp": lambda cfg, snap: _cpp_steps(),  # noqa: ARG005
+    "cpp-clang": lambda cfg, snap: _cpp_clang_steps(),  # noqa: ARG005
+    "dart": lambda cfg, snap: _dart_steps(),  # noqa: ARG005
 }
 
 
 def steps(cfg: Config, snap: Path) -> list[Step]:
-    if cfg.language == "go":
-        return _go_steps(cfg, snap)
-    return BUILDERS[cfg.language]() if cfg.language in BUILDERS else _python_steps(cfg)
-
-
-FILES = {
-    "python": ("coverage.json",),
-    "go": ("cover.out", "mutation.json"),
-    "javascript": ("lcov.info", "stryker.json"),
-    "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
-    "java": ("jacoco.xml", "mutations.xml"),
-    "rust": ("lcov.info", "mutants-outcomes.json"),
-    "cpp": ("lcov.info", "cpp-mutants.json"),
-    "cpp-clang": ("lcov.info", "mull-report.json"),
-    "dart": ("lcov.info",),
-}  # artifacts the sandbox writes itself
-REQUIRED = {
-    "python": ("coverage.json", "mutmut-results.txt"),
-    "go": ("cover.out", "imports.txt"),
-    "javascript": ("lcov.info", "stryker.json"),
-    "csharp": ("coverage.cobertura.xml", "stryker-report.json"),
-    "java": ("jacoco.xml",),
-    "rust": ("lcov.info", "mutants-outcomes.json"),
-    "cpp": ("lcov.info", "cpp-mutants.json"),
-    "cpp-clang": ("lcov.info", "mull-report.json"),
-    "dart": ("lcov.info",),
-}
+    return BUILDERS[cfg.language](cfg, snap)
 
 
 def output_tail(done: ExecResult) -> str:
@@ -471,17 +447,21 @@ def _read_artifact(path: Path) -> bytes | None:
     return data
 
 
-def _collect(snap: Path, language: str, captured: dict[str, bytes]) -> dict[str, bytes]:
+def _collect(snap: Path, language: str, plan: list[Step], captured: dict[str, bytes]) -> dict[str, bytes]:
+    """The row's artifacts: a step's captured stdout, else the file the sandbox wrote. A file never stands in for a
+    captured artifact, so the tests cannot forge one by leaving it in the output directory."""
     if (snap / OUT_DIR).is_symlink():  # the tests swapped the output directory for a link to somewhere on the host
         raise ValueError(f"{OUT_DIR} is a symlink")
+    row = languages.get(language)
+    stdout = {step.capture for step in plan}
     found = dict(captured)
-    for name in FILES[language]:
-        data = _read_artifact(snap / OUT_DIR / name)
+    for name in row.artifacts:
+        data = None if name in stdout else _read_artifact(snap / OUT_DIR / name)
         if data is not None:
             found[name] = data
     for name, data in captured.items():
         _check_size(name, data)
-    missing = [n for n in REQUIRED[language] if n not in found]
+    missing = [n for n in row.artifacts if n not in row.optional and n not in found]
     if missing:
         raise ValueError(f"the sandbox did not produce {', '.join(missing)}")
     return found
@@ -495,13 +475,14 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         snap = Path(tmp) / "project"
         snapshot(source, snap)
         (snap / OUT_DIR).mkdir()
+        plan = steps(cfg, snap)
         box = make_sandbox(snap)
         box.ensure()
         try:
-            captured = _run_steps(box, steps(cfg, snap), _stale(cfg.language))
+            captured = _run_steps(box, plan, _stale(cfg.language))
         finally:
             box.remove()
-        found = _collect(snap, cfg.language, captured)
+        found = _collect(snap, cfg.language, plan, captured)
     if fingerprint(source, skip) != before:
         raise ValueError("source changed while the gauntlet ran; rerun it")
     out.mkdir(parents=True, exist_ok=True)
