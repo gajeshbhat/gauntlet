@@ -1,70 +1,35 @@
 # Explanation
 
-## Why run a gauntlet instead of reading the code
+## Why a gauntlet
 
-An agent writes code faster than a person can review it. Reading every line does not scale, and a plausible diff can
-still be wrong. gauntlet turns review into evidence: code that is simple enough for its tests, tests that catch planted
-bugs, layers that hold, and a spec you approved with a real test behind each scenario. You read the spec and the
-evidence, not the implementation.
+An agent writes code faster than anyone can review it. gauntlet replaces review with evidence.
 
 ## Fail closed
 
-A gate that checked nothing must never pass. Empty coverage, a `--only` that matches nothing, layers that match no
-module, or no mutants in scope are errors (exit 2), not passes. A source file missing from the coverage report counts as
-0% covered. A mutant that no test ran counts as survived. Where a language has no mutation tool, `run` fails unless you
-accept that in your policy.
+A gate that checked nothing never passes: empty coverage, an `--only` that matches nothing, or no mutants in scope
+exit 2. A file missing from coverage counts as 0%; a mutant no test ran counts as survived.
 
 ## Why CRAP
 
-CRAP (Change Risk Anti-Patterns) combines complexity and coverage: complexity² × (1 − coverage)³ + complexity. A simple
-function needs few tests; a complex one needs many. A fully covered function scores its complexity, so the default limit
-of 8 also caps complexity. This is higher than the 4 or 5 often used for people, because agents handle more complexity.
-Coverage alone is not enough, because tests can run code without checking it. Mutation testing closes that gap.
+CRAP is complexity² × (1 − coverage)³ + complexity, so the default limit of 8 also caps complexity. Tests can run code
+without checking it, so mutation testing backs up coverage.
 
-## Your rules live outside the repository
+## Rules live outside the repository
 
-An agent that can edit the repository can edit its config. Your limits therefore live in your policy file outside the
-repository. `gauntlet.toml` may tighten them, never weaken them, and `pin` can freeze it by hash. `loop` reads the config
-from your repository, never from the agent's workspace.
+An agent that can edit the repo can edit its config, so your limits live in a policy file outside it. The repo's
+`gauntlet.toml` may only tighten them.
 
 ## Results are bound to the source
 
-`stamp` hashes every artifact together with the source: HEAD plus every tracked and untracked file. A gate refuses
-artifacts that do not match, so a stale coverage report from yesterday cannot pass today's code. `run` stamps its own
-results. Git is asked only for file names; gauntlet hashes the contents itself, so no git filter from the repository
-ever runs.
+`stamp` hashes the artifacts with the source. Gates refuse artifacts that don't match, so yesterday's coverage can't
+pass today's code.
 
-## Project code runs only in the sandbox
+## Code runs only in the sandbox
 
-```mermaid
-flowchart LR
-    gauntlet["gauntlet<br/>fixed commands<br/>pinned tools"]
-    subgraph box["Sandbox: project code runs here"]
-        direction TB
-        copy["Private copy<br/>of the repository"] --> code["Tests, mutation tool,<br/>agent"]
-    end
-    subgraph host["Your machine: files are only read"]
-        direction TB
-        stamp["Stamp<br/>hash artifacts and source"] --> gates["Gates"]
-        policy["Your policy"] --> gates
-    end
-    gauntlet -->|runs| copy
-    code -->|artifacts copied out| stamp
-
-    classDef you stroke:#c99a00,stroke-width:2px
-    class policy you
-    style host stroke:#6b7280,stroke-width:2px
-    style box stroke:#5b8def,stroke-width:2px
-```
-
-The gates only read files. Tests, mutation runs and agents execute in a sandbox (Workshop or Docker) on a private copy of
-the repository. The commands and tool versions are fixed in gauntlet, so nothing in the repository chooses what runs.
-The sandbox protects your machine, not the numbers: code under test can still forge its own results. The full threat
-model is in [SECURITY.md](../SECURITY.md).
+Tests, mutation tools and agents run in a sandbox on a private copy of the repo; gates only read the results. The
+sandbox protects your machine, not the numbers. See [SECURITY.md](../SECURITY.md).
 
 ## The agent loop
 
-The loop splits work the way a careful team does. A Specifier turns a requirement into a Gherkin spec, and you approve it.
-A Coder implements it. Fixers respond to gate failures until every gate passes. The agents work in a copy of the
-repository and hand back a patch. Edits to control files (CI, `gauntlet.toml`, build config) are flagged, because they
-are where an agent could weaken the checks.
+You approve the spec; agents implement it and return a patch. Edits to control files (CI, `gauntlet.toml`, build
+config) are flagged, since they could weaken the checks.

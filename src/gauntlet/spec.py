@@ -170,15 +170,11 @@ def _trace_problems(s: Scenario, root: Path, trace: bool) -> list[str]:
     return [p for r in refs for p in _trace(r, root)] if trace else []
 
 
-def _scenario_problems(s: Scenario, root: Path, trace: bool) -> list[str]:
-    return _step_problems(s) + _trace_problems(s, root, trace) + _outline_problems(s)
-
-
 def check(path: Path, root: Path, trace: bool = True) -> list[str]:
     feature = parse(read_text(path, MAX_SPEC_BYTES))
     problems = list(feature.problems)
     if not feature.scenarios:
         problems.append("the Feature has no scenarios")
     for s in feature.scenarios:
-        problems += _scenario_problems(s, root, trace)
+        problems += _step_problems(s) + _trace_problems(s, root, trace) + _outline_problems(s)
     return problems

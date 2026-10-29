@@ -110,27 +110,27 @@ def test_java_reads_a_real_pit_report() -> None:
     ],
 )
 def test_java_status_mapping(status: str, caught: bool) -> None:
-    result = mutation.pit(pit_report(status, "KILLED"), parse([]), JAVA)
+    result = mutation.pit(pit_report(status, "KILLED"), parse([]))
     assert result.total == 2
     assert result.caught == (2 if caught else 1)
 
 
 def test_java_leaves_non_viable_mutants_out_and_rejects_unknown_statuses() -> None:
-    assert mutation.pit(pit_report("NON_VIABLE", "KILLED"), parse([]), JAVA).total == 1
+    assert mutation.pit(pit_report("NON_VIABLE", "KILLED"), parse([])).total == 1
     with pytest.raises(ValueError, match="unknown PIT mutation status 'WEIRD'"):
-        mutation.pit(pit_report("WEIRD"), parse([]), JAVA)
+        mutation.pit(pit_report("WEIRD"), parse([]))
 
 
 def test_java_maps_the_default_package_and_scope() -> None:
     text = pit_report("SURVIVED").replace("com.x.A", "A")
-    assert mutation.pit(text, parse(["src/main/java/A.java:1-1"]), JAVA).survivors == [
+    assert mutation.pit(text, parse(["src/main/java/A.java:1-1"])).survivors == [
         "src/main/java/A.java:1: MathMutator in f: SURVIVED"
     ]
 
 
 def test_java_refuses_entities_in_the_report() -> None:
     with pytest.raises(ValueError, match="DOCTYPE"):
-        mutation.pit('<!DOCTYPE x [<!ENTITY a "b">]><mutations/>', parse([]), JAVA)
+        mutation.pit('<!DOCTYPE x [<!ENTITY a "b">]><mutations/>', parse([]))
 
 
 # From a real cargo-mutants 27.1.0 run in the rust image (trimmed to the fields the reader uses).

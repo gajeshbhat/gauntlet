@@ -84,18 +84,14 @@ def _arch(run: Run) -> GateResult:
     return GateResult("arch", not found, summary, found, {"modules": result.modules, "violations": len(found)})
 
 
-def _clean_result(run: Run) -> clean.CleanResult:
+def _clean(run: Run) -> GateResult:
     language = languages.get(run.cfg.language)
     _trusted(run, [language.coverage_file])
     text = read_artifact(
         run.art, language.coverage_file, f"gauntlet run, or your test runner's {language.coverage_format} report"
     )
     lines = linecov.parse(language.coverage_format, text)
-    return clean.check(run.root, lines, language, run.cfg.crap_max, run.scope)
-
-
-def _clean(run: Run) -> GateResult:
-    result = _clean_result(run)
+    result = clean.check(run.root, lines, language, run.cfg.crap_max, run.scope)
     if result.evaluated == 0:
         raise GauntletError("no functions were evaluated: empty coverage data, or --only matched nothing")
     found = tuple(
