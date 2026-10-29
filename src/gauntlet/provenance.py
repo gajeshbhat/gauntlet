@@ -57,14 +57,19 @@ def _entry(path: Path) -> bytes:
     return b"f" + executable + _digest(path).encode()
 
 
+def listed(source: Path, exclude: tuple[str, ...] = ()) -> list[str]:
+    """Sorted names of the tracked and untracked (non-ignored) files, minus the excluded paths."""
+    skip = [f":(exclude){p}" for p in exclude]
+    raw = git_output(source, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".", *skip)
+    return sorted({n.decode() for n in raw.split(b"\0") if n})
+
+
 def fingerprint(source: Path, exclude: tuple[str, ...] = ()) -> str:
     """Hash of HEAD plus the state of every tracked and untracked (non-ignored) file, minus the excluded paths."""
-    skip = [f":(exclude){p}" for p in exclude]
     h = hashlib.sha256()
     h.update(git_output(source, "rev-parse", "HEAD"))
-    listed = git_output(source, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".", *skip)
-    for name in sorted(set(filter(None, listed.split(b"\0")))):
-        h.update(name + b"\0" + _entry(source / name.decode()) + b"\0")
+    for name in listed(source, exclude):
+        h.update(name.encode() + b"\0" + _entry(source / name) + b"\0")
     return h.hexdigest()
 
 

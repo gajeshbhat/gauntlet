@@ -67,7 +67,7 @@ PIT_IGNORED = {"NON_VIABLE"}
 PIT_SOURCES = "src/main/java"  # Maven's default layout; the exclusions gate reports a pom that moves it
 
 
-def pit(text: str, scope: Scope, cfg: Config) -> Mutation:  # noqa: ARG001
+def pit(text: str, scope: Scope) -> Mutation:
     """PIT's mutations.xml. KILLED, TIMED_OUT (an endless loop the tests noticed) and MEMORY_ERROR (the mutant ran out
     of memory) are caught. SURVIVED and NO_COVERAGE (no test reaches the line) are not, and neither are RUN_ERROR (a
     crashed test JVM may be infrastructure, not the mutant), NOT_STARTED and STARTED (PIT did not finish). NON_VIABLE
@@ -90,8 +90,9 @@ CARGO_CAUGHT = {"CaughtMutant", "Timeout"}
 
 
 def _cargo_mutant(m: dict[str, Any], summary: str) -> Mutant:
-    label = f"{m['genre']} {m['replacement']} {summary}"
-    return Mutant(m["file"], m["span"]["start"]["line"], label, summary in CARGO_CAUGHT)
+    return Mutant(
+        m["file"], m["span"]["start"]["line"], f"{m['genre']} {m['replacement']} {summary}", summary in CARGO_CAUGHT
+    )
 
 
 def cargo_mutants(text: str, scope: Scope) -> Mutation:
@@ -184,7 +185,7 @@ TOOLS: dict[str, Tool] = {
     "java": Tool(
         "mutations.xml",
         "mvn test-compile org.pitest:pitest-maven:mutationCoverage -DoutputFormats=XML (then copy target/pit-reports)",
-        pit,
+        lambda text, scope, cfg: pit(text, scope),  # noqa: ARG005
     ),
     "rust": Tool(
         "mutants-outcomes.json",

@@ -18,20 +18,15 @@ NO_SANDBOX = (
 )
 
 
-def _installed(policy: Policy, which: Which) -> dict[str, bool]:
-    return {"workshop": which("workshop") is not None, "docker": which(policy.container_cli) is not None}
-
-
 def pick(policy: Policy, which: Which = shutil.which) -> str:
-    installed = _installed(policy, which)
+    tools = {"workshop": "workshop", "docker": policy.container_cli}
+    installed = [name for name, tool in tools.items() if which(tool)]
     if policy.sandbox == "auto":
-        for name in ("workshop", "docker"):
-            if installed[name]:
-                return name
-        raise GauntletError(NO_SANDBOX)
-    if not installed[policy.sandbox]:
-        tool = "workshop" if policy.sandbox == "workshop" else policy.container_cli
-        raise GauntletError(f'sandbox = "{policy.sandbox}" but `{tool}` is not installed')
+        if not installed:
+            raise GauntletError(NO_SANDBOX)
+        return installed[0]
+    if policy.sandbox not in installed:
+        raise GauntletError(f'sandbox = "{policy.sandbox}" but `{tools[policy.sandbox]}` is not installed')
     return policy.sandbox
 
 

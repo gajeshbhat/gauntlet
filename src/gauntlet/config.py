@@ -53,20 +53,11 @@ def _text(path: Path, table: dict[str, Any], key: str, default: str) -> str:
     return value
 
 
-def _layers(path: Path, table: dict[str, Any]) -> tuple[str, ...]:
-    order: Any = table.get("order", [])
-    items: list[Any] = list(order) if isinstance(order, list) else []  # pyright: ignore[reportUnknownArgumentType]
-    if not isinstance(order, list) or not all(isinstance(x, str) and x for x in items):
-        raise GauntletError(f"{path}: layers.order must be a list of non-empty strings")
-    return tuple(str(x) for x in items)
-
-
-def _strings(path: Path, table: dict[str, Any], key: str, default: tuple[str, ...]) -> tuple[str, ...]:
+def _strings(path: Path, table: dict[str, Any], key: str, default: tuple[str, ...], label: str = "") -> tuple[str, ...]:
     value: Any = table.get(key, list(default))
-    items: list[Any] = list(value) if isinstance(value, list) else []  # pyright: ignore[reportUnknownArgumentType]
-    if not isinstance(value, list) or not all(isinstance(x, str) and x for x in items):
-        raise GauntletError(f"{path}: {key} must be a list of non-empty strings")
-    return tuple(str(x) for x in items)
+    if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        raise GauntletError(f"{path}: {label or key} must be a list of non-empty strings")
+    return tuple(str(x) for x in value)  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
 
 
 def load(path: Path) -> Config:
@@ -84,7 +75,7 @@ def load(path: Path) -> Config:
         language=language,
         crap_max=_int(path, sections["crap"], "max", Config.crap_max, 1, 1000),
         mutation_min=_int(path, sections["mutation"], "min_score", Config.mutation_min, 0, 100),
-        layers=_layers(path, sections["layers"]),
+        layers=_strings(path, sections["layers"], "order", (), "layers.order"),
         src=_text(path, top, "src", Config.src),
         mutation_dir=_text(path, sections["go"], "mutation_dir", Config.mutation_dir),
         packages=_strings(path, sections["go"], "packages", Config.packages),

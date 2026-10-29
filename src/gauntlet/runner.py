@@ -278,10 +278,9 @@ def _cpp_mutation_steps(env: tuple[tuple[str, str], ...]) -> list[Step]:
 def _cpp_steps() -> list[Step]:
     py, build = f"{IN_SANDBOX}/py", f"{IN_SANDBOX}/build"
     env = (("PYTHONPATH", py),)
-    flags = list(CPP_FLAGS)
     return [
         Step("install", ("sh", "-c", _cpp_install())),
-        Step("configure", (f"{py}/bin/cmake", "-S", ".", "-B", build, "-DCMAKE_BUILD_TYPE=Debug", *flags), env=env),
+        Step("configure", (f"{py}/bin/cmake", "-S", ".", "-B", build, "-DCMAKE_BUILD_TYPE=Debug", *CPP_FLAGS), env=env),
         Step("build", (f"{py}/bin/cmake", "--build", build), timeout=3600, env=env),
         Step("tests", (f"{py}/bin/ctest", "--test-dir", build, "--output-on-failure"), timeout=3600, env=env),
         Step(
