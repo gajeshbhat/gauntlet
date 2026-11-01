@@ -32,7 +32,7 @@ from gauntlet.errors import GauntletError
 from gauntlet.policy import Policy
 from gauntlet.results import GateResult
 from gauntlet.safefs import read_artifact, read_text
-from gauntlet.sandbox import Sandbox
+from gauntlet.sandbox import Sandbox, SandboxError
 from gauntlet.scope import Scope, parse
 
 
@@ -57,18 +57,13 @@ def _arch_result(run: Run) -> arch.ArchResult:
     cfg = run.cfg
     if not cfg.layers:
         raise GauntletError("no layers configured: add [layers] order to gauntlet.toml")
-    result = arch.check(run.root / cfg.src, cfg.layers)
-    if result.modules == 0:
-        raise GauntletError("no module belongs to any configured layer; check [layers] and src")
-    return result
+    return arch.check_roots(run.root, cfg.roots or (cfg.src,), cfg.layers, cfg.forbid)
 
 
 def _arch(run: Run) -> GateResult:
     result = _arch_result(run)
     found = tuple(
-        f"{v.path}:{v.line}: {v.source} imports outer layer {v.target}"
-        if v.line
-        else f"{v.path}: {v.source} imports outer layer {v.target}"
+        f"{v.path}:{v.line}: {v.source} imports {'forbidden' if v.forbidden else 'outer layer'} {v.target}"
         for v in result.violations
     )
     summary = f"arch: {result.modules} module(s) checked, {len(found)} violation(s)"
@@ -320,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         return _dispatch(args)
-    except (OSError, GauntletError) as e:
+    except (OSError, GauntletError, SandboxError) as e:
         print(f"gauntlet: {e}", file=sys.stderr)
     except KeyError as e:  # an artifact without a field its reader needs
         print(f"gauntlet: malformed input, missing {e}", file=sys.stderr)

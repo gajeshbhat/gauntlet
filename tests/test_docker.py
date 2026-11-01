@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from gauntlet.docker import DockerSandbox
 from gauntlet.sandbox import ExecResult
+from gauntlet.sandbox.docker import DockerSandbox
 
 
 class FakeRunner:
@@ -127,4 +127,4 @@ def test_unsafe_images_are_rejected(tmp_path: Path, image: str) -> None:
 def test_default_names_are_unique_and_valid(tmp_path: Path) -> None:
     a, b = DockerSandbox(tmp_path, "img", run=FakeRunner()), DockerSandbox(tmp_path, "img", run=FakeRunner())
     assert a.name != b.name
-    assert a.name.startswith("gauntlet-")
+    assert a.name.startswith("sandbox-")

@@ -14,7 +14,7 @@ from typing import Any
 from gauntlet import languages
 from gauntlet.config import Config
 from gauntlet.errors import GauntletError
-from gauntlet.names import ENV_NAME, IMAGE, MEMORY
+from gauntlet.sandbox.names import ENV_NAME, IMAGE, MEMORY
 
 BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin")
 INTS = ("crap_ceiling", "mutation_floor", "max_exclusions")

@@ -1,5 +1,6 @@
 import re
 from collections.abc import Callable, Mapping, Sequence
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -8,13 +9,14 @@ from helpers import (
     Out,
     RunSandbox,
     committed_py_project,
+    failing_workshop,
 )
 
-from gauntlet import cli
+from gauntlet import backends, cli
 from gauntlet.cli import main
 from gauntlet.config import Config
 from gauntlet.policy import Policy
-from gauntlet.sandbox import ExecResult
+from gauntlet.sandbox import NO_SANDBOX, ExecResult
 
 # ---- loop
 AGENT_POLICY = 'allow_unstamped = true\nagent_command = ["agent", "-p"]\nagent_env = ["TOKEN"]\nmax_rounds = 2\n'
@@ -172,3 +174,31 @@ def test_loop_prints_exact_summary_and_writes_a_complete_evidence_report(
     assert re.search(r"Generated \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00 by gauntlet", text)
     assert f"gauntlet loop {root} --spec {spec_file}" in text
     assert (loop_dir / "artifacts" / "gauntlet-manifest.json").exists()
+
+
+def test_loop_with_docker_but_no_agent_image_is_a_clean_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    root, pol, _ = loop_setup(tmp_path, monkeypatch, write_policy, policy_text=AGENT_POLICY + 'sandbox = "docker"\n')
+    monkeypatch.setattr(cli, "MAKE_AGENT_SANDBOX", partial(backends.agent_sandbox, which=lambda t: t))
+    assert main(["loop", str(root), "--requirement", "x", "--policy", str(pol)]) == 2
+    expected = "gauntlet: docker_image_agent is not set in the policy; build one from examples/agent.Dockerfile\n"
+    assert capsys.readouterr().err == expected
+
+
+def test_loop_without_any_sandbox_installed_is_a_clean_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    root, pol, _ = loop_setup(tmp_path, monkeypatch, write_policy)
+    monkeypatch.setattr(cli, "MAKE_AGENT_SANDBOX", partial(backends.agent_sandbox, which=lambda _: None))
+    assert main(["loop", str(root), "--requirement", "x", "--policy", str(pol)]) == 2
+    assert capsys.readouterr().err == f"gauntlet: {NO_SANDBOX}\n"
+
+
+def test_loop_with_a_sandbox_that_fails_to_start_is_a_clean_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    root, pol, _ = loop_setup(tmp_path, monkeypatch, write_policy)
+    monkeypatch.setattr(cli, "MAKE_AGENT_SANDBOX", failing_workshop("gauntlet-agent"))
+    assert main(["loop", str(root), "--requirement", "x", "--policy", str(pol)]) == 2
+    assert capsys.readouterr().err == "gauntlet: workshop init failed: boom\n"

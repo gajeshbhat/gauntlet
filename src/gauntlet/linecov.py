@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 from gauntlet.errors import GauntletError
 from gauntlet.safefs import SKIP_DIRS
+from gauntlet.sandbox import PROJECT_DIR
 
 Lines = dict[str, dict[int, int]]
 
@@ -40,8 +41,8 @@ def parse(fmt: str, text: str) -> Lines:
 
 def _clean_key(key: str) -> tuple[str, bool]:
     """The report path made project-relative, and whether it came from a host root outside the container."""
-    foreign_root = key.startswith("/") and not key.startswith("/project/")
-    key = key.removeprefix("/project/").lstrip("/")
+    foreign_root = key.startswith("/") and not key.startswith(f"{PROJECT_DIR}/")
+    key = key.removeprefix(f"{PROJECT_DIR}/").lstrip("/")
     if ".." in key.split("/"):
         raise GauntletError(f"{key!r} escapes the project root")
     return key, foreign_root

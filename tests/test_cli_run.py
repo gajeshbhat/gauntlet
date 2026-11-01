@@ -1,15 +1,18 @@
 import json
+from functools import partial
 from pathlib import Path
 
 import pytest
 from helpers import (
     Out,
     committed_py_project,
+    failing_workshop,
     sandbox_factory,
 )
 
-from gauntlet import cli
+from gauntlet import backends, cli
 from gauntlet.cli import main
+from gauntlet.sandbox import NO_SANDBOX
 
 
 # ---- run (sandboxed pipeline)
@@ -71,3 +74,22 @@ def test_stamp_never_blesses_the_results_of_an_old_run(
     assert "stamped coverage.json" in capsys.readouterr().out
     assert (root / "gauntlet-manifest.json").exists()
     assert main(["clean", str(root), "--artifacts", str(root)]) == 0  # the fresh ones, not the old run's
+
+
+# ---- sandbox errors end as `gauntlet: <message>` with exit 2, not a traceback or "malformed input"
+def test_run_without_any_sandbox_installed_is_a_clean_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = committed_py_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", partial(backends.gate_sandbox, which=lambda _: None))
+    assert main(["run", str(root)]) == 2
+    assert capsys.readouterr().err == f"gauntlet: {NO_SANDBOX}\n"
+
+
+def test_run_with_a_sandbox_that_fails_to_start_is_a_clean_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = committed_py_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", failing_workshop("gauntlet"))
+    assert main(["run", str(root)]) == 2
+    assert capsys.readouterr().err == "gauntlet: workshop init failed: boom\n"

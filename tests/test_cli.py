@@ -68,6 +68,21 @@ def test_arch_fails_on_outward_import(tmp_path: Path, capsys: Out, cli_run: Call
     assert "arch: 2 module(s) checked, 1 violation(s)" in out
 
 
+def test_arch_checks_every_root_and_enforces_forbid_rules(
+    tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
+) -> None:
+    toml = 'language = "python"\n[layers]\norder = ["web", "domain"]\nroots = ["a", "b"]\nforbid = ["web -> domain"]\n'
+    project(tmp_path, toml)
+    (tmp_path / "a" / "web").mkdir(parents=True)
+    (tmp_path / "b" / "domain").mkdir(parents=True)
+    (tmp_path / "a" / "web" / "v.py").write_text("import domain.m\n")
+    (tmp_path / "b" / "domain" / "m.py").write_text("")
+    assert cli_run("arch", tmp_path) == 1
+    out = capsys.readouterr().out
+    assert "web/v.py:1: web.v imports forbidden domain" in out
+    assert "arch: 2 module(s) checked, 1 violation(s)" in out
+
+
 def test_arch_passes_a_clean_tree(tmp_path: Path, cli_run: Callable[..., int]) -> None:
     project(tmp_path, 'language = "python"\n[layers]\norder = ["web", "domain"]\n')
     (tmp_path / "domain").mkdir()
@@ -87,7 +102,7 @@ def test_arch_with_layers_matching_nothing_is_an_error(
     project(tmp_path, 'language = "python"\n[layers]\norder = ["web", "domain"]\n')
     (tmp_path / "other.py").write_text("")
     assert cli_run("arch", tmp_path) == 2
-    assert "no module belongs to any configured layer" in capsys.readouterr().err
+    assert "no module under . belongs to any configured layer" in capsys.readouterr().err
 
 
 # ---- clean

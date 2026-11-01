@@ -186,7 +186,10 @@ def test_arch_with_layers_matching_nothing_message(
 ) -> None:
     (tmp_path / "gauntlet.toml").write_text('language = "python"\n[layers]\norder = ["web"]\n')
     assert main(["arch", str(tmp_path), "--policy", str(lax)]) == 2
-    assert capsys.readouterr().err == "gauntlet: no module belongs to any configured layer; check [layers] and src\n"
+    assert (
+        capsys.readouterr().err
+        == "gauntlet: no module under . belongs to any configured layer; check [layers] and roots\n"
+    )
 
 
 # ---- snapshots

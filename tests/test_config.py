@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from gauntlet.config import Config, load
+from gauntlet.config import Config, Rule, load
 
 
 def write(tmp_path: Path, text: str) -> Path:
@@ -108,3 +108,19 @@ def test_every_error_names_the_file(tmp_path: Path, text: str) -> None:
     path.write_text(text)
     with pytest.raises(ValueError, match=f"^{path}: "):
         load(path)
+
+
+def test_roots_and_forbid_rules(tmp_path: Path) -> None:
+    text = (
+        'language = "python"\n[layers]\nroots = ["a/src", "b/src"]\nforbid = ["x -> y", "p.q -> p except p.q, p.r"]\n'
+    )
+    cfg = load(write(tmp_path, text))
+    assert cfg.roots == ("a/src", "b/src")
+    assert cfg.forbid == (Rule("x", "y"), Rule("p.q", "p", ("p.q", "p.r")))
+
+
+@pytest.mark.parametrize("rule", ["x", "x -> ", "x -> y except", "x -> y -> z", "x->y", " -> y"])
+def test_bad_forbid_rules_are_rejected(tmp_path: Path, rule: str) -> None:
+    text = f'language = "python"\n[layers]\nforbid = ["{rule}"]\n'
+    with pytest.raises(ValueError, match=rf"^{tmp_path}/gauntlet.toml: forbid rule {rule!r} must look like"):
+        load(write(tmp_path, text))

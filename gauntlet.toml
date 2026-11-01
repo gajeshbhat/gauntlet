@@ -18,7 +18,6 @@ order = [
   "gauntlet.arch",
   "gauntlet.exclusions",
   "gauntlet.harden",
-  "gauntlet.docker",
   "gauntlet.sandbox",
   "gauntlet.snapshot",
   "gauntlet.policy",
@@ -28,6 +27,14 @@ order = [
   "gauntlet.languages",
   "gauntlet.results",
   "gauntlet.safefs",
-  "gauntlet.names",
+  "gauntlet.sandbox.select",
+  "gauntlet.sandbox.docker",
+  "gauntlet.sandbox.workshop",
+  "gauntlet.sandbox.api",
+  "gauntlet.sandbox.names",
+  "gauntlet.sandbox.errors",
   "gauntlet.errors",
 ]
+
+# The sandbox package imports nothing from the rest of gauntlet, so it can move out into its own package.
+forbid = ["gauntlet.sandbox -> gauntlet except gauntlet.sandbox"]

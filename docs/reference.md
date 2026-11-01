@@ -60,6 +60,8 @@ min_score = 90                 # may only tighten the policy's mutation_floor
 
 [layers]                       # optional: imports may only point down this list
 order = ["app.web", "app.service", "app.domain"]
+roots = ["pkg_a/src", "pkg_b/src"]   # optional: several source roots instead of `src`; each must hold a layered module
+forbid = ["app.domain -> requests", "app.web -> app except app.web, app.service"]   # optional: banned imports
 ```
 
 ## `policy.toml`

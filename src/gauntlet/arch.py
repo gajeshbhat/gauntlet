@@ -8,6 +8,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+from gauntlet.config import Rule
 from gauntlet.errors import GauntletError
 from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text
 
@@ -18,6 +19,7 @@ class Violation:
     line: int
     source: str
     target: str
+    forbidden: bool = False  # a `forbid` rule, not the layer order
 
 
 def _resolve(node: ast.ImportFrom, package: list[str]) -> str:
@@ -69,6 +71,23 @@ def _violations(rel: Path, layers: tuple[str, ...], own: int, found: list[tuple[
     return out
 
 
+def _under(name: str, prefix: str) -> bool:
+    return name == prefix or name.startswith(prefix + ".")
+
+
+def _forbidden(rel: Path, module: str, forbid: tuple[Rule, ...], found: list[tuple[int, str]]) -> list[Violation]:
+    out: list[Violation] = []
+    for rule in forbid:
+        if not _under(module, rule.source):
+            continue
+        seen: set[int] = set()
+        for line, name in found:
+            if _under(name, rule.target) and not any(_under(name, a) for a in rule.allow) and line not in seen:
+                seen.add(line)
+                out.append(Violation(str(rel), line, module, rule.target, forbidden=True))
+    return out
+
+
 def _edges(own: int, layers: tuple[str, ...], found: list[tuple[int, str]]) -> set[tuple[int, int]]:
     targets = {layer_of(name, layers) for _, name in found}
     return {(own, t) for t in targets if t is not None and t != own}
@@ -81,17 +100,39 @@ def _imports_of(root: Path, rel: Path, package: list[str], max_bytes: int) -> li
         raise GauntletError(f"cannot analyse {rel}: {type(e).__name__}") from None
 
 
-def check(root: Path, layers: tuple[str, ...], max_bytes: int = MAX_SOURCE_BYTES) -> ArchResult:
+def check(
+    root: Path, layers: tuple[str, ...], max_bytes: int = MAX_SOURCE_BYTES, forbid: tuple[Rule, ...] = ()
+) -> ArchResult:
     modules = 0
     violations: list[Violation] = []
     edges: set[tuple[int, int]] = set()
     for path in sorted(root.rglob("*.py")):
         rel = path.relative_to(root)
         parts = rel.with_suffix("").parts
-        own = layer_of(".".join(parts), layers)  # a package __init__ is "pkg.__init__", still inside layer "pkg"
+        module = ".".join(parts)  # a package __init__ is "pkg.__init__", still inside layer "pkg"
+        own = layer_of(module, layers)
         if own is not None:
             modules += 1
             found = _imports_of(root, rel, list(parts[:-1]), max_bytes)
-            violations += _violations(rel, layers, own, found)
+            violations += _violations(rel, layers, own, found) + _forbidden(rel, module, forbid, found)
             edges |= _edges(own, layers, found)
     return ArchResult(modules, violations, frozenset(edges))
+
+
+def _merge(results: list[ArchResult]) -> ArchResult:
+    return ArchResult(
+        sum(r.modules for r in results),
+        [v for r in results for v in r.violations],
+        frozenset(e for r in results for e in r.edges),
+    )
+
+
+def check_roots(
+    base: Path, roots: tuple[str, ...], layers: tuple[str, ...], forbid: tuple[Rule, ...] = ()
+) -> ArchResult:
+    """`check` every root under `base`; each must hold at least one layered module, or the gate saw nothing there."""
+    results = [check(base / root, layers, forbid=forbid) for root in roots]
+    for root, r in zip(roots, results, strict=True):
+        if r.modules == 0:
+            raise GauntletError(f"no module under {root} belongs to any configured layer; check [layers] and roots")
+    return _merge(results)

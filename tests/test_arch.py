@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 from helpers import tree
 
-from gauntlet.arch import Violation, check, imports, layer_of
+from gauntlet.arch import Violation, check, check_roots, imports, layer_of
+from gauntlet.config import Rule
 
 LAYERS = ("app.web", "app.service", "app.domain")  # outermost first
 
@@ -149,6 +150,47 @@ def test_layer_edges_are_collected(tmp_path: Path) -> None:
         },
     )
     assert check(tmp_path, LAYERS).edges == frozenset({(0, 1), (0, 2), (1, 2), (2, 0)})
+
+
+def test_a_forbidden_import_is_a_violation_even_inward(tmp_path: Path) -> None:
+    tree(tmp_path, {"app/web/v.py": "from app.domain import model\n", "app/domain/model.py": ""})
+    (v,) = check(tmp_path, LAYERS, forbid=(Rule("app.web", "app.domain"),)).violations
+    assert v == Violation("app/web/v.py", 1, "app.web.v", "app.domain", forbidden=True)
+
+
+def test_forbid_allows_the_listed_exceptions_and_ignores_other_sources(tmp_path: Path) -> None:
+    files = {
+        "app/web/v.py": "from app.domain import model\nimport app.service.logic\nimport json\n",
+        "app/service/logic.py": "import app.domain.model\n",
+        "app/domain/model.py": "",
+    }
+    tree(tmp_path, files)
+    assert check(tmp_path, LAYERS, forbid=(Rule("app.web", "app", ("app.domain", "app.service")),)).violations == []
+    assert len(check(tmp_path, LAYERS, forbid=(Rule("app.web", "app", ("app.domain",)),)).violations) == 1
+
+
+def test_forbid_flags_the_bare_package_import(tmp_path: Path) -> None:
+    tree(tmp_path, {"app/web/v.py": "from app import x\n", "app/domain/m.py": ""})
+    assert len(check(tmp_path, LAYERS, forbid=(Rule("app.web", "app", ("app.domain",)),)).violations) == 1
+
+
+def test_check_roots_sums_modules_and_merges_edges(tmp_path: Path) -> None:
+    tree(tmp_path, {"a/app/web/v.py": "from app.domain import m\n", "a/app/domain/m.py": ""})
+    tree(tmp_path, {"b/app/service/s.py": "from app.domain import m\n"})
+    result = check_roots(tmp_path, ("a", "b"), LAYERS)
+    assert (result.modules, result.edges, result.violations) == (3, frozenset({(0, 2), (1, 2)}), [])
+
+
+def test_check_roots_reports_violations_in_every_root(tmp_path: Path) -> None:
+    tree(tmp_path, {"a/app/domain/m.py": "import app.web\n", "b/app/domain/n.py": "import app.web\n"})
+    assert len(check_roots(tmp_path, ("a", "b"), LAYERS).violations) == 2
+
+
+def test_check_roots_refuses_a_root_with_no_modules(tmp_path: Path) -> None:
+    tree(tmp_path, {"a/app/web/v.py": "", "b/other.py": ""})
+    message = r"^no module under b belongs to any configured layer; check \[layers\] and roots$"
+    with pytest.raises(ValueError, match=message):
+        check_roots(tmp_path, ("a", "b"), LAYERS)
 
 
 def test_same_layer_imports_are_not_edges(tmp_path: Path) -> None:

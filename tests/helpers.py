@@ -11,6 +11,7 @@ import pytest
 from gauntlet.config import Config
 from gauntlet.policy import Policy
 from gauntlet.sandbox import ExecResult
+from gauntlet.sandbox.workshop import WorkshopSandbox
 
 BRANCHY = "def g(x):\n" + "".join(f"    if x == {i}:\n        return {i}\n" for i in range(1, 8)) + "    return 0\n"
 
@@ -86,3 +87,12 @@ def committed_py_project(root: Path, toml: str = 'language = "python"\n') -> Pat
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
     return root
+
+
+def failing_workshop(name: str) -> Callable[[Path, Config, Policy], WorkshopSandbox]:
+    """A real Workshop sandbox whose `workshop` binary always fails with 'boom'."""
+
+    def boom(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(argv, 1, "", "boom")
+
+    return lambda project, cfg, policy: WorkshopSandbox(project, name, run=boom)  # noqa: ARG005

@@ -15,12 +15,12 @@ from gauntlet.config import Config
 from gauntlet.errors import GauntletError
 from gauntlet.provenance import excluded, fingerprint, stamp
 from gauntlet.safefs import MAX_ARTIFACT_BYTES
-from gauntlet.sandbox import ExecResult, Sandbox
+from gauntlet.sandbox import PROJECT_DIR, ExecResult, Sandbox
 from gauntlet.snapshot import snapshot
 
 OUT_DIR = ".gauntlet-out"
-IN_SANDBOX = f"/project/{OUT_DIR}"
-UV = ("uv", "run", "--project", "/project")
+IN_SANDBOX = f"{PROJECT_DIR}/{OUT_DIR}"
+UV = ("uv", "run", "--project", PROJECT_DIR)
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.0"
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")

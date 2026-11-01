@@ -5,40 +5,13 @@ import pytest
 
 from gauntlet import backends, languages
 from gauntlet.config import Config
-from gauntlet.docker import DockerSandbox
 from gauntlet.policy import Policy
-from gauntlet.sandbox import WorkshopSandbox
+from gauntlet.sandbox.docker import DockerSandbox
+from gauntlet.sandbox.workshop import WorkshopSandbox
 
 
 def which(*present: str) -> Callable[[str], str | None]:
     return lambda cmd: f"/usr/bin/{cmd}" if cmd in present else None
-
-
-@pytest.mark.parametrize(
-    ("present", "expected"),
-    [(("workshop", "docker"), "workshop"), (("workshop",), "workshop"), (("docker",), "docker")],
-)
-def test_auto_prefers_workshop_then_docker(present: tuple[str, ...], expected: str) -> None:
-    assert backends.pick(Policy(), which(*present)) == expected
-
-
-def test_auto_with_nothing_installed_explains_the_options() -> None:
-    with pytest.raises(ValueError, match="no sandbox found: install Canonical Workshop .*or Docker"):
-        backends.pick(Policy(), which())
-
-
-def test_auto_uses_the_configured_container_cli() -> None:
-    assert backends.pick(Policy(container_cli="podman"), which("podman")) == "docker"
-    with pytest.raises(ValueError, match="no sandbox found"):
-        backends.pick(Policy(container_cli="podman"), which("docker"))
-
-
-def test_an_explicit_choice_must_be_installed() -> None:
-    assert backends.pick(Policy(sandbox="docker"), which("docker")) == "docker"
-    with pytest.raises(ValueError, match=r"^sandbox = \"workshop\" but `workshop` is not installed$"):
-        backends.pick(Policy(sandbox="workshop"), which("docker"))
-    with pytest.raises(ValueError, match=r"^sandbox = \"docker\" but `docker` is not installed$"):
-        backends.pick(Policy(sandbox="docker"), which("workshop"))
 
 
 def test_gate_sandbox_on_workshop(tmp_path: Path) -> None:
@@ -52,9 +25,16 @@ def test_gate_sandbox_on_docker_uses_the_language_image_and_policy_settings(tmp_
     box = backends.gate_sandbox(tmp_path, Config("python"), pol, which("docker"))
     assert isinstance(box, DockerSandbox)
     assert (box.image, box.network, box.memory, box.cli) == ("py:9", "none", "2g", "docker")
+    assert box.name.startswith("gauntlet-")
     py = backends.gate_sandbox(tmp_path, Config("python"), Policy(sandbox="docker"), which("docker"))
     assert isinstance(py, DockerSandbox)
     assert py.image == languages.TABLE["python"].image
+
+
+def test_the_container_cli_comes_from_the_policy(tmp_path: Path) -> None:
+    box = backends.gate_sandbox(tmp_path, Config("python"), Policy(container_cli="podman"), which("podman"))
+    assert isinstance(box, DockerSandbox)
+    assert box.cli == "podman"
 
 
 def test_agent_sandbox_on_workshop_adds_claude_code(tmp_path: Path) -> None:
@@ -71,3 +51,4 @@ def test_agent_sandbox_on_docker_needs_an_agent_image(tmp_path: Path) -> None:
     )
     assert isinstance(box, DockerSandbox)
     assert box.image == "my/agent"
+    assert box.name.startswith("gauntlet-agent-")

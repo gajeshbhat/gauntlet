@@ -5,7 +5,7 @@ import lizard_languages  # pyright: ignore[reportMissingTypeStubs]
 import pytest
 
 from gauntlet import languages, linecov
-from gauntlet.names import IMAGE
+from gauntlet.sandbox.names import IMAGE
 
 
 def test_the_table_is_the_one_list_of_supported_languages() -> None:
