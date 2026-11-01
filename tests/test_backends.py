@@ -42,28 +42,25 @@ def test_an_explicit_choice_must_be_installed() -> None:
 
 
 def test_gate_sandbox_on_workshop(tmp_path: Path) -> None:
-    box = backends.gate_sandbox(tmp_path, Config("go"), Policy(sandbox="workshop"), which("workshop"))
+    box = backends.gate_sandbox(tmp_path, Config("python"), Policy(sandbox="workshop"), which("workshop"))
     assert isinstance(box, WorkshopSandbox)
-    assert (box.name, box.sdks) == ("gauntlet", "go")
-    py = backends.gate_sandbox(tmp_path, Config("python"), Policy(sandbox="workshop"), which("workshop"))
-    assert isinstance(py, WorkshopSandbox)
-    assert py.sdks == "uv"
+    assert (box.name, box.sdks) == ("gauntlet", "uv")
 
 
 def test_gate_sandbox_on_docker_uses_the_language_image_and_policy_settings(tmp_path: Path) -> None:
-    pol = Policy(sandbox="docker", docker_network="none", docker_memory="2g", docker_images={"go": "golang:9"})
-    box = backends.gate_sandbox(tmp_path, Config("go"), pol, which("docker"))
+    pol = Policy(sandbox="docker", docker_network="none", docker_memory="2g", docker_images={"python": "py:9"})
+    box = backends.gate_sandbox(tmp_path, Config("python"), pol, which("docker"))
     assert isinstance(box, DockerSandbox)
-    assert (box.image, box.network, box.memory, box.cli) == ("golang:9", "none", "2g", "docker")
+    assert (box.image, box.network, box.memory, box.cli) == ("py:9", "none", "2g", "docker")
     py = backends.gate_sandbox(tmp_path, Config("python"), Policy(sandbox="docker"), which("docker"))
     assert isinstance(py, DockerSandbox)
     assert py.image == languages.TABLE["python"].image
 
 
 def test_agent_sandbox_on_workshop_adds_claude_code(tmp_path: Path) -> None:
-    box = backends.agent_sandbox(tmp_path, Config("go"), Policy(sandbox="workshop"), which("workshop"))
+    box = backends.agent_sandbox(tmp_path, Config("python"), Policy(sandbox="workshop"), which("workshop"))
     assert isinstance(box, WorkshopSandbox)
-    assert (box.name, box.sdks) == ("gauntlet-agent", "go,claude-code")
+    assert (box.name, box.sdks) == ("gauntlet-agent", "uv,claude-code")
 
 
 def test_agent_sandbox_on_docker_needs_an_agent_image(tmp_path: Path) -> None:

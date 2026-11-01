@@ -3,19 +3,17 @@ from pathlib import Path
 import pytest
 from helpers import tree
 
-from gauntlet.exclusions import config_excludes, config_hints, pragmas
+from gauntlet.exclusions import config_excludes, pragmas
 from gauntlet.scope import Scope, parse
 
 
 def test_counts_every_kind_of_exclusion_comment(tmp_path: Path) -> None:
     tree(tmp_path, {"a.py": "x = 1  # pragma: no mutate\ny = 2  # pragma: no cover\nz = 3  # nosec\nw = 4\n"})
-    tree(tmp_path, {"b.go": "package b\nfunc f() {} //nolint:gocyclo\n// ordinary comment\n"})
     assert pragmas(tmp_path, "python", Scope()) == [
         "a.py:1: x = 1  # pragma: no mutate",
         "a.py:2: y = 2  # pragma: no cover",
         "a.py:3: z = 3  # nosec",
     ]
-    assert pragmas(tmp_path, "go", Scope()) == ["b.go:2: func f() {} //nolint:gocyclo"]
 
 
 def test_only_files_of_the_language_and_not_vendored_dirs(tmp_path: Path) -> None:
@@ -102,11 +100,6 @@ def test_python_files_that_cannot_be_tokenised_are_errors(tmp_path: Path) -> Non
         pragmas(tmp_path, "python", Scope())
 
 
-def test_go_comments_are_still_found_by_pattern(tmp_path: Path) -> None:
-    tree(tmp_path, {"m.go": "package m\n\nfunc F() {} // nolint\n"})
-    assert pragmas(tmp_path, "go", Scope()) == ["m.go:3: func F() {} // nolint"]
-
-
 def test_setup_cfg_and_tox_ini_are_checked_too(tmp_path: Path) -> None:
     tree(
         tmp_path,
@@ -150,89 +143,3 @@ def test_include_and_omit_settings_that_narrow_coverage_are_exclusions(tmp_path:
         ".coveragerc: coverage report omit b/*",
         ".coveragerc: coverage report include c/*",
     ]
-
-
-@pytest.mark.parametrize(
-    ("language", "name", "text", "expected"),
-    [
-        ("javascript", ".c8rc.json", "{}", [".c8rc.json: coverage-affecting settings file"]),
-        (
-            "javascript",
-            "package.json",
-            '{\n  "c8": {"exclude": ["a"]}\n}',
-            ['package.json:2: "c8": {"exclude": ["a"]}'],
-        ),
-        ("javascript", "package.json", '{"name": "x"}', []),
-        ("javascript", "stryker.conf.json", "{}", ["stryker.conf.json: coverage-affecting settings file"]),
-        ("javascript", "stryker.conf.mjs", "export default {}", ["stryker.conf.mjs: coverage-affecting settings file"]),
-        ("javascript", ".strykerrc.json", "{}", [".strykerrc.json: coverage-affecting settings file"]),
-        (
-            "javascript",
-            "package.json",
-            '{\n  "stryker": {"mutate": []}\n}',
-            ['package.json:2: "stryker": {"mutate": []}'],
-        ),
-        (
-            "csharp",
-            "app/Tests.runsettings",
-            "<RunSettings/>",
-            ["app/Tests.runsettings: coverage-affecting settings file"],
-        ),
-        (
-            "csharp",
-            "src/A.csproj",
-            "<TreatAsLocalProperty>RunSettingsFilePath</TreatAsLocalProperty>",
-            ["src/A.csproj:1: <TreatAsLocalProperty>RunSettingsFilePath</TreatAsLocalProperty>"],
-        ),
-        ("csharp", "src/A.csproj", '<PackageReference Include="coverlet.collector" />', []),
-        (
-            "java",
-            "pom.xml",
-            "<plugin>jacoco-maven-plugin</plugin>",
-            ["pom.xml:1: <plugin>jacoco-maven-plugin</plugin>"],
-        ),
-        ("java", ".mvn/maven.config", "-DskipTests", [".mvn/maven.config: coverage-affecting settings file"]),
-        ("rust", ".cargo/config.toml", "[build]", [".cargo/config.toml: coverage-affecting settings file"]),
-        ("rust", "mutants.toml", "x", ["mutants.toml: coverage-affecting settings file"]),
-        ("rust", ".cargo/mutants.toml", "x", [".cargo/mutants.toml: coverage-affecting settings file"]),
-        ("rust", "rust-toolchain.toml", "nightly", ["rust-toolchain.toml: coverage-affecting settings file"]),
-        ("rust", "Cargo.toml", "[package]", []),
-        ("dart", "dart_test.yaml", "exclude_tags: slow", ["dart_test.yaml:1: exclude_tags: slow"]),
-        ("cpp", "CMakeLists.txt", "project(x)", []),
-        ("cpp", "my.rules", "x ==> y", ["my.rules: coverage-affecting settings file"]),
-        ("cpp", "tools/c.rules", "x ==> y", ["tools/c.rules: coverage-affecting settings file"]),
-        ("cpp", "custom_handler.py", "x = 1", ["custom_handler.py: coverage-affecting settings file"]),
-        (
-            "javascript",
-            "tools/nyc.config.js",
-            "module.exports = {}",
-            ["tools/nyc.config.js: coverage-affecting settings file"],
-        ),
-        ("csharp", "stryker-config.json", "{}", ["stryker-config.json: coverage-affecting settings file"]),
-        (
-            "csharp",
-            "tests/App/.config/stryker-config.yaml",
-            "mutate: []",
-            ["tests/App/.config/stryker-config.yaml: coverage-affecting settings file"],
-        ),
-        ("csharp", "Directory.Build.rsp", "-p:X=1", ["Directory.Build.rsp: coverage-affecting settings file"]),
-        (
-            "csharp",
-            "build/hide.props",
-            "<ExcludeByFile>**</ExcludeByFile>",
-            ["build/hide.props:1: <ExcludeByFile>**</ExcludeByFile>"],
-        ),
-    ],
-)
-def test_config_hints_find_settings_that_can_hide_code(
-    tmp_path: Path, language: str, name: str, text: str, expected: list[str]
-) -> None:
-    (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
-    (tmp_path / name).write_text(text)
-    assert config_hints(tmp_path, language) == expected
-
-
-def test_config_hints_skip_vendored_directories(tmp_path: Path) -> None:
-    (tmp_path / "node_modules" / "dep").mkdir(parents=True)
-    (tmp_path / "node_modules" / "dep" / ".c8rc.json").write_text("{}")
-    assert config_hints(tmp_path, "javascript") == []

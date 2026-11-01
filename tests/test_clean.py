@@ -1,5 +1,3 @@
-from dataclasses import replace
-from math import inf
 from pathlib import Path
 
 import pytest
@@ -84,22 +82,6 @@ def test_adjacent_functions_do_not_share_lines() -> None:
     assert (f.coverage, g.coverage) == (1.0, 0.0)
 
 
-@pytest.mark.parametrize(
-    ("filename", "source", "complexity"),
-    [
-        ("a.go", "package a\nfunc F(x int) int {\n\tif x > 1 && x < 5 {\n\t\treturn 1\n\t}\n\treturn 2\n}\n", 3),
-        ("a.c", "int f(int x) {\n  if (x > 1) { return 1; }\n  return 2;\n}\n", 2),
-        ("a.java", "class A {\n  int f(int x) {\n    if (x > 1 || x < -1) { return 1; }\n    return 2;\n  }\n}\n", 3),
-        ("a.rs", "fn f(x: i32) -> i32 {\n    if x > 1 { 1 } else { 2 }\n}\n", 2),
-        ("a.js", "function f(x) {\n  return x ? 1 : 2;\n}\n", 2),
-        ("a.cs", "class A {\n  int F(int x) {\n    return x > 1 ? 1 : 2;\n  }\n}\n", 2),
-    ],
-)
-def test_complexity_is_read_from_any_language(filename: str, source: str, complexity: int) -> None:
-    (f,) = function_findings(filename, source, {})
-    assert f.complexity == complexity
-
-
 # ---- the gate over a project
 def project(root: Path, source: str = SIMPLE, name: str = "mod.py") -> Path:
     (root / name).parent.mkdir(parents=True, exist_ok=True)
@@ -144,26 +126,11 @@ def test_coverage_paths_that_belong_to_no_source_file_are_ignored(tmp_path: Path
     assert result.evaluated == 1
 
 
-def test_coverage_paths_are_matched_by_suffix(tmp_path: Path) -> None:
-    go = TABLE["go"]
-    project(tmp_path, "package a\nfunc F() int {\n\treturn 1\n}\n", "pkg/a.go")
-    result = check(tmp_path, {"example.com/m/pkg/a.go": {2: 1, 3: 1}}, go, 8, Scope())
-    assert result.evaluated == 1
-
-
 def test_coverage_paths_cannot_climb_out_of_the_project(tmp_path: Path) -> None:
     root = tmp_path / "root"
     project(root)
     with pytest.raises(ValueError, match="escapes the project root"):
         check(root, {"../secret.py": {1: 1}}, PY, 8, Scope())
-
-
-def test_other_languages_use_the_same_gate(tmp_path: Path) -> None:
-    java = replace(TABLE["go"], suffixes=(".java",), tests=r"_Test\.java$")
-    src = "class A {\n  int f(int x) {\n    if (x > 1) { return 1; }\n    return 2;\n  }\n}\n"
-    project(tmp_path, src, "src/main/java/com/x/A.java")
-    covered = check(tmp_path, {"com/x/A.java": {3: 1, 4: 1}}, java, 8, Scope())
-    assert (covered.evaluated, covered.offenders) == (1, [])
 
 
 def test_oversized_source_is_rejected(tmp_path: Path) -> None:
@@ -206,81 +173,8 @@ def test_a_report_matching_no_source_file_is_an_error_not_a_pass(tmp_path: Path)
         check(project(tmp_path), {}, PY, 8, Scope())
 
 
-# ---- Dart: read by lizard's Java reader. What that gets wrong is pinned here so a change is noticed.
-DART = TABLE["dart"]
-
-
-DART_CLASS = (
-    "class A {\n"  # 1
-    "  int m(int? x) {\n"  # 2
-    "    final y = x ?? 0;\n"
-    "    return x?.abs() ?? y;\n"
-    "  }\n"  # 5
-    "  int arrow(int x) => x > 1 ? 1 : 2;\n"  # 6
-    "  Future<int> g(List<int> xs) async {\n"
-    "    for (final a in xs) { if (a > 1 && a < 5) { return a; } }\n"
-    "    try { return 1; } catch (e) { return 2; }\n"
-    "  }\n"  # 10
-    "}\n"
-    "int top(int a) {\n"
-    "  return a > 1 ? 1 : 0;\n"
-    "}\n"
-)
-
-
-def dart_findings(source: str, hits: dict[int, int] | None = None) -> list[Finding]:
-    return function_findings("lib/a.dart", source, hits, DART.parse_as)
-
-
-def test_dart_methods_and_functions_are_measured_through_the_java_reader() -> None:
-    found = {f.name: (f.line, f.complexity) for f in dart_findings(DART_CLASS, {})}
-    assert found["A::g"] == (7, 5)  # for, if, &&, catch
-    assert found["A::top"] == (12, 2)  # ternary; the class scope is never closed, so a top-level name is misattributed
-
-
-def test_dart_arrow_functions_are_not_seen() -> None:
-    assert "A::arrow" not in {f.name for f in dart_findings(DART_CLASS, {})}
-    assert dart_findings("int one() => 1;\n", {1: 0}) != []  # alone, the file is flagged instead of passing
-
-
-def test_dart_null_aware_operators_and_nullable_types_inflate_complexity() -> None:
-    (m,) = (f for f in dart_findings(DART_CLASS, {}) if f.name == "A::m")
-    assert m.complexity == 6  # really 1: over-counting only ever fails closed
-
-
-def test_dart_code_with_no_function_found_is_not_clean_unless_every_line_ran() -> None:
-    src = "int one() => 1;\nint two() => 2;\n"
-    (absent,) = dart_findings(src, None)
-    assert (absent.name, absent.line, absent.coverage, absent.crap) == ("(unread code)", 1, 0.0, inf)
-    (partial,) = dart_findings(src, {1: 1, 2: 0})
-    assert (partial.line, partial.coverage) == (2, 0.5)
-    assert dart_findings(src, {1: 1, 2: 1}) == []
-
-
-@pytest.mark.parametrize(
-    "src",
-    [
-        "",
-        "\n\n",
-        "// only a comment\n",
-        "/* block\n comment */\n",
-        "library a;\nimport 'b.dart';\nexport 'c.dart';\npart 'd.dart';\n",
-    ],
-)
-def test_dart_files_with_no_code_are_clean_even_when_the_report_never_names_them(src: str) -> None:
-    assert dart_findings(src, None) == []
-
-
 def test_python_stub_files_with_no_functions_stay_clean() -> None:
     assert function_findings("stub.py", "X = 1\nclass A: ...\n", None) == []
-
-
-def test_dart_file_with_no_function_is_an_offender_through_check(tmp_path: Path) -> None:
-    project(tmp_path, "int one() => 1;\n", "lib/a.dart")
-    project(tmp_path, "int two() {\n  return 2;\n}\n", "lib/b.dart")
-    result = check(tmp_path, {"lib/b.dart": {1: 1, 2: 1}}, DART, 8, Scope())
-    assert [(p, f.name) for p, f in result.offenders] == [("lib/a.dart", "(unread code)")]
-    assert result.evaluated == 2
 
 
 def test_a_function_with_branches_but_no_measured_lines_counts_as_uncovered(tmp_path: Path) -> None:
@@ -289,43 +183,3 @@ def test_a_function_with_branches_but_no_measured_lines_counts_as_uncovered(tmp_
     ((_, f),) = check(tmp_path, {"mod.py": hits}, PY, 8, Scope()).offenders
     assert (f.name, f.coverage) == ("h", 0.0)
     assert check(tmp_path, {"mod.py": hits}, PY, 8, Scope()).evaluated == 2
-
-
-DART_ARROW = "int one() => 1;\nclass A {\n  int m(int x) {\n    return x;\n  }\n}\n"
-
-
-def test_dart_lines_outside_every_parsed_function_that_never_ran_are_unread_code() -> None:
-    hits = {1: 0, 4: 1}  # `one` is an arrow function the reader cannot see; its line never ran
-    fns = function_findings("a.dart", DART_ARROW, hits, parse_as="java")
-    assert [f.name for f in fns if f.name == "(unread code)"] == ["(unread code)"]
-    assert function_findings("a.dart", DART_ARROW, {1: 1, 4: 1}, parse_as="java")[-1].name != "(unread code)"
-
-
-def test_dart_comment_markers_inside_strings_do_not_hide_code() -> None:
-    src = "final a = 'x // y';\nfinal b = \"/* z\";\nfinal c = 1; // done\n"
-    ((unread,),) = [function_findings("a.dart", src, None, parse_as="java")]
-    assert (unread.name, unread.line) == ("(unread code)", 1)
-
-
-def test_dart_directives_must_be_whole_statements_to_be_ignored() -> None:
-    assert function_findings("a.dart", "import 'a.dart';\nexport 'b.dart';\nlibrary x;\n", None, parse_as="java") == []
-    (unread,) = function_findings("a.dart", "import 'a.dart'; var x = 1;\n", None, parse_as="java")
-    assert unread.name == "(unread code)"
-
-
-def test_dart_unread_code_is_reported_per_stretch_so_a_line_scope_sees_the_new_one() -> None:
-    src = "var a = 1;\n" + "var pad = 0;\n" * 8 + "var hidden = 2;\nint f() {\n  return 1;\n}\n"
-    hits = {1: 0, 10: 0, 12: 1, 13: 1}
-    unread = [f for f in function_findings("a.dart", src, hits, parse_as="java") if f.name == "(unread code)"]
-    assert [f.line for f in unread] == [1, 10]
-
-
-def test_dart_unmeasured_file_with_one_small_function_still_has_its_other_code_judged() -> None:
-    src = "int f() {\n  return 1;\n}\nvar hidden = 2;\n"
-    unread = [f for f in function_findings("a.dart", src, None, parse_as="java") if f.name == "(unread code)"]
-    assert [f.line for f in unread] == [4]
-
-
-def test_dart_statements_that_merely_start_with_a_directive_word_are_code() -> None:
-    (unread,) = function_findings("a.dart", "part.process(1);\n", None, parse_as="java")
-    assert unread.line == 1

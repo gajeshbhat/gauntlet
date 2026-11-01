@@ -18,7 +18,7 @@ cd your-project        # a git repository
 gauntlet init .
 ```
 
-This writes `gauntlet.toml`. If detection fails, create it with one line, such as `language = "go"`.
+This writes `gauntlet.toml`. If detection fails, create it with one line, such as `language = "python"`.
 
 ## 3. Run
 

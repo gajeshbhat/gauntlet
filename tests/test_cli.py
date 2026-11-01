@@ -9,7 +9,6 @@ from helpers import (
     Out,
     committed_py_project,
     git,
-    go_project,
     project,
     py_project,
 )
@@ -91,11 +90,6 @@ def test_arch_with_layers_matching_nothing_is_an_error(
     assert "no module belongs to any configured layer" in capsys.readouterr().err
 
 
-def test_go_arch_reports_package_without_a_line(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    assert cli_run("arch", go_project(tmp_path)) == 1
-    assert "m/domain: m/domain imports outer layer m/web" in capsys.readouterr().out
-
-
 # ---- clean
 def test_clean_fails_on_risky_function(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
     assert cli_run("clean", py_project(tmp_path)) == 1
@@ -137,35 +131,15 @@ def test_clean_scope_ranges(tmp_path: Path, cli_run: Callable[..., int]) -> None
     assert cli_run("clean", tmp_path, "--only", "mod.py:1-9") == 1
 
 
-def test_go_clean_fails_on_risky_function(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    assert cli_run("clean", go_project(tmp_path)) == 1
-    assert "lxd/device/disk.go:28: DiskMount CRAP 342.0 > 8" in capsys.readouterr().out
-
-
-def test_go_clean_scope_can_exclude_the_offender(tmp_path: Path, cli_run: Callable[..., int]) -> None:
-    assert cli_run("clean", go_project(tmp_path), "--only", "lxd/device/disk.go:90-99") == 0
-
-
-def test_go_missing_artifact_says_how_to_make_it(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "go"\n')
-    assert cli_run("clean", tmp_path) == 2
-    assert (
-        capsys.readouterr()
-        .err.strip()
-        .endswith("cover.out not found; produce it with: gauntlet run, or your test runner's gocover report")
-    )
-
-
 def test_artifacts_can_live_elsewhere(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
     root, art = tmp_path / "pilot", tmp_path / "art"
     art.mkdir()
     root.mkdir()
-    go_project(root)
-    for name in ("cover.out", "imports.txt"):
-        (art / name).write_text((root / name).read_text())
-        (root / name).unlink()
+    py_project(root)
+    (art / "coverage.json").write_text((root / "coverage.json").read_text())
+    (root / "coverage.json").unlink()
     assert cli_run("clean", root, "--artifacts", art) == 1
-    assert "DiskMount CRAP" in capsys.readouterr().out
+    assert "g CRAP" in capsys.readouterr().out
 
 
 # ---- harden
@@ -195,32 +169,23 @@ def test_harden_never_executes_anything_on_the_host(tmp_path: Path, capsys: Out,
     assert capsys.readouterr().err.endswith("(or: gauntlet run)\n")
 
 
-def test_go_harden_reads_gremlins_json(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    root = go_project(tmp_path)
-    muts = [{"type": "X", "status": "LIVED", "line": 3, "column": 1}]
-    (root / "mutation.json").write_text(json.dumps({"files": [{"file_name": "a.go", "mutations": muts}]}))
-    assert cli_run("harden", root) == 1
-    assert "a.go:3:1 X LIVED" in capsys.readouterr().out
-
-
-def test_an_unparsable_artifact_is_named_malformed_input(
-    tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (ValueError("Expecting value"), "gauntlet: malformed input: Expecting value\n"),
+        (TypeError("bad"), "gauntlet: malformed input: bad\n"),
+        (KeyError("files"), "gauntlet: malformed input, missing 'files'\n"),
+    ],
+)
+def test_an_artifact_the_reader_chokes_on_is_named_malformed_input(
+    monkeypatch: pytest.MonkeyPatch, capsys: Out, error: Exception, message: str
 ) -> None:
-    root = go_project(tmp_path)
-    (root / "mutation.json").write_text("not json")
-    assert cli_run("harden", root) == 2
-    assert capsys.readouterr().err.startswith("gauntlet: malformed input: Expecting value")
-    (root / "mutation.json").write_text("{}")
-    assert cli_run("harden", root) == 2
-    assert capsys.readouterr().err == "gauntlet: malformed input, missing 'files'\n"
+    def boom(args: object) -> int:
+        raise error
 
-
-def test_go_harden_uses_mutation_dir_for_scope(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    root = go_project(tmp_path, '[go]\nmutation_dir = "lxd/device"\n')
-    muts = [{"type": "X", "status": "LIVED", "line": 3, "column": 1}]
-    (root / "mutation.json").write_text(json.dumps({"files": [{"file_name": "a.go", "mutations": muts}]}))
-    assert cli_run("harden", root, "--only", "lxd/device/a.go:1-9") == 1
-    assert "lxd/device/a.go:3:1 X LIVED" in capsys.readouterr().out
+    monkeypatch.setattr(cli, "_dispatch", boom)
+    assert main(["clean"]) == 2
+    assert capsys.readouterr().err == message
 
 
 # ---- check, exclusions, json
@@ -329,7 +294,7 @@ def test_stamped_artifacts_pass_and_stale_ones_do_not(tmp_path: Path, capsys: Ou
 
 
 def test_stamp_needs_artifacts(tmp_path: Path, capsys: Out) -> None:
-    project(tmp_path, 'language = "go"\n')
+    project(tmp_path, 'language = "python"\n')
     git(tmp_path, "init", "-q", "-b", "main")
     assert main(["stamp", str(tmp_path)]) == 2
     assert "no artifacts to stamp" in capsys.readouterr().err
@@ -340,49 +305,23 @@ def test_gate_table_is_complete() -> None:
 
 
 # ---- every gate checks exactly its own artifacts
-def committed_go_project(root: Path) -> Path:
-    go_project(root)
-    (root / "mutation.json").write_text(json.dumps({"files": [{"file_name": "a.go", "mutations": []}]}))
-    git(root, "init", "-q", "-b", "main")
-    git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "x", "--no-gpg-sign")
-    return root
-
-
 @pytest.mark.parametrize(
     ("gate", "stamped", "uncovered"),
-    [
-        ("clean", ["imports.txt", "mutation.json"], "cover.out"),
-        ("arch", ["cover.out", "mutation.json"], "imports.txt"),
-        ("harden", ["cover.out", "imports.txt"], "mutation.json"),
-    ],
+    [("clean", ["mutmut-results.txt"], "coverage.json"), ("harden", ["coverage.json"], "mutmut-results.txt")],
 )
-def test_go_gates_refuse_artifacts_the_manifest_does_not_cover(
+def test_gates_refuse_artifacts_the_manifest_does_not_cover(
     tmp_path: Path, capsys: Out, gate: str, stamped: list[str], uncovered: str
 ) -> None:
     from gauntlet.provenance import stamp
 
-    root = committed_go_project(tmp_path)
+    root = committed_py_project(tmp_path)
+    (root / "coverage.json").write_text('{"files": {}}')
+    (root / "mutmut-results.txt").write_text(MUTMUT)
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "y", "--no-gpg-sign")
     stamp(root, root, stamped)
     assert main([gate, str(root)]) == 2
     assert f"{uncovered} is not covered by the manifest" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize(
-    ("gate", "missing", "how"),
-    [
-        ("clean", "cover.out", "gauntlet run, or your test runner's gocover report"),
-        ("arch", "imports.txt", "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."),
-        ("harden", "mutation.json", "gremlins unleash -o mutation.json ."),
-    ],
-)
-def test_missing_go_artifacts_say_how_to_make_them(
-    tmp_path: Path, capsys: Out, cli_run: Callable[..., int], gate: str, missing: str, how: str
-) -> None:
-    root = go_project(tmp_path)
-    (root / missing).unlink(missing_ok=True)
-    assert cli_run(gate, root) == 2
-    assert capsys.readouterr().err.strip() == f"gauntlet: {root / missing} not found; produce it with: {how}"
 
 
 def test_summaries_are_exact_and_follow_the_findings(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
@@ -415,9 +354,11 @@ def test_json_has_every_field(tmp_path: Path, cli_run: Callable[..., int]) -> No
 
 
 def test_stamp_lists_what_it_stamped(tmp_path: Path, capsys: Out) -> None:
-    root = committed_go_project(tmp_path)
+    root = committed_py_project(tmp_path)
+    (root / "coverage.json").write_text('{"files": {}}')
+    (root / "mutmut-results.txt").write_text(MUTMUT)
     assert main(["stamp", str(root)]) == 0
-    assert capsys.readouterr().out == "stamped cover.out, imports.txt, mutation.json\n"
+    assert capsys.readouterr().out == "stamped coverage.json, mutmut-results.txt\n"
 
 
 def test_check_fails_when_any_gate_fails(tmp_path: Path, cli_run: Callable[..., int]) -> None:
@@ -450,10 +391,10 @@ def test_source_defaults_to_root_and_can_differ(tmp_path: Path, capsys: Out) -> 
     git(src, "init", "-q", "-b", "main")
     git(src, "add", "-A")
     git(src, "commit", "-q", "-m", "x", "--no-gpg-sign")
-    go_project(pilot)
+    py_project(pilot)
     assert main(["stamp", str(pilot), "--source", str(src)]) == 0
     capsys.readouterr()
-    assert main(["clean", str(pilot), "--source", str(src)]) == 1  # verified, then found DiskMount
+    assert main(["clean", str(pilot), "--source", str(src)]) == 1  # verified, then found g
     (src / "a.py").write_text("x = 2\n")
     assert main(["clean", str(pilot), "--source", str(src)]) == 2
     assert "stale" in capsys.readouterr().err
@@ -516,11 +457,6 @@ def test_diagram_prints_mermaid_for_python(tmp_path: Path, capsys: Out, cli_run:
     (tmp_path / "domain" / "m.py").write_text("")
     assert cli_run("diagram", tmp_path) == 0
     assert capsys.readouterr().out == 'flowchart TD\n  L0["web"]\n  L1["domain"]\n  L0 --> L1\n'
-
-
-def test_diagram_marks_violations_for_go(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    assert cli_run("diagram", go_project(tmp_path)) == 0
-    assert "L1 -.->|violation| L0" in capsys.readouterr().out
 
 
 def test_diagram_needs_layers(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:

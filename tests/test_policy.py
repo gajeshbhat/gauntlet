@@ -16,7 +16,7 @@ def cfg(**kw: object) -> Config:
 def test_defaults_when_no_policy_file() -> None:
     p = policy.load(None)
     assert (p.crap_ceiling, p.mutation_floor, p.max_exclusions) == (8, 90, 10)
-    assert not (p.allow_unstamped or p.allow_config_excludes or p.allow_skipped_gates or p.require_pin)
+    assert not (p.allow_unstamped or p.allow_config_excludes or p.require_pin)
 
 
 def test_default_path_follows_xdg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -103,7 +103,7 @@ def test_config_load_rejects_unknown_keys(tmp_path: Path) -> None:
 
 
 def test_config_load_records_what_was_set_explicitly(tmp_path: Path) -> None:
-    c = load(make_config(tmp_path, 'language = "go"\n[crap]\nmax = 5\n'))
+    c = load(make_config(tmp_path, 'language = "python"\n[crap]\nmax = 5\n'))
     assert c.explicit == frozenset({"crap"})
 
 
@@ -156,7 +156,7 @@ def test_pin_overwrites_the_previous_pin(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     path = tmp_path / "policy.toml"
     first = policy.pin(policy.Policy(), config, path)
-    config.write_text('language = "go"\n')
+    config.write_text('language = "python"\nsrc = "x"\n')
     second = policy.pin(first, config, path)
     assert len(second.pins) == 1
     assert second.pins != first.pins
@@ -215,7 +215,7 @@ def test_every_policy_error_names_the_file(write_policy: Callable[[str], Path], 
 
 
 def test_each_boolean_defaults_to_false_and_each_can_be_set(write_policy: Callable[[str], Path]) -> None:
-    for key in ("allow_config_excludes", "allow_skipped_gates", "allow_unstamped", "require_pin"):
+    for key in ("allow_config_excludes", "allow_unstamped", "require_pin"):
         assert getattr(policy.load(write_policy("max_exclusions = 1\n")), key) is False
         assert getattr(policy.load(write_policy(f"{key} = true\n")), key) is True
 
@@ -246,8 +246,7 @@ def test_sandbox_settings_default_and_load(write_policy: Callable[[str], Path]) 
         ('docker_memory = "lots"\n', r"docker_memory must look like 512m or 4g"),
         ("docker_memory = 4\n", r"docker_memory must be a string"),
         ('[docker_images]\npython = "-v /:/x"\n', r"docker_images.python must be a container image name"),
-        ('[docker_images]\ngo = "a b"\n', r"docker_images.go must be a container image name"),
-        ('[docker_images]\ncobol = "img"\n', r"docker_images has unknown language 'cobol', expected one of python, go"),
+        ('[docker_images]\ncobol = "img"\n', r"docker_images has unknown language 'cobol', expected one of python"),
         ('docker_images = "img"\n', r"docker_images must be a table of language = image"),
         ('docker_image_agent = "--privileged"\n', r"docker_image_agent must be a container image name"),
     ],
@@ -259,6 +258,6 @@ def test_bad_sandbox_settings_are_errors(write_policy: Callable[[str], Path], te
 
 
 def test_docker_images_round_trip(write_policy: Callable[[str], Path]) -> None:
-    p = policy.load(write_policy('[docker_images]\npython = "me/py:1"\ngo = "golang:1.26"\n'))
-    assert p.docker_images == {"python": "me/py:1", "go": "golang:1.26"}
+    p = policy.load(write_policy('[docker_images]\npython = "me/py:1"\n'))
+    assert p.docker_images == {"python": "me/py:1"}
     assert policy.load(write_policy(policy.dump(p))) == p

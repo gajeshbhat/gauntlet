@@ -16,7 +16,6 @@ from gauntlet import (
     clean,
     diagram,
     exclusions,
-    golang,
     languages,
     linecov,
     loop,
@@ -35,8 +34,6 @@ from gauntlet.results import GateResult
 from gauntlet.safefs import read_artifact, read_text
 from gauntlet.sandbox import Sandbox
 from gauntlet.scope import Scope, parse
-
-IMPORTS_HOW = "go list -e -f '{{.ImportPath}} {{join .Imports \" \"}}' ./..."
 
 
 @dataclass(frozen=True)
@@ -60,13 +57,7 @@ def _arch_result(run: Run) -> arch.ArchResult:
     cfg = run.cfg
     if not cfg.layers:
         raise GauntletError("no layers configured: add [layers] order to gauntlet.toml")
-    if cfg.language not in ("python", "go"):
-        raise GauntletError(f"arch has no import reader for {cfg.language} yet")
-    if cfg.language == "go":
-        _trusted(run, ["imports.txt"])
-        result = golang.arch_check(read_artifact(run.art, "imports.txt", IMPORTS_HOW), cfg.layers)
-    else:
-        result = arch.check(run.root / cfg.src, cfg.layers)
+    result = arch.check(run.root / cfg.src, cfg.layers)
     if result.modules == 0:
         raise GauntletError("no module belongs to any configured layer; check [layers] and src")
     return result
@@ -103,20 +94,9 @@ def _clean(run: Run) -> GateResult:
     return GateResult("clean", not found, summary, found, {"functions": result.evaluated, "over": len(found)})
 
 
-def _harden_or_skip(run: Run) -> GateResult:
-    """For `run` and `loop`: no wired mutation tool is a failure, unless the operator's policy accepts it."""
-    if run.cfg.language in mutation.TOOLS:
-        return _harden(run)
-    ok = run.policy.allow_skipped_gates
-    note = "" if ok else " (set allow_skipped_gates = true in your policy to accept)"
-    return GateResult("harden", ok, f"harden: SKIPPED, no mutation tool is wired for {run.cfg.language} yet{note}")
-
-
 def _harden(run: Run) -> GateResult:
     cfg = run.cfg
-    tool = mutation.TOOLS.get(cfg.language)
-    if tool is None:
-        raise GauntletError(f"harden is not available for {cfg.language} yet")
+    tool = mutation.TOOLS[cfg.language]
     _trusted(run, [tool.artifact])
     m = tool.read(read_artifact(run.art, tool.artifact, tool.how), run.scope, cfg)
     ok = m.pct >= cfg.mutation_min
@@ -126,10 +106,7 @@ def _harden(run: Run) -> GateResult:
 
 def _exclusions(run: Run) -> GateResult:
     pragmas = exclusions.pragmas(run.source, run.cfg.language, run.scope)
-    if run.cfg.language == "python":
-        configured = exclusions.config_excludes(run.source)
-    else:
-        configured = exclusions.config_hints(run.source, run.cfg.language)
+    configured = exclusions.config_excludes(run.source)
     ok = len(pragmas) <= run.policy.max_exclusions and (run.policy.allow_config_excludes or not configured)
     summary = (
         f"exclusions: {len(pragmas)} comment(s) (budget {run.policy.max_exclusions}), "
@@ -237,14 +214,14 @@ def _stamp(run: Run) -> int:
 def _run_pipeline(run: Run) -> list[GateResult]:
     names = runner.produce(run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
     print(f"produced {', '.join(names)}")
-    return [*_check(run), _harden_or_skip(run)]
+    return [*_check(run), _harden(run)]
 
 
 def _evaluator(run: Run, workspace: Path, out: Path, approved: Path) -> Callable[[], list[GateResult]]:
     def evaluate() -> list[GateResult]:
         sub = replace(run, root=workspace, source=workspace, art=out / "artifacts", feature=approved)
         runner.produce(workspace, run.cfg, sub.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
-        return [*_check(sub), _harden_or_skip(sub), _spec(sub)]
+        return [*_check(sub), _harden(sub), _spec(sub)]
 
     return evaluate
 

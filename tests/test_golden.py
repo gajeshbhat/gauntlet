@@ -21,7 +21,7 @@ from gauntlet.spec import parse
 
 # ---- the commands that run in the sandbox
 def test_python_steps_in_full() -> None:
-    assert runner.steps(Config("python", src="src"), Path("/unused")) == [
+    assert runner.steps(Config("python", src="src")) == [
         Step(
             "tests",
             ("uv", "run", "--project", "/project", "--with", "pytest-cov==7.1.0", "pytest", "-q", "--cov=src",
@@ -50,52 +50,10 @@ def test_python_steps_in_full() -> None:
     ]  # fmt: skip
 
 
-def test_go_steps_in_full(tmp_path: Path) -> None:
-    env = (("GOBIN", "/project/.gauntlet-out/bin"), ("GOFLAGS", "-buildvcs=false"))
-    c = "-coverprofile=/project/.gauntlet-out/cover.out"
-    list_format = '{{.ImportPath}} {{join .Imports " "}}'
-    assert runner.steps(Config("go", packages=("./a/...", "./b/")), tmp_path) == [
-        Step("install-gremlins", ("go", "install", "github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"), None, 1800, True, env),
-        Step("tests", ("go", "test", "-count=1", c, "./a/...", "./b/"), None, 3600, True, env),
-        Step("imports", ("go", "list", "-e", "-f", list_format, "./a/...", "./b/"), "imports.txt", 1800, True, env),
-        Step(
-            "mutation",
-            ("/project/.gauntlet-out/bin/gremlins", "unleash", "-o", "/project/.gauntlet-out/mutation.json", "."),
-            None,
-            7200,
-            False,
-            env,
-        ),
-    ]  # fmt: skip
-
-
-def test_go_mutation_scope_excludes_every_other_file(tmp_path: Path) -> None:
-    (tmp_path / "pkg" / "sub").mkdir(parents=True)
-    for name in ("pkg/a.go", "pkg/b.go", "pkg/sub/c.go"):
-        (tmp_path / name).write_text("package x\n")
-    cfg = Config("go", mutation_dir="pkg", mutate_only=("a.go",))
-    mutation = {s.name: s for s in runner.steps(cfg, tmp_path)}["mutation"].argv
-    assert mutation == (
-        "/project/.gauntlet-out/bin/gremlins", "unleash", "-E", "^b\\.go$", "-E", "^sub/c\\.go$",
-        "-o", "/project/.gauntlet-out/mutation.json", "pkg",
-    )  # fmt: skip
-
-
-@pytest.mark.parametrize("bad", ["./a;b", "./$(x)", "./a b", "../a", "./a/../b", "a", "-race", "./a|b"])
-def test_unsafe_go_packages(bad: str, tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match=f"^unsafe package pattern {re.escape(repr(bad))}$"):
-        runner.steps(Config("go", packages=(bad,)), tmp_path)
-
-
-@pytest.mark.parametrize("good", ["./...", "./a/...", "./a/b/", "./a_b-c.d/..."])
-def test_safe_go_packages(good: str, tmp_path: Path) -> None:
-    runner.steps(Config("go", packages=(good,)), tmp_path)
-
-
 @pytest.mark.parametrize("bad", ["../x", "a/../b", "/abs", "a b", "a;b", "-x", ""])
 def test_unsafe_paths(bad: str) -> None:
     with pytest.raises(ValueError, match=f"^unsafe path {re.escape(repr(bad))}$"):
-        runner.steps(Config("python", src=bad), Path("/unused"))
+        runner.steps(Config("python", src=bad))
 
 
 # ---- the evidence report
@@ -106,7 +64,7 @@ def test_report_in_full() -> None:
     ]
     text = render(
         results,
-        language="go",
+        language="python",
         fingerprint="f" * 64,
         config_sha256="c" * 64,
         policy=Policy(crap_ceiling=7, mutation_floor=91, max_exclusions=3),
@@ -119,7 +77,7 @@ def test_report_in_full() -> None:
 
 Generated 2026-10-16T12:00:00+00:00 by gauntlet {version("gauntlet")}.
 
-- Language: go
+- Language: python
 - Source fingerprint: `{"f" * 64}`
 - gauntlet.toml sha256: `{"c" * 64}`
 - Policy: crap ceiling 7, mutation floor 91, exclusion budget 3
@@ -204,13 +162,6 @@ def test_exclusions_result_shape(tmp_path: Path, lax: Path) -> None:
             "stats": {"comments": 1, "config": 1},
         }
     ]
-
-
-def test_go_exclusions_ignore_python_config(tmp_path: Path, lax: Path) -> None:
-    (tmp_path / "gauntlet.toml").write_text('language = "go"\n')
-    (tmp_path / "pyproject.toml").write_text('[tool.coverage.run]\nomit = ["a.py"]\n')
-    (result,) = run_json(tmp_path, lax, "exclusions", str(tmp_path))
-    assert result["stats"] == {"comments": 0, "config": 0}
 
 
 def test_spec_result_shape(tmp_path: Path, lax: Path) -> None:

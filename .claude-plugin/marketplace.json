@@ -7,10 +7,10 @@
     {
       "name": "gauntlet",
       "source": "./",
-      "description": "Quality gates and an ephemeral-agent loop for Python and Go code written by AI agents"
+      "description": "Quality gates and an ephemeral-agent loop for Python code written by AI agents"
     }
   ],
   "metadata": {
-    "description": "Quality gates and an ephemeral-agent loop for Python and Go code written by AI agents"
+    "description": "Quality gates and an ephemeral-agent loop for Python code written by AI agents"
   }
 }

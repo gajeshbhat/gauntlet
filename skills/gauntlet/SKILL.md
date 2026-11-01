@@ -17,9 +17,9 @@ pass.
   "stale" means run again.
 - Exit codes: 0 pass; 1 gate failed; 2 refused or error (read the message); 3 spec awaiting approval.
 - Fix the cause: split complex functions, add missing tests, strengthen tests that let mutants survive. Never add
-  ignore comments (`# pragma: no cover|no mutate`, `nolint`, `nosec`), coverage `omit`, or relax a limit.
+  ignore comments (`# pragma: no cover|no mutate`, `nosec`), coverage `omit`, or relax a limit.
 - Agent loop: `gauntlet loop . --requirement "..."` writes a spec and stops (exit 3); show it and wait for approval.
   Then `gauntlet loop . --spec <approved.feature>` writes `.gauntlet-loop/loop.patch` and `EVIDENCE.md`. It needs
   `agent_command` in the policy and `CLAUDE_CODE_OAUTH_TOKEN` in that command's environment; never print or store it.
-- Dart: `harden: SKIPPED` fails unless the policy sets `allow_skipped_gates = true`. Tell the user; never set it.
+- Python only for now; other languages are archived at tag `v0.1-multilang` / branch `archive/multilang`.
 - Report gate output verbatim. The user reviews the patch (control files first) and applies it.

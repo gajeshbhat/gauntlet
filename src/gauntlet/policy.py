@@ -16,7 +16,7 @@ from gauntlet.config import Config
 from gauntlet.errors import GauntletError
 from gauntlet.names import ENV_NAME, IMAGE, MEMORY
 
-BOOLS = ("allow_config_excludes", "allow_skipped_gates", "allow_unstamped", "require_pin")
+BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin")
 INTS = ("crap_ceiling", "mutation_floor", "max_exclusions")
 RANGES = {"agent_timeout": (1, 86_400), "max_rounds": (1, 20)}
 LISTS = ("agent_command", "agent_env")
@@ -34,7 +34,6 @@ class Policy:
     crap_ceiling: int = 8  # repo crap.max may be lower, never higher
     mutation_floor: int = 90  # repo mutation.min_score may be higher, never lower
     max_exclusions: int = 10  # budget of `pragma: no mutate|cover` / nolint / nosec in scope
-    allow_skipped_gates: bool = False  # let a gate with no tool for the language (harden) pass as skipped
     allow_config_excludes: bool = False  # coverage `omit` / mutmut `do_not_mutate` in the repo config
     allow_unstamped: bool = False  # accept artifacts with no provenance manifest
     require_pin: bool = False  # refuse a gauntlet.toml that was never pinned

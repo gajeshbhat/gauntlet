@@ -9,7 +9,6 @@ order = [
   "gauntlet.runner",
   "gauntlet.backends",
   "gauntlet.mutation",
-  "gauntlet.golang",
   "gauntlet.spec",
   "gauntlet.diagram",
   "gauntlet.scaffold",

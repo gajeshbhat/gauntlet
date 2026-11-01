@@ -57,12 +57,10 @@ gauntlet prefers Workshop, else Docker. In your policy, set `sandbox = "docker"`
 If the stock image can't build your project, make the artifacts yourself:
 
 ```sh
-# Go, for example:
-go test -coverprofile=cover.out ./...
-go list -e -f '{{.ImportPath}} {{join .Imports " "}}' ./... > imports.txt
-gremlins unleash -o mutation.json .
+pytest --cov=src --cov-branch --cov-report=json:coverage.json
+mutmut run && mutmut results --all true > mutmut-results.txt
 gauntlet stamp .
 gauntlet check . --artifacts .
 ```
 
-`--artifacts .` stops `check` reading `.gauntlet/`. File names: [languages table](reference.md#languages).
+`--artifacts .` stops `check` reading `.gauntlet/`. File names: [languages](reference.md#languages).

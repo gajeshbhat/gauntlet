@@ -9,11 +9,10 @@ from gauntlet import languages
 from gauntlet.errors import GauntletError
 
 KEYS = {
-    "": {"language", "src", "crap", "mutation", "layers", "go"},
+    "": {"language", "src", "crap", "mutation", "layers"},
     "crap": {"max"},
     "mutation": {"min_score"},
     "layers": {"order"},
-    "go": {"mutation_dir", "packages", "mutate_only"},
 }
 
 
@@ -24,9 +23,6 @@ class Config:
     mutation_min: int = 90
     layers: tuple[str, ...] = ()  # outermost first; dependencies only point inward
     src: str = "."  # where module names are rooted for the arch gate
-    mutation_dir: str = ""  # Go: directory gremlins ran on; its file names are relative to it
-    packages: tuple[str, ...] = ("./...",)  # Go: package patterns the sandbox tests and lists
-    mutate_only: tuple[str, ...] = ()  # Go: files (relative to mutation_dir) to mutate; empty means all
     explicit: frozenset[str] = frozenset()  # sections the repo set itself ("crap", "mutation"); the rest are defaults
 
 
@@ -77,8 +73,5 @@ def load(path: Path) -> Config:
         mutation_min=_int(path, sections["mutation"], "min_score", Config.mutation_min, 0, 100),
         layers=_strings(path, sections["layers"], "order", (), "layers.order"),
         src=_text(path, top, "src", Config.src),
-        mutation_dir=_text(path, sections["go"], "mutation_dir", Config.mutation_dir),
-        packages=_strings(path, sections["go"], "packages", Config.packages),
-        mutate_only=_strings(path, sections["go"], "mutate_only", Config.mutate_only),
         explicit=frozenset(n for n, key in (("crap", "max"), ("mutation", "min_score")) if key in sections[n]),
     )

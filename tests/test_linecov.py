@@ -3,92 +3,16 @@ import pytest
 from gauntlet import linecov
 
 COVERAGEPY = '{"files": {"src/a.py": {"executed_lines": [1, 2], "missing_lines": [4]}}}'
-GOCOVER = """mode: set
-example.com/m/pkg/a.go:3.10,5.2 2 1
-example.com/m/pkg/a.go:7.14,9.2 1 0
-"""
-LCOV = """TN:
-SF:src/a.js
-FN:1,f
-DA:1,3
-DA:2,0
-DA:4,1
-end_of_record
-SF:/project/src/b.js
-DA:1,0
-end_of_record
-"""
-COBERTURA = """<?xml version="1.0"?>
-<coverage><packages><package><classes>
-<class filename="src/Foo.cs"><lines><line number="3" hits="2"/><line number="4" hits="0"/></lines></class>
-</classes></package></packages></coverage>
-"""
-JACOCO = """<?xml version="1.0"?>
-<report name="x"><package name="com/x"><sourcefile name="Foo.java">
-<line nr="3" mi="0" ci="4" mb="0" cb="0"/><line nr="4" mi="2" ci="0" mb="0" cb="0"/><line nr="6" mi="0" ci="0" mb="0" cb="0"/>
-</sourcefile></package></report>
-"""
 
 
 def test_coveragepy() -> None:
     assert linecov.parse("coveragepy", COVERAGEPY) == {"src/a.py": {1: 1, 2: 1, 4: 0}}
 
 
-def test_go_profile_marks_every_line_of_a_block() -> None:
-    lines = linecov.parse("gocover", GOCOVER)
-    assert lines == {"example.com/m/pkg/a.go": {3: 1, 4: 1, 5: 1, 7: 0, 8: 0, 9: 0}}
-
-
-def test_go_profile_counts_a_line_hit_if_any_block_on_it_ran() -> None:
-    text = "mode: set\nm/a.go:3.1,3.9 1 0\nm/a.go:3.10,4.2 1 1\n"
-    assert linecov.parse("gocover", text) == {"m/a.go": {3: 1, 4: 1}}
-
-
-def test_lcov_keeps_absolute_paths_as_written() -> None:
-    assert linecov.parse("lcov", LCOV) == {"src/a.js": {1: 3, 2: 0, 4: 1}, "/project/src/b.js": {1: 0}}
-
-
-def test_cobertura() -> None:
-    assert linecov.parse("cobertura", COBERTURA) == {"src/Foo.cs": {3: 2, 4: 0}}
-
-
-def test_jacoco_only_lines_with_instructions_are_executable() -> None:
-    assert linecov.parse("jacoco", JACOCO) == {"com/x/Foo.java": {3: 4, 4: 0}}
-
-
-@pytest.mark.parametrize("fmt", ["cobertura", "jacoco"])
-def test_xml_with_entities_or_doctype_is_refused(fmt: str) -> None:
-    evil = '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaa">]><coverage>&a;</coverage>'
-    with pytest.raises(ValueError, match="DOCTYPE or entity"):
-        linecov.parse(fmt, evil)
-
-
-def test_jacoco_stock_doctype_is_accepted_but_nothing_wider() -> None:
-    stock = JACOCO.replace("?>\n", "?>" + linecov.JACOCO_DOCTYPE, 1)
-    assert linecov.parse("jacoco", stock) == {"com/x/Foo.java": {3: 4, 4: 0}}
-    wider = linecov.JACOCO_DOCTYPE.replace('"report.dtd">', '"report.dtd" [<!ENTITY a "b">]>')
-    with pytest.raises(ValueError, match="DOCTYPE or entity"):
-        linecov.parse("jacoco", JACOCO.replace("?>\n", "?>" + wider, 1))
-
-
-@pytest.mark.parametrize("fmt", ["cobertura", "jacoco"])
-def test_malformed_xml_is_a_clean_error(fmt: str) -> None:
-    with pytest.raises(ValueError, match=f"cannot read {fmt} report"):
-        linecov.parse(fmt, "<coverage><oops>")
-
-
-@pytest.mark.parametrize(
-    ("fmt", "text"),
-    [
-        ("coveragepy", "garbage: [[["),
-        ("coveragepy", '{"files": {"a.py": {}}}'),
-        ("gocover", "mode: set\nnot a block\n"),
-        ("lcov", "DA:notanumber,x\n"),
-    ],
-)
-def test_malformed_text_reports_are_clean_errors(fmt: str, text: str) -> None:
-    with pytest.raises(ValueError, match=f"^cannot read {fmt} report$"):
-        linecov.parse(fmt, text)
+@pytest.mark.parametrize("text", ["garbage: [[[", '{"files": {"a.py": {}}}'])
+def test_malformed_reports_are_clean_errors(text: str) -> None:
+    with pytest.raises(ValueError, match="^cannot read coveragepy report$"):
+        linecov.parse("coveragepy", text)
 
 
 def test_unknown_format() -> None:
@@ -97,17 +21,16 @@ def test_unknown_format() -> None:
 
 
 def test_empty_reports_are_empty_not_errors() -> None:
-    assert linecov.parse("lcov", "") == {}
-    assert linecov.parse("gocover", "mode: set\n") == {}
+    assert linecov.parse("coveragepy", '{"files": {}}') == {}
 
 
 @pytest.mark.parametrize(
     ("key", "files", "expected"),
     [
         ("src/a.py", ["src/a.py", "src/b.py"], "src/a.py"),
-        ("com/x/Foo.java", ["src/main/java/com/x/Foo.java"], "src/main/java/com/x/Foo.java"),
-        ("/project/src/b.js", ["src/b.js"], "src/b.js"),
-        ("/home/me/proj/src/b.js", ["src/b.js"], "src/b.js"),
+        ("pkg/a.py", ["src/pkg/a.py"], "src/pkg/a.py"),
+        ("/project/src/b.py", ["src/b.py"], "src/b.py"),
+        ("/home/me/proj/src/b.py", ["src/b.py"], "src/b.py"),
     ],
 )
 def test_coverage_paths_match_source_files_by_path_suffix(key: str, files: list[str], expected: str) -> None:
@@ -115,12 +38,12 @@ def test_coverage_paths_match_source_files_by_path_suffix(key: str, files: list[
 
 
 def test_a_name_that_only_ends_the_same_is_not_a_match() -> None:
-    assert linecov.locate("a.go", ["pkg/data.go", "pkg/beta.go"]) is None
+    assert linecov.locate("a.py", ["pkg/data.py", "pkg/beta.py"]) is None
 
 
 def test_ambiguous_suffix_is_an_error() -> None:
     with pytest.raises(ValueError, match="matches more than one file"):
-        linecov.locate("a.go", ["x/a.go", "y/a.go"])
+        linecov.locate("a.py", ["x/a.py", "y/a.py"])
 
 
 @pytest.mark.parametrize("key", ["../secret.py", "a/../../secret.py", "/project/../etc/passwd"])
@@ -129,60 +52,7 @@ def test_paths_that_climb_out_are_refused(key: str) -> None:
         linecov.locate(key, ["secret.py"])
 
 
-@pytest.mark.parametrize("block", ["a.go:9.1,3.2 1 1", "a.go:1.1,9000000.2 1 1"], ids=["backwards", "too-many-lines"])
-def test_go_profile_refuses_implausible_blocks(block: str) -> None:
-    with pytest.raises(ValueError, match="implausible block"):
-        linecov.gocover(f"mode: set\n{block}\n")
-
-
-def test_go_profile_caps_the_total_across_blocks() -> None:
-    blocks = "".join(f"a.go:1.1,{3_000_000}.2 1 1\n" for _ in range(2))
-    with pytest.raises(ValueError, match="implausible block"):
-        linecov.gocover("mode: set\n" + blocks)
-
-
-def test_a_go_module_prefix_is_ignored_and_the_longest_path_wins() -> None:
-    files = ["main.go", "cmd/tool/main.go"]
-    assert linecov.locate("example.com/m/cmd/tool/main.go", files, prefixed=True) == "cmd/tool/main.go"
-    assert linecov.locate("example.com/m/main.go", files, prefixed=True) == "main.go"
-    assert linecov.locate("example.com/m/pkg/a.go", ["pkg/a.go", "other/a.go"], prefixed=True) == "pkg/a.go"
-
-
 def test_extra_leading_directories_are_only_accepted_where_a_report_legitimately_has_them() -> None:
-    assert linecov.locate("extra/index.js", ["index.js"]) is None  # a relative path with a prefix: not ours
-    assert linecov.locate("/home/me/proj/index.js", ["index.js"]) == "index.js"  # a host path outside the container
-    assert linecov.locate("/home/me/proj/node_modules/foo/index.js", ["index.js"]) is None  # a dependency
-
-
-def test_lcov_keeps_the_best_hit_count_when_a_line_is_reported_twice() -> None:
-    text = "SF:a.c\nDA:3,0\nend_of_record\nSF:a.c\nDA:3,2\nDA:3,0\nend_of_record\n"
-    assert linecov.parse("lcov", text) == {"a.c": {3: 2}}
-
-
-def test_cobertura_keeps_the_unrun_count_when_two_classes_report_one_line() -> None:
-    xml = (
-        "<coverage><packages><package><classes>"
-        '<class filename="/project/A.cs"><lines><line number="4" hits="3"/></lines></class>'
-        '<class filename="/project/A.cs"><lines><line number="4" hits="0"/><line number="5" hits="1"/></lines></class>'
-        "</classes></package></packages></coverage>"
-    )
-    assert linecov.parse("cobertura", xml) == {"/project/A.cs": {4: 0, 5: 1}}
-
-
-def test_cobertura_filenames_are_resolved_against_the_single_source_root() -> None:
-    xml = (
-        "<coverage><sources><source>/</source></sources><packages><package><classes>"
-        '<class filename="project/src/A.cs"><lines><line number="6" hits="1"/></lines></class>'
-        '<class filename="/abs/B.cs"><lines><line number="1" hits="0"/></lines></class>'
-        "</classes></package></packages></coverage>"
-    )
-    assert linecov.parse("cobertura", xml) == {"/project/src/A.cs": {6: 1}, "/abs/B.cs": {1: 0}}
-
-
-def test_cobertura_with_several_sources_leaves_filenames_as_written() -> None:
-    xml = (
-        "<coverage><sources><source>/a</source><source>/b</source></sources><packages><package><classes>"
-        '<class filename="x/A.cs"><lines><line number="6" hits="1"/></lines></class>'
-        "</classes></package></packages></coverage>"
-    )
-    assert linecov.parse("cobertura", xml) == {"x/A.cs": {6: 1}}
+    assert linecov.locate("extra/index.py", ["index.py"]) is None  # a relative path with a prefix: not ours
+    assert linecov.locate("/home/me/proj/index.py", ["index.py"]) == "index.py"  # a host path outside the container
+    assert linecov.locate("/home/me/proj/.venv/foo/index.py", ["index.py"]) is None  # a dependency

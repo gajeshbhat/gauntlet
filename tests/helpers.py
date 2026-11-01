@@ -15,17 +15,6 @@ from gauntlet.sandbox import ExecResult
 BRANCHY = "def g(x):\n" + "".join(f"    if x == {i}:\n        return {i}\n" for i in range(1, 8)) + "    return 0\n"
 
 
-def _go_branches(name: str, count: int) -> list[str]:
-    body = [line for i in range(count) for line in (f"\tif x == {i} {{", f"\t\treturn {i}", "\t}")]
-    return [f"func {name}(x int) int {{", *body, "\treturn 0", "}"]
-
-
-GO_SOURCE = "\n".join(
-    ["package device", *[""] * 26, *_go_branches("DiskMount", 17), *[""] * 13, *_go_branches("Small", 5)]
-)
-GO_COVER = (
-    "mode: set\nexample.com/m/lxd/device/disk.go:28.1,81.2 1 0\nexample.com/m/lxd/device/disk.go:95.1,112.2 1 1\n"
-)
 Out = pytest.CaptureFixture[str]
 
 
@@ -41,15 +30,6 @@ def py_project(root: Path, toml: str = 'language = "python"\n', covered: bool = 
     executed = list(range(1, 17)) if covered else [1]
     cov = {"files": {"mod.py": {"executed_lines": executed, "missing_lines": missing}}}
     (root / "coverage.json").write_text(json.dumps(cov))
-    return root
-
-
-def go_project(root: Path, extra: str = "") -> Path:
-    project(root, 'language = "go"\n[layers]\norder = ["m/web", "m/domain"]\n' + extra)
-    (root / "lxd" / "device").mkdir(parents=True)
-    (root / "lxd" / "device" / "disk.go").write_text(GO_SOURCE + "\n")
-    (root / "cover.out").write_text(GO_COVER)
-    (root / "imports.txt").write_text("m/domain m/web\n")
     return root
 
 
