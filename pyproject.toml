@@ -1,26 +1,19 @@
 [project]
-name = "gauntlet"
+name = "gauntlet-workspace"
 version = "0.1.0"
-description = "Agent-agnostic quality gates and ephemeral-agent loop"
-authors = [
-    { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
-]
+description = "Dev workspace for gauntlet (not published)"
 requires-python = ">=3.12"
-license = "MIT"
-license-files = ["LICENSE"]
-dependencies = [
-    "lizard>=1.24.1",
-]
+dependencies = ["gauntlet-core", "gauntlet-python"]
 
-[project.scripts]
-gauntlet = "gauntlet:main"
+[tool.uv]
+package = false
 
-[project.entry-points."gauntlet.languages"]
-python = "gauntlet.pylang:LANGUAGE"
+[tool.uv.workspace]
+members = ["packages/*"]
 
-[build-system]
-requires = ["uv_build>=0.12.21,<0.13.0"]
-build-backend = "uv_build"
+[tool.uv.sources]
+gauntlet-core = { workspace = true }
+gauntlet-python = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -34,24 +27,26 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+src = ["packages/gauntlet-core/src", "packages/gauntlet-sandbox/src", "packages/gauntlet-python/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["E501"]  # test data tables read better on one line
+"**/tests/**" = ["E501"]  # test data tables read better on one line
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8  # same ceiling the clean gate enforces on target repos
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["packages"]
+extraPaths = ["packages/gauntlet-core/src", "packages/gauntlet-sandbox/src", "packages/gauntlet-python/src"]
 typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]
-addopts = "--cov=gauntlet --cov-branch --cov-fail-under=100 --cov-report=term-missing --cov-report=json"
-testpaths = ["tests"]
+addopts = "--cov=gauntlet --cov=gauntlet_sandbox --cov=gauntlet_python --cov-branch --cov-fail-under=100 --cov-report=term-missing --cov-report=json"
+testpaths = ["packages/*/tests"]
 
 [tool.mutmut]
-source_paths = ["src/gauntlet/"]
+source_paths = ["packages/gauntlet-core/src/gauntlet/", "packages/gauntlet-sandbox/src/gauntlet_sandbox/", "packages/gauntlet-python/src/gauntlet_python/"]
 pytest_add_cli_args = ["--no-cov"]

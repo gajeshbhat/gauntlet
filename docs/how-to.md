@@ -64,3 +64,20 @@ gauntlet check . --artifacts .
 ```
 
 `--artifacts .` stops `check` reading `.gauntlet/`. File names: [languages](reference.md#languages).
+
+## Write a language plugin
+
+A plugin is a package that exposes one `gauntlet.plugin.Language` value as a `gauntlet.languages` entry point (see
+`packages/gauntlet-python` for a full example):
+
+```toml
+[project]
+dependencies = ["gauntlet-core"]
+
+[project.entry-points."gauntlet.languages"]
+go = "gauntlet_go:LANGUAGE"
+```
+
+The `Language` fields say which files are source and tests, the fixed sandbox `steps`, how to read the coverage and
+mutation artifacts, imports and comments for the arch and exclusion gates, and a starter `gauntlet.toml`. Core never
+imports a plugin; installing it next to `gauntlet-core` is enough.

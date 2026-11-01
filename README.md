@@ -11,7 +11,8 @@ You need `git`, [`uv`](https://docs.astral.sh/uv/) and a sandbox: [Workshop](htt
 (`sudo snap install workshop --classic`) on Linux, or Docker or Podman.
 
 ```sh
-uv tool install git+https://github.com/gajeshbhat/gauntlet
+uv tool install git+https://github.com/gajeshbhat/gauntlet#subdirectory=packages/gauntlet-core \
+  --with git+https://github.com/gajeshbhat/gauntlet#subdirectory=packages/gauntlet-python
 cd your-project                        # a git repository
 gauntlet init .                        # detect the language, write gauntlet.toml
 gauntlet run . --report EVIDENCE.md    # exit 0: every gate passed
@@ -32,6 +33,14 @@ In Claude Code 2.1.275 or later: `/plugin install gauntlet --marketplace gajeshb
 ```sh
 ./check.sh     # ruff, pyright (strict), pytest at 100% branch coverage, then gauntlet checks itself
 ```
+
+Layout (a uv workspace under `packages/`):
+
+- `gauntlet-core`: the gates and CLI (module `gauntlet`); knows no language.
+- `gauntlet-sandbox`: Workshop and Docker sandboxes (module `gauntlet_sandbox`); no dependencies.
+- `gauntlet-python`: the Python language plugin (module `gauntlet_python`).
+
+Each package's tests also run alone in `check.sh`; the `[layers]` rules in `gauntlet.toml` keep the dependencies pointing one way.
 
 ## Credits
 
