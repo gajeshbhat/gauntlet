@@ -52,12 +52,12 @@ def test_malformed_input_is_a_clean_error(tmp_path: Path, capsys: Out, cli_run: 
     py_project(tmp_path)
     (tmp_path / "coverage.json").write_text("{}")
     assert cli_run("clean", tmp_path) == 2
-    assert "cannot read coveragepy report" in capsys.readouterr().err
+    assert "cannot read fakecov report" in capsys.readouterr().err
 
 
 # ---- arch
 def test_arch_fails_on_outward_import(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n[layers]\norder = ["web", "domain"]\n')
+    project(tmp_path, 'language = "fake"\n[layers]\norder = ["web", "domain"]\n')
     (tmp_path / "web").mkdir()
     (tmp_path / "domain").mkdir()
     (tmp_path / "web" / "v.py").write_text("")
@@ -71,7 +71,7 @@ def test_arch_fails_on_outward_import(tmp_path: Path, capsys: Out, cli_run: Call
 def test_arch_checks_every_root_and_enforces_forbid_rules(
     tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
 ) -> None:
-    toml = 'language = "python"\n[layers]\norder = ["web", "domain"]\nroots = ["a", "b"]\nforbid = ["web -> domain"]\n'
+    toml = 'language = "fake"\n[layers]\norder = ["web", "domain"]\nroots = ["a", "b"]\nforbid = ["web -> domain"]\n'
     project(tmp_path, toml)
     (tmp_path / "a" / "web").mkdir(parents=True)
     (tmp_path / "b" / "domain").mkdir(parents=True)
@@ -84,14 +84,14 @@ def test_arch_checks_every_root_and_enforces_forbid_rules(
 
 
 def test_arch_passes_a_clean_tree(tmp_path: Path, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n[layers]\norder = ["web", "domain"]\n')
+    project(tmp_path, 'language = "fake"\n[layers]\norder = ["web", "domain"]\n')
     (tmp_path / "domain").mkdir()
     (tmp_path / "domain" / "m.py").write_text("")
     assert cli_run("arch", tmp_path) == 0
 
 
 def test_arch_without_layers_is_an_error_not_a_pass(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n')
+    project(tmp_path, 'language = "fake"\n')
     assert cli_run("arch", tmp_path) == 2
     assert "no layers configured" in capsys.readouterr().err
 
@@ -99,7 +99,7 @@ def test_arch_without_layers_is_an_error_not_a_pass(tmp_path: Path, capsys: Out,
 def test_arch_with_layers_matching_nothing_is_an_error(
     tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
 ) -> None:
-    project(tmp_path, 'language = "python"\n[layers]\norder = ["web", "domain"]\n')
+    project(tmp_path, 'language = "fake"\n[layers]\norder = ["web", "domain"]\n')
     (tmp_path / "other.py").write_text("")
     assert cli_run("arch", tmp_path) == 2
     assert "no module under . belongs to any configured layer" in capsys.readouterr().err
@@ -118,10 +118,10 @@ def test_clean_passes_when_functions_are_covered(tmp_path: Path, cli_run: Callab
 
 
 def test_clean_without_coverage_exits_2(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n')
+    project(tmp_path, 'language = "fake"\n')
     assert cli_run("clean", tmp_path) == 2
     assert (
-        "coverage.json not found; produce it with: gauntlet run, or your test runner's coveragepy report"
+        "coverage.json not found; produce it with: gauntlet run, or your test runner's fakecov report"
         in capsys.readouterr().err
     )
 
@@ -162,7 +162,7 @@ MUTMUT = "p.x_a__mutmut_1: killed\np.x_a__mutmut_2: survived\n"
 
 
 def test_harden_fails_below_threshold(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n[mutation]\nmin_score = 90\n')
+    project(tmp_path, 'language = "fake"\n[mutation]\nmin_score = 90\n')
     (tmp_path / "mutmut-results.txt").write_text(MUTMUT)
     assert cli_run("harden", tmp_path) == 1
     out = capsys.readouterr().out
@@ -171,7 +171,7 @@ def test_harden_fails_below_threshold(tmp_path: Path, capsys: Out, cli_run: Call
 
 
 def test_harden_passes_at_threshold(tmp_path: Path, capsys: Out, write_policy: Callable[[str], Path]) -> None:
-    project(tmp_path, 'language = "python"\n[mutation]\nmin_score = 50\n')
+    project(tmp_path, 'language = "fake"\n[mutation]\nmin_score = 50\n')
     (tmp_path / "mutmut-results.txt").write_text(MUTMUT)
     pol = write_policy("allow_unstamped = true\nmutation_floor = 50\n")
     assert main(["harden", str(tmp_path), "--policy", str(pol)]) == 0
@@ -179,7 +179,7 @@ def test_harden_passes_at_threshold(tmp_path: Path, capsys: Out, write_policy: C
 
 
 def test_harden_never_executes_anything_on_the_host(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n')
+    project(tmp_path, 'language = "fake"\n')
     assert cli_run("harden", tmp_path) == 2
     assert capsys.readouterr().err.endswith("(or: gauntlet run)\n")
 
@@ -205,7 +205,7 @@ def test_an_artifact_the_reader_chokes_on_is_named_malformed_input(
 
 # ---- check, exclusions, json
 def test_check_runs_arch_clean_and_exclusions(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    py_project(tmp_path, 'language = "python"\n[layers]\norder = ["web", "domain"]\n')
+    py_project(tmp_path, 'language = "fake"\n[layers]\norder = ["web", "domain"]\n')
     (tmp_path / "domain").mkdir()
     (tmp_path / "domain" / "m.py").write_text("import web\n")
     assert cli_run("check", tmp_path) == 1
@@ -235,7 +235,7 @@ def test_config_excludes_fail_unless_the_policy_allows_them(
     tmp_path: Path, write_policy: Callable[[str], Path]
 ) -> None:
     py_project(tmp_path, covered=True)
-    (tmp_path / "pyproject.toml").write_text('[tool.coverage.run]\nomit = ["mod.py"]\n')
+    (tmp_path / "excludes.txt").write_text("coverage omit mod.py\n")
     assert main(["exclusions", str(tmp_path), "--policy", str(write_policy("allow_unstamped = true\n"))]) == 1
     allowed = write_policy("allow_unstamped = true\nallow_config_excludes = true\n")
     assert main(["exclusions", str(tmp_path), "--policy", str(allowed)]) == 0
@@ -253,7 +253,7 @@ def test_json_output(tmp_path: Path, cli_run: Callable[..., int]) -> None:
 
 # ---- policy
 def test_repo_cannot_weaken_the_policy(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    py_project(tmp_path, 'language = "python"\n[crap]\nmax = 50\n', covered=True)
+    py_project(tmp_path, 'language = "fake"\n[crap]\nmax = 50\n', covered=True)
     assert cli_run("clean", tmp_path) == 2
     assert "weaker than the policy ceiling 8" in capsys.readouterr().err
 
@@ -270,7 +270,7 @@ def test_pin_then_edit_is_refused(tmp_path: Path, capsys: Out, write_policy: Cal
     pol = write_policy("allow_unstamped = true\n")
     assert main(["pin", str(tmp_path), "--policy", str(pol)]) == 0
     assert main(["clean", str(tmp_path), "--policy", str(pol)]) == 0
-    (tmp_path / "gauntlet.toml").write_text('language = "python"\n[crap]\nmax = 7\n')
+    (tmp_path / "gauntlet.toml").write_text('language = "fake"\n[crap]\nmax = 7\n')
     assert main(["clean", str(tmp_path), "--policy", str(pol)]) == 2
     assert "changed since it was pinned" in capsys.readouterr().err
 
@@ -309,7 +309,7 @@ def test_stamped_artifacts_pass_and_stale_ones_do_not(tmp_path: Path, capsys: Ou
 
 
 def test_stamp_needs_artifacts(tmp_path: Path, capsys: Out) -> None:
-    project(tmp_path, 'language = "python"\n')
+    project(tmp_path, 'language = "fake"\n')
     git(tmp_path, "init", "-q", "-b", "main")
     assert main(["stamp", str(tmp_path)]) == 2
     assert "no artifacts to stamp" in capsys.readouterr().err
@@ -385,13 +385,13 @@ def test_check_fails_when_any_gate_fails(tmp_path: Path, cli_run: Callable[..., 
 
 
 def test_errors_are_prefixed_and_exact(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n')
+    project(tmp_path, 'language = "fake"\n')
     assert cli_run("arch", tmp_path) == 2
     assert capsys.readouterr().err == "gauntlet: no layers configured: add [layers] order to gauntlet.toml\n"
 
 
 def test_harden_stats_are_reported(tmp_path: Path, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n')
+    project(tmp_path, 'language = "fake"\n')
     (tmp_path / "mutmut-results.txt").write_text("a: killed\n" * 19 + "b: survived\n")
     out = tmp_path / "r.json"
     assert cli_run("harden", tmp_path, "--json", out) == 0
@@ -465,7 +465,7 @@ def test_spec_gate_needs_the_file(tmp_path: Path, capsys: Out, cli_run: Callable
 
 
 def test_diagram_prints_mermaid_for_python(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n[layers]\norder = ["web", "domain"]\n')
+    project(tmp_path, 'language = "fake"\n[layers]\norder = ["web", "domain"]\n')
     (tmp_path / "web").mkdir()
     (tmp_path / "domain").mkdir()
     (tmp_path / "web" / "v.py").write_text("import domain.m\n")
@@ -475,7 +475,7 @@ def test_diagram_prints_mermaid_for_python(tmp_path: Path, capsys: Out, cli_run:
 
 
 def test_diagram_needs_layers(tmp_path: Path, capsys: Out, cli_run: Callable[..., int]) -> None:
-    project(tmp_path, 'language = "python"\n')
+    project(tmp_path, 'language = "fake"\n')
     assert cli_run("diagram", tmp_path) == 2
     assert "no layers configured" in capsys.readouterr().err
 
@@ -489,6 +489,6 @@ def test_evidence_report_from_a_gate_has_the_real_language_hash_and_time(
     report = tmp_path / "E.md"
     assert cli_run("clean", tmp_path, "--report", report) == 0
     text = report.read_text()
-    assert "- Language: python" in text
+    assert "- Language: fake" in text
     assert hashlib.sha256((tmp_path / "gauntlet.toml").read_bytes()).hexdigest() in text
     assert re.search(r"Generated \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00 by", text)

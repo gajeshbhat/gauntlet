@@ -14,46 +14,15 @@ from gauntlet.config import Config
 from gauntlet.policy import Policy
 from gauntlet.report import render
 from gauntlet.results import GateResult
-from gauntlet.runner import Step
 from gauntlet.snapshot import snapshot
 from gauntlet.spec import parse
 
 
 # ---- the commands that run in the sandbox
-def test_python_steps_in_full() -> None:
-    assert runner.steps(Config("python", src="src")) == [
-        Step(
-            "tests",
-            ("uv", "run", "--project", "/project", "--with", "pytest-cov==7.1.0", "pytest", "-q", "--cov=src",
-             "--cov-branch", "--cov-report=json:/project/.gauntlet-out/coverage.json"),
-            None,
-            3600,
-            True,
-            (),
-        ),
-        Step(
-            "mutation",
-            ("uv", "run", "--project", "/project", "--with", "mutmut==3.8.0", "mutmut", "run"),
-            None,
-            7200,
-            False,
-            (),
-        ),
-        Step(
-            "mutation-results",
-            ("uv", "run", "--project", "/project", "--with", "mutmut==3.8.0", "mutmut", "results", "--all", "true"),
-            "mutmut-results.txt",
-            1800,
-            True,
-            (),
-        ),
-    ]  # fmt: skip
-
-
 @pytest.mark.parametrize("bad", ["../x", "a/../b", "/abs", "a b", "a;b", "-x", ""])
 def test_unsafe_paths(bad: str) -> None:
     with pytest.raises(ValueError, match=f"^unsafe path {re.escape(repr(bad))}$"):
-        runner.steps(Config("python", src=bad))
+        runner.steps(Config("fake", src=bad))
 
 
 # ---- the evidence report
@@ -64,7 +33,7 @@ def test_report_in_full() -> None:
     ]
     text = render(
         results,
-        language="python",
+        language="fake",
         fingerprint="f" * 64,
         config_sha256="c" * 64,
         policy=Policy(crap_ceiling=7, mutation_floor=91, max_exclusions=3),
@@ -77,7 +46,7 @@ def test_report_in_full() -> None:
 
 Generated 2026-10-16T12:00:00+00:00 by gauntlet {version("gauntlet")}.
 
-- Language: python
+- Language: fake
 - Source fingerprint: `{"f" * 64}`
 - gauntlet.toml sha256: `{"c" * 64}`
 - Policy: crap ceiling 7, mutation floor 91, exclusion budget 3
@@ -133,7 +102,7 @@ def run_json(tmp_path: Path, lax: Path, *argv: str) -> list[dict[str, object]]:
 
 def test_arch_result_shape(tmp_path: Path, lax: Path) -> None:
     root = committed(tmp_path / "r", {})
-    (root / "gauntlet.toml").write_text('language = "python"\n[layers]\norder = ["web", "domain"]\n')
+    (root / "gauntlet.toml").write_text('language = "fake"\n[layers]\norder = ["web", "domain"]\n')
     (root / "web").mkdir()
     (root / "domain").mkdir()
     (root / "web" / "v.py").write_text("")
@@ -150,22 +119,22 @@ def test_arch_result_shape(tmp_path: Path, lax: Path) -> None:
 
 
 def test_exclusions_result_shape(tmp_path: Path, lax: Path) -> None:
-    (tmp_path / "gauntlet.toml").write_text('language = "python"\n')
+    (tmp_path / "gauntlet.toml").write_text('language = "fake"\n')
     (tmp_path / "a.py").write_text("x = 1  # nosec\n")
-    (tmp_path / "pyproject.toml").write_text('[tool.coverage.run]\nomit = ["a.py"]\n')
+    (tmp_path / "excludes.txt").write_text("coverage omit a.py\n")
     assert run_json(tmp_path, lax, "exclusions", str(tmp_path)) == [
         {
             "gate": "exclusions",
             "ok": False,
             "summary": "exclusions: 1 comment(s) (budget 10), 1 config exclude(s)",
-            "findings": ["a.py:1: x = 1  # nosec", "pyproject.toml: coverage omit a.py"],
+            "findings": ["a.py:1: x = 1  # nosec", "excludes.txt: coverage omit a.py"],
             "stats": {"comments": 1, "config": 1},
         }
     ]
 
 
 def test_spec_result_shape(tmp_path: Path, lax: Path) -> None:
-    (tmp_path / "gauntlet.toml").write_text('language = "python"\n')
+    (tmp_path / "gauntlet.toml").write_text('language = "fake"\n')
     (tmp_path / "test_x.py").write_text("def test_it(): pass\n")
     (tmp_path / "spec.feature").write_text(
         "Feature: f\n  @test(test_x.py::test_it)\n  Scenario: s\n    When a\n    Then b\n"
@@ -184,7 +153,7 @@ def test_spec_result_shape(tmp_path: Path, lax: Path) -> None:
 def test_arch_with_layers_matching_nothing_message(
     tmp_path: Path, lax: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (tmp_path / "gauntlet.toml").write_text('language = "python"\n[layers]\norder = ["web"]\n')
+    (tmp_path / "gauntlet.toml").write_text('language = "fake"\n[layers]\norder = ["web"]\n')
     assert main(["arch", str(tmp_path), "--policy", str(lax)]) == 2
     assert (
         capsys.readouterr().err

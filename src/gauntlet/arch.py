@@ -1,15 +1,15 @@
 """Arch gate: modules may import their own layer or inner layers, never outer ones.
 
 `layers` is outermost first (e.g. web, service, domain). Each entry is a dotted module prefix.
-ponytail: Python `ast` scan, no import-linter; add it if indirect-import analysis is needed.
+Imports are read by the language plugin; direct imports only, no indirect-import analysis.
 """
 
-import ast
 from dataclasses import dataclass
 from pathlib import Path
 
 from gauntlet.config import Rule
 from gauntlet.errors import GauntletError
+from gauntlet.plugin import Language
 from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text
 
 
@@ -20,31 +20,6 @@ class Violation:
     source: str
     target: str
     forbidden: bool = False  # a `forbid` rule, not the layer order
-
-
-def _resolve(node: ast.ImportFrom, package: list[str]) -> str:
-    if node.level == 0:
-        return node.module or ""  # pragma: no mutate (module is only None for relative imports)
-    base = package[: len(package) - (node.level - 1)]
-    return ".".join([*base, *([node.module] if node.module else [])])
-
-
-def _imports_at(source: str, package: list[str]) -> list[tuple[int, str]]:
-    found: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.Import):
-            found += [(node.lineno, a.name) for a in node.names]
-        elif isinstance(node, ast.ImportFrom):
-            base = _resolve(node, package)
-            found += [(node.lineno, f"{base}.{a.name}" if base else a.name) for a in node.names]
-            if base:
-                found.append((node.lineno, base))
-    return found
-
-
-def imports(source: str, package: str) -> set[str]:
-    """Names imported by `source` living in dotted `package` (where relative imports resolve)."""
-    return {name for _, name in _imports_at(source, package.split(".") if package else [])}
 
 
 def layer_of(module: str, layers: tuple[str, ...], sep: str = ".") -> int | None:
@@ -93,27 +68,31 @@ def _edges(own: int, layers: tuple[str, ...], found: list[tuple[int, str]]) -> s
     return {(own, t) for t in targets if t is not None and t != own}
 
 
-def _imports_of(root: Path, rel: Path, package: list[str], max_bytes: int) -> list[tuple[int, str]]:
+def _imports_of(root: Path, rel: Path, language: Language, package: list[str], max_bytes: int) -> list[tuple[int, str]]:
     try:
-        return _imports_at(read_text(inside(root, str(rel)), max_bytes), package)
-    except (SyntaxError, RecursionError, MemoryError) as e:
-        raise GauntletError(f"cannot analyse {rel}: {type(e).__name__}") from None
+        return language.imports(read_text(inside(root, str(rel)), max_bytes), package)
+    except GauntletError as e:
+        raise GauntletError(f"cannot analyse {rel}: {e}") from None
 
 
 def check(
-    root: Path, layers: tuple[str, ...], max_bytes: int = MAX_SOURCE_BYTES, forbid: tuple[Rule, ...] = ()
+    root: Path,
+    layers: tuple[str, ...],
+    language: Language,
+    max_bytes: int = MAX_SOURCE_BYTES,
+    forbid: tuple[Rule, ...] = (),
 ) -> ArchResult:
     modules = 0
     violations: list[Violation] = []
     edges: set[tuple[int, int]] = set()
-    for path in sorted(root.rglob("*.py")):
+    for path in sorted(p for suffix in language.suffixes for p in root.rglob(f"*{suffix}")):
         rel = path.relative_to(root)
         parts = rel.with_suffix("").parts
         module = ".".join(parts)  # a package __init__ is "pkg.__init__", still inside layer "pkg"
         own = layer_of(module, layers)
         if own is not None:
             modules += 1
-            found = _imports_of(root, rel, list(parts[:-1]), max_bytes)
+            found = _imports_of(root, rel, language, list(parts[:-1]), max_bytes)
             violations += _violations(rel, layers, own, found) + _forbidden(rel, module, forbid, found)
             edges |= _edges(own, layers, found)
     return ArchResult(modules, violations, frozenset(edges))
@@ -128,10 +107,10 @@ def _merge(results: list[ArchResult]) -> ArchResult:
 
 
 def check_roots(
-    base: Path, roots: tuple[str, ...], layers: tuple[str, ...], forbid: tuple[Rule, ...] = ()
+    base: Path, roots: tuple[str, ...], layers: tuple[str, ...], language: Language, forbid: tuple[Rule, ...] = ()
 ) -> ArchResult:
     """`check` every root under `base`; each must hold at least one layered module, or the gate saw nothing there."""
-    results = [check(base / root, layers, forbid=forbid) for root in roots]
+    results = [check(base / root, layers, language, forbid=forbid) for root in roots]
     for root, r in zip(roots, results, strict=True):
         if r.modules == 0:
             raise GauntletError(f"no module under {root} belongs to any configured layer; check [layers] and roots")

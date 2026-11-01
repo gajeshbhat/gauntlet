@@ -16,7 +16,7 @@ def repo(tmp_path: Path) -> Path:
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
     (root / "a.py").write_text("x = 1\n")
-    (root / "gauntlet.toml").write_text('language = "python"\n')
+    (root / "gauntlet.toml").write_text('language = "fake"\n')
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "init", "--no-gpg-sign")
     return root
@@ -78,7 +78,7 @@ def test_workspace_is_a_separate_git_repo_with_a_baseline(repo: Path, tmp_path: 
 
 def test_control_files_in_a_patch_are_flagged(repo: Path, tmp_path: Path) -> None:
     ws = loop.prepare_workspace(repo, tmp_path / "ws")
-    (ws / "gauntlet.toml").write_text('language = "python"\n[crap]\nmax = 99\n')
+    (ws / "gauntlet.toml").write_text('language = "fake"\n[crap]\nmax = 99\n')
     (ws / ".workshop").mkdir()
     (ws / ".workshop" / "x.yaml").write_text("x")
     (ws / "a.py").write_text("x = 3\n")

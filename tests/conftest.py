@@ -2,8 +2,17 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from fakelang import FAKE
 
+from gauntlet import languages
 from gauntlet.cli import main
+
+
+@pytest.fixture(autouse=True)
+def fake_languages(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Core tests see one fake language; only the test_pylang* modules use the real, installed plugins."""
+    if not request.path.name.startswith("test_pylang"):
+        monkeypatch.setattr(languages, "registry", lambda: {"fake": FAKE})
 
 
 @pytest.fixture(autouse=True)

@@ -25,13 +25,13 @@ Feature: Gates hold for Python
     When the clean gate walks the project
     Then it is held to the CRAP limit like any source file
 
-  @test(tests/test_exclusions.py::test_include_and_omit_settings_that_narrow_coverage_are_exclusions)
+  @test(tests/test_pylang_excludes.py::test_include_and_omit_settings_that_narrow_coverage_are_exclusions)
   Scenario: Coverage settings that hide code are reported
     Given a project whose coverage config omits files
     When the exclusions gate scans it
     Then the setting is listed as a config exclude
 
-  @test(tests/test_scaffold.py::test_python_project_with_a_src_layout)
+  @test(tests/test_pylang_scaffold.py::test_python_project_with_a_src_layout)
   Scenario: Init detects a Python project
     Given a project with a pyproject.toml
     When gauntlet init runs

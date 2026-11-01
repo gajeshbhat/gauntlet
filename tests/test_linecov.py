@@ -1,27 +1,18 @@
 import pytest
+from fakelang import FAKE
 
 from gauntlet import linecov
-
-COVERAGEPY = '{"files": {"src/a.py": {"executed_lines": [1, 2], "missing_lines": [4]}}}'
-
-
-def test_coveragepy() -> None:
-    assert linecov.parse("coveragepy", COVERAGEPY) == {"src/a.py": {1: 1, 2: 1, 4: 0}}
 
 
 @pytest.mark.parametrize("text", ["garbage: [[[", '{"files": {"a.py": {}}}'])
 def test_malformed_reports_are_clean_errors(text: str) -> None:
-    with pytest.raises(ValueError, match="^cannot read coveragepy report$"):
-        linecov.parse("coveragepy", text)
+    with pytest.raises(ValueError, match="^cannot read fakecov report$"):
+        linecov.parse(FAKE, text)
 
 
-def test_unknown_format() -> None:
-    with pytest.raises(ValueError, match=r"^unknown coverage format 'xyz'"):
-        linecov.parse("xyz", "")
-
-
-def test_empty_reports_are_empty_not_errors() -> None:
-    assert linecov.parse("coveragepy", '{"files": {}}') == {}
+def test_a_report_is_read_by_the_plugin() -> None:
+    report = '{"files": {"a.py": {"executed_lines": [1], "missing_lines": [2]}}}'
+    assert linecov.parse(FAKE, report) == {"a.py": {1: 1, 2: 0}}
 
 
 @pytest.mark.parametrize(

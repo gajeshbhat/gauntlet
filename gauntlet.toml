@@ -4,11 +4,11 @@ src = "src"
 # Outermost first; imports may only point down this list.
 [layers]
 order = [
+  "gauntlet.pylang",  # a plugin: nothing in core imports it (it is found through the entry-point registry)
   "gauntlet.cli",
   "gauntlet.loop",
   "gauntlet.runner",
   "gauntlet.backends",
-  "gauntlet.mutation",
   "gauntlet.spec",
   "gauntlet.diagram",
   "gauntlet.scaffold",
@@ -17,7 +17,6 @@ order = [
   "gauntlet.linecov",
   "gauntlet.arch",
   "gauntlet.exclusions",
-  "gauntlet.harden",
   "gauntlet.sandbox",
   "gauntlet.snapshot",
   "gauntlet.policy",
@@ -25,6 +24,7 @@ order = [
   "gauntlet.config",
   "gauntlet.scope",
   "gauntlet.languages",
+  "gauntlet.plugin",
   "gauntlet.results",
   "gauntlet.safefs",
   "gauntlet.sandbox.select",

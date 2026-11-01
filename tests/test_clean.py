@@ -1,12 +1,12 @@
 from pathlib import Path
 
 import pytest
+from fakelang import FAKE
 
 from gauntlet.clean import Finding, check, crap_score, function_findings
-from gauntlet.languages import TABLE
 from gauntlet.scope import Scope, parse
 
-PY = TABLE["python"]
+PY = FAKE
 SIMPLE = "def f(x):\n    return x\n"
 BRANCHY = (
     "def g(x):\n"

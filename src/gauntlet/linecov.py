@@ -1,42 +1,19 @@
-"""Line coverage from the formats real tools write, as one shape: {file: {line: hit count}}.
+"""Line coverage as one shape ({file: {line: hit count}}), read by the language plugin; here, matching its paths.
 
 Only executable lines appear in a file's map; a line that is absent is not code that could run.
 """
 
-import json
-from collections.abc import Callable
-
 from gauntlet.errors import GauntletError
+from gauntlet.plugin import Language, Lines
 from gauntlet.safefs import SKIP_DIRS
 from gauntlet.sandbox import PROJECT_DIR
 
-Lines = dict[str, dict[int, int]]
 
-
-def _bad(fmt: str) -> GauntletError:
-    return GauntletError(f"cannot read {fmt} report")
-
-
-def coveragepy(text: str) -> Lines:
-    files: dict[str, dict[str, list[int]]] = json.loads(text)["files"]
-    return {
-        name: {**{n: 0 for n in data["missing_lines"]}, **{n: 1 for n in data["executed_lines"]}}
-        for name, data in files.items()
-    }
-
-
-PARSERS: dict[str, Callable[[str], Lines]] = {
-    "coveragepy": coveragepy,
-}
-
-
-def parse(fmt: str, text: str) -> Lines:
-    if fmt not in PARSERS:
-        raise GauntletError(f"unknown coverage format {fmt!r}; expected one of {', '.join(PARSERS)}")
+def parse(language: Language, text: str) -> Lines:
     try:
-        return PARSERS[fmt](text)
+        return language.read_coverage(text)
     except (KeyError, TypeError, AttributeError, ValueError):  # json.JSONDecodeError is a ValueError
-        raise _bad(fmt) from None
+        raise GauntletError(f"cannot read {language.coverage_format} report") from None
 
 
 def _clean_key(key: str) -> tuple[str, bool]:

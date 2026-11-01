@@ -71,7 +71,7 @@ def test_dump_round_trips(write_policy: Callable[[str], Path]) -> None:
     assert policy.load(path) == original
 
 
-def make_config(tmp_path: Path, text: str = 'language = "python"\n') -> Path:
+def make_config(tmp_path: Path, text: str = 'language = "fake"\n') -> Path:
     path = tmp_path / "gauntlet.toml"
     path.write_text(text)
     return path
@@ -83,7 +83,7 @@ def test_pin_records_and_enforces_the_config_hash(tmp_path: Path) -> None:
     pinned = policy.pin(policy.load(None), config, pol_path)
     assert pinned.pins[str(config.resolve())] == "sha256:" + hashlib.sha256(config.read_bytes()).hexdigest()
     policy.check_pin(policy.load(pol_path), config)
-    config.write_text('language = "python"\n[crap]\nmax = 99\n')
+    config.write_text('language = "fake"\n[crap]\nmax = 99\n')
     with pytest.raises(ValueError, match="changed since it was pinned"):
         policy.check_pin(policy.load(pol_path), config)
 
@@ -97,13 +97,13 @@ def test_unpinned_config_is_fine_unless_pins_are_required(tmp_path: Path) -> Non
 
 def test_config_load_rejects_unknown_keys(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unknown key.*maxx"):
-        load(make_config(tmp_path, 'language = "python"\n[crap]\nmaxx = 99\n'))
+        load(make_config(tmp_path, 'language = "fake"\n[crap]\nmaxx = 99\n'))
     with pytest.raises(ValueError, match="unknown key.*bogus"):
-        load(make_config(tmp_path, 'language = "python"\nbogus = 1\n'))
+        load(make_config(tmp_path, 'language = "fake"\nbogus = 1\n'))
 
 
 def test_config_load_records_what_was_set_explicitly(tmp_path: Path) -> None:
-    c = load(make_config(tmp_path, 'language = "python"\n[crap]\nmax = 5\n'))
+    c = load(make_config(tmp_path, 'language = "fake"\n[crap]\nmax = 5\n'))
     assert c.explicit == frozenset({"crap"})
 
 
@@ -156,7 +156,7 @@ def test_pin_overwrites_the_previous_pin(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     path = tmp_path / "policy.toml"
     first = policy.pin(policy.Policy(), config, path)
-    config.write_text('language = "python"\nsrc = "x"\n')
+    config.write_text('language = "fake"\nsrc = "x"\n')
     second = policy.pin(first, config, path)
     assert len(second.pins) == 1
     assert second.pins != first.pins
@@ -245,8 +245,8 @@ def test_sandbox_settings_default_and_load(write_policy: Callable[[str], Path]) 
         ('docker_network = "host"\n', r"docker_network must be one of bridge, none"),
         ('docker_memory = "lots"\n', r"docker_memory must look like 512m or 4g"),
         ("docker_memory = 4\n", r"docker_memory must be a string"),
-        ('[docker_images]\npython = "-v /:/x"\n', r"docker_images.python must be a container image name"),
-        ('[docker_images]\ncobol = "img"\n', r"docker_images has unknown language 'cobol', expected one of python"),
+        ('[docker_images]\nfake = "-v /:/x"\n', r"docker_images.fake must be a container image name"),
+        ('[docker_images]\ncobol = "img"\n', r"docker_images has unknown language 'cobol', expected one of fake"),
         ('docker_images = "img"\n', r"docker_images must be a table of language = image"),
         ('docker_image_agent = "--privileged"\n', r"docker_image_agent must be a container image name"),
     ],
@@ -258,6 +258,6 @@ def test_bad_sandbox_settings_are_errors(write_policy: Callable[[str], Path], te
 
 
 def test_docker_images_round_trip(write_policy: Callable[[str], Path]) -> None:
-    p = policy.load(write_policy('[docker_images]\npython = "me/py:1"\n'))
-    assert p.docker_images == {"python": "me/py:1"}
+    p = policy.load(write_policy('[docker_images]\nfake = "me/py:1"\n'))
+    assert p.docker_images == {"fake": "me/py:1"}
     assert policy.load(write_policy(policy.dump(p))) == p

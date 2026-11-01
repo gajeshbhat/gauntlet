@@ -1,46 +1,35 @@
-"""Every supported language is one row. Python only for now; the others live at tag v0.1-multilang."""
+"""The language registry: every plugin is an entry point in the `gauntlet.languages` group."""
 
-from dataclasses import dataclass
+from functools import cache
+from importlib.metadata import entry_points
 from pathlib import Path
 
 from gauntlet.errors import GauntletError
+from gauntlet.plugin import Language
+
+GROUP = "gauntlet.languages"
 
 
-@dataclass(frozen=True)
-class Language:
-    suffixes: tuple[str, ...]  # source files
-    markers: tuple[str, ...]  # files (globs) whose presence says "this project uses the language" (for `init`)
-    tests: str  # regex for test files: the clean gate does not hold them to the CRAP limit
-    pragma: str  # regex for the comments that exclude code from the gates
-    coverage_file: str  # the artifact the clean gate reads ...
-    coverage_format: str  # ... and its format (a key of linecov.PARSERS)
-    sdk: str  # the Canonical Workshop SDK
-    image: str  # the default Docker image (the policy can override it per language)
-    artifacts: tuple[str, ...]  # every file the gates read; `stamp` binds these
+@cache
+def registry() -> dict[str, Language]:
+    found: dict[str, Language] = {}
+    for point in entry_points(group=GROUP):
+        if point.name in found:
+            raise GauntletError(f"two plugins register the language {point.name!r}; uninstall one")
+        found[point.name] = point.load()
+    return found
 
 
-TABLE: dict[str, Language] = {
-    "python": Language(
-        suffixes=(".py",),
-        markers=("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"),
-        tests=r"^(tests?/|conftest\.py$)",  # only the top-level test dir: a name inside src/ cannot opt out
-        pragma=r"#\s*(?:pragma:\s*no\s+(?:mutate|cover)|nosec)\b",
-        coverage_file="coverage.json",
-        coverage_format="coveragepy",
-        sdk="uv",
-        image="ghcr.io/astral-sh/uv:python3.12-bookworm",
-        artifacts=("coverage.json", "mutmut-results.txt"),
-    ),
-}
-NAMES = tuple(TABLE)
+def names() -> str:
+    return ", ".join(registry()) or "none installed"
 
 
 def get(name: str) -> Language:
-    if name not in TABLE:
-        raise GauntletError(f"unsupported language {name!r}, expected one of {', '.join(NAMES)}")
-    return TABLE[name]
+    if name not in registry():
+        raise GauntletError(f"unsupported language {name!r}, expected one of {names()}")
+    return registry()[name]
 
 
 def detect(root: Path) -> list[str]:
-    """The languages whose marker files exist in `root`, in table order."""
-    return [name for name, row in TABLE.items() if any(next(root.glob(m), None) for m in row.markers)]
+    """The languages whose marker files exist in `root`, in registry order."""
+    return [name for name, row in registry().items() if any(next(root.glob(m), None) for m in row.markers)]

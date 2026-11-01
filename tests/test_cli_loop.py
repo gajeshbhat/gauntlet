@@ -134,7 +134,7 @@ def test_loop_reports_failure_and_flags_control_file_edits(
         if "You are the Coder" in prompt:
             (project / "test_mod.py").write_text("def test_g(): pass\n")
             (project / "mod.py").write_text(BRANCHY)
-            (project / "gauntlet.toml").write_text('language = "python"\n[crap]\nmax = 99\n')
+            (project / "gauntlet.toml").write_text('language = "fake"\n[crap]\nmax = 99\n')
         return ExecResult(0, "", "")  # the fixer never fixes anything
 
     root, pol, _ = loop_setup(tmp_path, monkeypatch, write_policy, sneaky)
@@ -168,7 +168,7 @@ def test_loop_prints_exact_summary_and_writes_a_complete_evidence_report(
     loop_dir = root / ".gauntlet-loop"
     assert out[-1] == f"fixer rounds: 1; patch: {loop_dir / 'loop.patch'}; evidence: {loop_dir / 'EVIDENCE.md'}"
     text = (loop_dir / "EVIDENCE.md").read_text()
-    assert "- Language: python" in text
+    assert "- Language: fake" in text
     assert f"`{hashlib.sha256((root / 'gauntlet.toml').read_bytes()).hexdigest()}`" in text
     assert re.search(r"Source fingerprint: `[0-9a-f]{64}`", text)
     assert re.search(r"Generated \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00 by gauntlet", text)

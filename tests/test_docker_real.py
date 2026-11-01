@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(os.environ.get("GAUNTLET_DOCKER_TESTS") != "1", 
 
 @pytest.fixture
 def box(tmp_path: Path):  # type: ignore[no-untyped-def]  # noqa: ANN201
-    sandbox = open_sandbox("docker", tmp_path, name="real", image=languages.TABLE["python"].image, memory="512m")
+    sandbox = open_sandbox("docker", tmp_path, name="real", image=languages.get("fake").image, memory="512m")
     sandbox.ensure()
     yield sandbox
     sandbox.remove()

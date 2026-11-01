@@ -7,24 +7,13 @@ from gauntlet.cli import main
 from gauntlet.config import load
 
 
-def test_python_project_with_a_src_layout(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+def test_a_project_with_a_src_layout(tmp_path: Path) -> None:
+    (tmp_path / "fake.marker").write_text("x\n")
     (tmp_path / "src").mkdir()
     path = scaffold.write_config(tmp_path)
     assert path == tmp_path / "gauntlet.toml"
     cfg = load(path)
-    assert (cfg.language, cfg.src) == ("python", "src")
-
-
-def test_python_project_without_src(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-    cfg = load(scaffold.write_config(tmp_path))
-    assert (cfg.language, cfg.src) == ("python", ".")
-
-
-def test_a_requirements_file_also_means_python(tmp_path: Path) -> None:
-    (tmp_path / "requirements.txt").write_text("flask\n")
-    assert load(scaffold.write_config(tmp_path)).language == "python"
+    assert (cfg.language, cfg.src) == ("fake", "src")
 
 
 def test_unknown_project_is_an_error(tmp_path: Path) -> None:
@@ -33,20 +22,20 @@ def test_unknown_project_is_an_error(tmp_path: Path) -> None:
 
 
 def test_an_existing_config_is_never_overwritten(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-    (tmp_path / "gauntlet.toml").write_text('language = "python"\n# mine\n')
+    (tmp_path / "fake.marker").write_text("x\n")
+    (tmp_path / "gauntlet.toml").write_text('language = "fake"\n# mine\n')
     with pytest.raises(ValueError, match=r"gauntlet\.toml already exists"):
         scaffold.write_config(tmp_path)
     assert "# mine" in (tmp_path / "gauntlet.toml").read_text()
 
 
 def test_the_generated_files_explain_the_optional_settings(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    (tmp_path / "fake.marker").write_text("x\n")
     assert "# [layers]" in scaffold.write_config(tmp_path).read_text()
 
 
 def test_cli_init_writes_the_file_and_says_what_next(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    (tmp_path / "fake.marker").write_text("x\n")
     assert main(["init", str(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert f"wrote {tmp_path / 'gauntlet.toml'}" in out

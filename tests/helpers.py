@@ -24,7 +24,7 @@ def project(root: Path, toml: str) -> Path:
     return root
 
 
-def py_project(root: Path, toml: str = 'language = "python"\n', covered: bool = False) -> Path:
+def py_project(root: Path, toml: str = 'language = "fake"\n', covered: bool = False) -> Path:
     project(root, toml)
     (root / "mod.py").write_text(BRANCHY)
     missing = [] if covered else list(range(2, 17))
@@ -63,12 +63,12 @@ class RunSandbox:
 
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
         out = self.project / ".gauntlet-out"
-        if "pytest" in argv:
+        if "fake-test" in argv:
             cov = {"files": {"mod.py": {"executed_lines": list(range(1, 17)), "missing_lines": []}}}
             if not self.covered:
                 cov = {"files": {"mod.py": {"executed_lines": [1], "missing_lines": list(range(2, 17))}}}
             (out / "coverage.json").write_text(json.dumps(cov))
-        if list(argv[-3:]) == ["results", "--all", "true"]:
+        if "fake-results" in argv:
             return ExecResult(0, "p.x: killed\n" * 9 + "p.y: survived\n", "")
         return ExecResult(0, "", "")
 
@@ -80,7 +80,7 @@ def sandbox_factory(covered: bool = True) -> Callable[[Path, Config, Policy], Ru
     return lambda project, cfg, policy: RunSandbox(project, covered)  # noqa: ARG005
 
 
-def committed_py_project(root: Path, toml: str = 'language = "python"\n') -> Path:
+def committed_py_project(root: Path, toml: str = 'language = "fake"\n') -> Path:
     project(root, toml)
     (root / "mod.py").write_text(BRANCHY)
     git(root, "init", "-q", "-b", "main")

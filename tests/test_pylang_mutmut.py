@@ -1,6 +1,6 @@
 import pytest
 
-from gauntlet.harden import check
+from gauntlet.pylang.mutmut import check
 
 RESULTS = """
     pkg.x_a__mutmut_1: killed

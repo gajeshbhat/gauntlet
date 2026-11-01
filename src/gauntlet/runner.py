@@ -7,12 +7,12 @@ Target code (its tests, mutation runs) executes only in the sandbox; its outputs
 import re
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
-from gauntlet import languages, mutation
+from gauntlet import languages
 from gauntlet.config import Config
 from gauntlet.errors import GauntletError
+from gauntlet.plugin import Step
 from gauntlet.provenance import excluded, fingerprint, stamp
 from gauntlet.safefs import MAX_ARTIFACT_BYTES
 from gauntlet.sandbox import PROJECT_DIR, ExecResult, Sandbox
@@ -20,20 +20,7 @@ from gauntlet.snapshot import snapshot
 
 OUT_DIR = ".gauntlet-out"
 IN_SANDBOX = f"{PROJECT_DIR}/{OUT_DIR}"
-UV = ("uv", "run", "--project", PROJECT_DIR)
-PYTEST_COV = "pytest-cov==7.1.0"
-MUTMUT = "mutmut==3.8.0"
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
-
-
-@dataclass(frozen=True)
-class Step:
-    name: str
-    argv: tuple[str, ...]
-    capture: str | None = None  # write the step's stdout to this artifact
-    timeout: int = 1800
-    must_pass: bool = True
-    env: tuple[tuple[str, str], ...] = ()
 
 
 def _safe_path(value: str) -> str:
@@ -42,20 +29,8 @@ def _safe_path(value: str) -> str:
     return value
 
 
-def _python_steps(cfg: Config) -> list[Step]:
-    cov = _safe_path(cfg.src)
-    report = f"--cov-report=json:{IN_SANDBOX}/coverage.json"
-    return [
-        Step(
-            "tests", (*UV, "--with", PYTEST_COV, "pytest", "-q", f"--cov={cov}", "--cov-branch", report), timeout=3600
-        ),
-        Step("mutation", (*UV, "--with", MUTMUT, "mutmut", "run"), timeout=7200, must_pass=False),
-        Step("mutation-results", (*UV, "--with", MUTMUT, "mutmut", "results", "--all", "true"), "mutmut-results.txt"),
-    ]
-
-
 def steps(cfg: Config) -> list[Step]:
-    return _python_steps(cfg)
+    return languages.get(cfg.language).steps(_safe_path(cfg.src), IN_SANDBOX)
 
 
 def output_tail(done: ExecResult) -> str:
@@ -63,8 +38,8 @@ def output_tail(done: ExecResult) -> str:
     return " | ".join(part for part in (done.stderr.strip(), done.stdout.strip()) if part)[-2000:]
 
 
-def _stale() -> tuple[str, ...]:
-    return (f"{IN_SANDBOX}/{mutation.TOOLS['python'].artifact}",)
+def _stale(language: str) -> tuple[str, ...]:
+    return (f"{IN_SANDBOX}/{languages.get(language).mutation.artifact}",)
 
 
 def _clear(box: Sandbox, stale: tuple[str, ...]) -> None:
@@ -137,7 +112,7 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         box = make_sandbox(snap)
         box.ensure()
         try:
-            captured = _run_steps(box, plan, _stale())
+            captured = _run_steps(box, plan, _stale(cfg.language))
         finally:
             box.remove()
         found = _collect(snap, cfg.language, plan, captured)

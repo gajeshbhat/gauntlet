@@ -47,9 +47,9 @@ class FakeSandbox:
 
 def python_behaviour(argv: Sequence[str], project: Path) -> ExecResult:
     out = project / runner.OUT_DIR
-    if "pytest" in argv:
+    if "fake-test" in argv:
         (out / "coverage.json").write_text(json.dumps({"files": {}}))
-    if argv[-3:] == ["results", "--all", "true"]:
+    if "fake-results" in argv:
         return ExecResult(0, "p.x_a__mutmut_1: killed\n", "")
     return ExecResult(0, "", "")
 
@@ -66,42 +66,21 @@ def make(
     return factory, made
 
 
-def test_python_steps_are_fixed_commands_with_pinned_tools() -> None:
-    steps = runner.steps(Config(language="python", src="src"))
-    assert [s.name for s in steps] == ["tests", "mutation", "mutation-results"]
-    assert steps[0].argv == (
-        "uv",
-        "run",
-        "--project",
-        "/project",
-        "--with",
-        "pytest-cov==7.1.0",
-        "pytest",
-        "-q",
-        "--cov=src",
-        "--cov-branch",
-        "--cov-report=json:/project/.gauntlet-out/coverage.json",
-    )
-    assert steps[1].argv[:6] == ("uv", "run", "--project", "/project", "--with", "mutmut==3.8.0")
-    assert steps[1].must_pass is False
-    assert steps[2].capture == "mutmut-results.txt"
-
-
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
-def test_python_src_must_be_a_safe_relative_path(src: str) -> None:
+def test_the_src_must_be_a_safe_relative_path(src: str) -> None:
     with pytest.raises(ValueError, match="unsafe path"):
-        runner.steps(Config(language="python", src=src))
+        runner.steps(Config(language="fake", src=src))
 
 
 def test_produce_runs_in_a_snapshot_copies_artifacts_and_stamps(repo: Path, tmp_path: Path) -> None:
     factory, made = make(python_behaviour)
     out = tmp_path / "out"
-    names = runner.produce(repo, Config(language="python"), out, factory)
+    names = runner.produce(repo, Config(language="fake"), out, factory)
     assert names == ["coverage.json", "mutmut-results.txt"]
     (box,) = made
     assert box.ensured and box.removed
     assert box.project != repo
-    assert box.calls[0][0][4:6] == ["--with", "pytest-cov==7.1.0"]
+    assert box.calls[0][0][:2] == ["fake-test", "."]
     assert (out / "mutmut-results.txt").read_text() == "p.x_a__mutmut_1: killed\n"
     assert (out / MANIFEST).exists()
     verify(out, repo, names)
@@ -113,24 +92,24 @@ def test_the_sandbox_is_always_removed(repo: Path, tmp_path: Path) -> None:
 
     factory, made = make(boom)
     with pytest.raises(ValueError, match=r"step 'tests' failed \(exit 1\)"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     assert made[0].removed
 
 
 def test_mutation_may_fail_but_tests_may_not(repo: Path, tmp_path: Path) -> None:
     def flaky(argv: Sequence[str], project: Path) -> ExecResult:
-        if "run" in argv and "mutmut" in argv and "results" not in argv:
+        if "fake-mutate" in argv:
             return ExecResult(1, "", "survivors found")
         return python_behaviour(argv, project)
 
     factory, _ = make(flaky)
-    assert runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+    assert runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
 
 
 def test_missing_required_artifacts_are_an_error(repo: Path, tmp_path: Path) -> None:
     factory, _ = make(lambda argv, project: ExecResult(0, "", ""))
     with pytest.raises(ValueError, match="did not produce coverage.json"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
 
 
 def test_a_source_change_during_the_run_invalidates_it(repo: Path, tmp_path: Path) -> None:
@@ -140,7 +119,7 @@ def test_a_source_change_during_the_run_invalidates_it(repo: Path, tmp_path: Pat
 
     factory, _ = make(meddle)
     with pytest.raises(ValueError, match="source changed while the gauntlet ran"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     assert not (tmp_path / "out" / MANIFEST).exists()
 
 
@@ -150,36 +129,36 @@ def test_planted_symlinks_and_oversized_artifacts_are_refused(repo: Path, tmp_pa
 
     def plant(argv: Sequence[str], project: Path) -> ExecResult:
         out = project / runner.OUT_DIR
-        if "pytest" in argv:
+        if "fake-test" in argv:
             (out / "coverage.json").symlink_to(secret)
         return ExecResult(0, "p.x: killed\n", "")
 
     factory, _ = make(plant)
     with pytest.raises(ValueError, match="coverage.json is a symlink"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
 
 
 def test_oversized_artifacts_are_refused(repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner, "MAX_ARTIFACT_BYTES", 5)
     factory, _ = make(python_behaviour)
     with pytest.raises(ValueError, match="over the 5 byte limit"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
 
 
 def test_a_file_the_tests_leave_never_stands_in_for_a_captured_artifact(repo: Path, tmp_path: Path) -> None:
     def forge(argv: Sequence[str], project: Path) -> ExecResult:
-        if "pytest" in argv:
+        if "fake-test" in argv:
             (project / runner.OUT_DIR / "mutmut-results.txt").write_text("p.x: killed\n")
-        return python_behaviour(argv, project) if "pytest" in argv else ExecResult(0, "", "")
+        return python_behaviour(argv, project) if "fake-test" in argv else ExecResult(0, "", "")
 
     factory, _ = make(forge)
     with pytest.raises(ValueError, match=r"^the sandbox did not produce mutmut-results\.txt$"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
 
 
 def test_the_snapshot_directory_is_cleaned_up(repo: Path, tmp_path: Path) -> None:
     factory, made = make(python_behaviour)
-    runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+    runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     assert not made[0].project.exists()
 
 
@@ -189,12 +168,12 @@ def test_oversized_captured_output_is_refused(repo: Path, tmp_path: Path, monkey
     )  # coverage.json (13 bytes) fits, the mutmut output (24) does not
     factory, _ = make(python_behaviour)
     with pytest.raises(ValueError, match=r"mutmut-results.txt is 24 bytes, over the 20 byte limit"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
 
 
 def test_the_snapshot_lives_in_a_private_temp_directory(repo: Path, tmp_path: Path) -> None:
     factory, made = make(python_behaviour)
-    runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+    runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     project = made[0].project
     assert project.name == "project"
     assert project.parent.name.startswith("gauntlet-")
@@ -207,10 +186,10 @@ def test_failed_step_message_uses_stderr_then_stdout_and_keeps_the_tail(repo: Pa
     for stdout, stderr, expected in [("out only", "", "out only"), ("also", "err", "err \\| also")]:
         factory, _ = make(boom(stdout, stderr))
         with pytest.raises(ValueError, match=rf"^step 'tests' failed \(exit 3\): {expected}$"):
-            runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+            runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     factory, _ = make(boom("", "A" * 1500 + "B" * 2000))
     with pytest.raises(ValueError, match="B{2000}$") as e:
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     assert "A" not in str(e.value).split(": ", 1)[1]
 
 
@@ -221,42 +200,42 @@ def test_the_source_changed_message_is_exact(repo: Path, tmp_path: Path) -> None
 
     factory, _ = make(meddle)
     with pytest.raises(ValueError, match=r"^source changed while the gauntlet ran; rerun it$"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
 
 
 def test_a_step_that_prints_nothing_stores_nothing(repo: Path, tmp_path: Path) -> None:
     def quiet(argv: Sequence[str], project: Path) -> ExecResult:
-        if "pytest" in argv:
+        if "fake-test" in argv:
             (project / runner.OUT_DIR / "coverage.json").write_text("{}")
         return ExecResult(0, "", "")
 
     factory, _ = make(quiet)
     with pytest.raises(ValueError, match=r"^the sandbox did not produce mutmut-results\.txt$"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     assert not (tmp_path / "out" / "mutmut-results.txt").exists()
 
 
 def test_a_step_with_output_but_no_capture_name_stores_nothing(repo: Path, tmp_path: Path) -> None:
     noisy, _ = make(lambda argv, project: python_behaviour(argv, project))
-    names = runner.produce(repo, Config(language="python"), tmp_path / "out", noisy)
+    names = runner.produce(repo, Config(language="fake"), tmp_path / "out", noisy)
     assert names == ["coverage.json", "mutmut-results.txt"]
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["coverage.json", MANIFEST, "mutmut-results.txt"]
 
 
 def test_the_stale_report_is_removed_by_the_sandbox_right_before_the_mutation_step(repo: Path, tmp_path: Path) -> None:
     factory, made = make(python_behaviour)
-    runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+    runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     calls = made[0].calls
     removal = next(i for i, c in enumerate(calls) if c[0][0] == "rm")
     assert calls[removal][0][-1] == "/project/.gauntlet-out/mutmut-results.txt"
-    assert "run" in calls[removal + 1][0] and "mutmut" in calls[removal + 1][0][5]  # the mutation run follows at once
+    assert calls[removal + 1][0] == ["fake-mutate"]  # the mutation run follows at once
     assert calls[removal][1:] == ({}, 60) and calls[removal][0][:2] == ["rm", "-rf"]
 
 
 def test_a_failed_report_removal_stops_the_run(repo: Path, tmp_path: Path) -> None:
     factory, _ = make(lambda argv, project: ExecResult(1 if argv[0] == "rm" else 0, "", "read-only file system"))
     with pytest.raises(ValueError, match="could not clear the old mutation report: read-only file system"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
 
 
 def test_a_symlinked_output_directory_is_refused_before_anything_is_read(repo: Path, tmp_path: Path) -> None:
@@ -265,11 +244,11 @@ def test_a_symlinked_output_directory_is_refused_before_anything_is_read(repo: P
     (host / "coverage.json").write_text('{"files": {}}')
 
     def behave(argv: Sequence[str], project: Path) -> ExecResult:
-        if "pytest" in argv:  # the tests replace .gauntlet-out with a link to a host directory
+        if "fake-test" in argv:  # the tests replace .gauntlet-out with a link to a host directory
             shutil.rmtree(project / runner.OUT_DIR)
             (project / runner.OUT_DIR).symlink_to(host)
         return ExecResult(0, "", "")
 
     factory, _ = make(behave)
     with pytest.raises(ValueError, match=r"\.gauntlet-out is a symlink"):
-        runner.produce(repo, Config(language="python"), tmp_path / "out", factory)
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)

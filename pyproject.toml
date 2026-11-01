@@ -15,6 +15,9 @@ dependencies = [
 [project.scripts]
 gauntlet = "gauntlet:main"
 
+[project.entry-points."gauntlet.languages"]
+python = "gauntlet.pylang:LANGUAGE"
+
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
 build-backend = "uv_build"

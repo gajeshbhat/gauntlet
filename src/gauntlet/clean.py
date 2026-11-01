@@ -9,7 +9,7 @@ import lizard  # pyright: ignore[reportMissingTypeStubs]
 
 from gauntlet import linecov
 from gauntlet.errors import GauntletError
-from gauntlet.languages import Language
+from gauntlet.plugin import Language
 from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text, source_files
 from gauntlet.scope import Scope
 

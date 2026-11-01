@@ -129,9 +129,9 @@ def _images(path: Path, data: dict[str, Any]) -> dict[str, str]:
     if not isinstance(table, dict):
         raise GauntletError(f"{path}: docker_images must be a table of language = image")
     for name, image in table.items():  # pyright: ignore[reportUnknownVariableType]
-        if name not in languages.TABLE:
+        if name not in languages.registry():
             raise GauntletError(
-                f"{path}: docker_images has unknown language {name!r}, expected one of {', '.join(languages.NAMES)}"
+                f"{path}: docker_images has unknown language {name!r}, expected one of {languages.names()}"
             )
         if not isinstance(image, str) or not IMAGE.match(image):
             raise GauntletError(f"{path}: docker_images.{name} must be a container image name")
