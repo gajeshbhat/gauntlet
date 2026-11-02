@@ -7,7 +7,7 @@ Work from the project root. Never edit `~/.config/gauntlet/policy.toml` or a rep
 pass.
 
 ## Setup
-1. `command -v gauntlet || uv tool install git+https://github.com/gajeshbhat/gauntlet#subdirectory=packages/gauntlet-core --with git+https://github.com/gajeshbhat/gauntlet#subdirectory=packages/gauntlet-python`.
+1. `command -v gauntlet || uv tool install "gauntlet-core[python] @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core"`.
 2. `run` and `loop` need Workshop or Docker/Podman (`command -v workshop docker`). Tell the user what to install;
    never run `sudo`. With Docker, `loop` also needs `docker_image_agent` in the policy.
 3. No `gauntlet.toml`: `gauntlet init .`.

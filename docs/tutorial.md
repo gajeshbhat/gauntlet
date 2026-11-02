@@ -7,8 +7,7 @@ Install gauntlet, run it, fix a failure, run again.
 Get `git`, `uv` and a sandbox (see the [README](../README.md#quickstart)), then:
 
 ```sh
-uv tool install git+https://github.com/gajeshbhat/gauntlet#subdirectory=packages/gauntlet-core \
-  --with git+https://github.com/gajeshbhat/gauntlet#subdirectory=packages/gauntlet-python
+uv tool install "gauntlet-core[python] @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core"
 gauntlet --version
 ```
 

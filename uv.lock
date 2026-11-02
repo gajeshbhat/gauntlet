@@ -141,6 +141,11 @@ dependencies = [
     { name = "lizard" },
 ]
 
+[package.optional-dependencies]
+python = [
+    { name = "gauntlet-python" },
+]
+
 [package.dev-dependencies]
 test = [
     { name = "pytest" },
@@ -149,9 +154,11 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "gauntlet-python", marker = "extra == 'python'", editable = "packages/gauntlet-python" },
     { name = "gauntlet-sandbox", editable = "packages/gauntlet-sandbox" },
     { name = "lizard", specifier = ">=1.24.1" },
 ]
+provides-extras = ["python"]
 
 [package.metadata.requires-dev]
 test = [

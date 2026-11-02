@@ -11,8 +11,7 @@ You need `git`, [`uv`](https://docs.astral.sh/uv/) and a sandbox: [Workshop](htt
 (`sudo snap install workshop --classic`) on Linux, or Docker or Podman.
 
 ```sh
-uv tool install git+https://github.com/gajeshbhat/gauntlet#subdirectory=packages/gauntlet-core \
-  --with git+https://github.com/gajeshbhat/gauntlet#subdirectory=packages/gauntlet-python
+uv tool install "gauntlet-core[python] @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core"
 cd your-project                        # a git repository
 gauntlet init .                        # detect the language, write gauntlet.toml
 gauntlet run . --report EVIDENCE.md    # exit 0: every gate passed
