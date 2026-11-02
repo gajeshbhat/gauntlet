@@ -33,6 +33,19 @@ def test_exclusion_pattern_matches_what_python_uses() -> None:
     assert not re.search(LANGUAGE.pragma, "x = 1  # an ordinary comment")
 
 
+VARIANTS = ("# pragma no cover", "# pragma:nocover", "# PRAGMA: NO COVER", "#pragma nocover", "# pragma: no branch")
+
+
+def test_exclusion_pattern_catches_every_variant_coverage_py_honours() -> None:
+    from coverage.config import DEFAULT_EXCLUDE  # pyright: ignore[reportMissingTypeStubs]
+
+    for text in VARIANTS:
+        assert re.search(LANGUAGE.pragma, text), text
+    for default in (d for d in DEFAULT_EXCLUDE if "pragma" in d):
+        for text in VARIANTS[:4]:
+            assert re.search(default, text), (default, text)  # the variants really are ones coverage.py skips
+
+
 def test_detect_by_marker_files(tmp_path: Path) -> None:
     assert languages.detect(tmp_path) == []
     (tmp_path / "pyproject.toml").write_text("[project]\n")

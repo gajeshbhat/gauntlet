@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from fakelang import FAKE
+from helpers import git
 
 from gauntlet import languages
 from gauntlet.cli import main
@@ -19,6 +20,13 @@ def isolated_policy(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytes
     """Never read the developer's real ~/.config/gauntlet/policy.toml."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.mktemp("xdg")))
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+
+
+@pytest.fixture
+def gitrepo(tmp_path: Path) -> Path:
+    """`tmp_path` as a repository: the gates list the sources through it."""
+    git(tmp_path, "init", "-q")
+    return tmp_path
 
 
 @pytest.fixture

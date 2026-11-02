@@ -27,9 +27,22 @@ GIT_ENV = {
 }
 
 
+def own_git_dir(source: Path) -> Path:
+    """Where gauntlet keeps the repository of a directory an agent writes into (see `git_output`)."""
+    base = source.resolve()  # "." has no name to hang a suffix on
+    return base.with_name(base.name + ".gauntlet-git")
+
+
 def git_output(source: Path, *args: str) -> bytes:
+    """Run git on `source`. If gauntlet keeps its own git dir for it, that one is used and `source/.git` is ignored.
+
+    An agent that can write to `source` can plant a clean filter in `.git/config` (plus a `.gitattributes`) or edit
+    `.git/info/exclude`, to run a command on the host at the next `git add` or to hide files from the listing.
+    """
+    own = own_git_dir(source)
+    explicit = [f"--git-dir={own}", f"--work-tree={source}"] if own.is_dir() else []
     done = subprocess.run(
-        ["git", *SAFE_GIT, "-C", str(source), *args],
+        ["git", *SAFE_GIT, *explicit, "-C", str(source), *args],
         capture_output=True,
         env=GIT_ENV,
     )
@@ -62,6 +75,14 @@ def listed(source: Path, exclude: tuple[str, ...] = ()) -> list[str]:
     skip = [f":(exclude){p}" for p in exclude]
     raw = git_output(source, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".", *skip)
     return sorted({n.decode() for n in raw.split(b"\0") if n})
+
+
+def source_files(source: Path, suffixes: tuple[str, ...]) -> list[str]:
+    """The listed regular files ending in one of `suffixes`: the same set the fingerprint and the snapshot cover.
+
+    Taking names from git, not from a directory walk, leaves nothing to hide in a folder called `venv` or `vendor`.
+    """
+    return [n for n in listed(source) if n.endswith(suffixes) and (source / n).is_file()]
 
 
 def fingerprint(source: Path, exclude: tuple[str, ...] = ()) -> str:

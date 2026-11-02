@@ -7,7 +7,7 @@ import pytest
 from helpers import git
 
 from gauntlet import provenance
-from gauntlet.provenance import MANIFEST, fingerprint, git_output, stamp, verify
+from gauntlet.provenance import MANIFEST, fingerprint, git_output, source_files, stamp, verify
 
 
 @pytest.fixture
@@ -311,3 +311,26 @@ def test_an_empty_submodule_directory_is_still_fingerprinted(repo: Path) -> None
     (repo / "sub").mkdir()
     git(repo, "update-index", "--add", "--cacheinfo", f"160000,{'a' * 40},sub")
     assert len(fingerprint(repo)) == 64
+
+
+def test_source_files_come_from_git_so_no_directory_name_hides_code(repo: Path) -> None:
+    files = ("pkg/b.py", "pkg/c.txt", "venv/x.py", "src/app/venv/impl.py", "vendor/z.py", "build/q.py", "pkg/d.PY")
+    for rel in files:
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text("")
+    (repo / ".gitignore").write_text("ignored/\n")
+    (repo / "ignored").mkdir()
+    (repo / "ignored/i.py").write_text("")
+    (repo / "link.py").symlink_to("a.py")
+    git(repo, "add", "-A")
+    (repo / "a.py").unlink()  # deleted but still tracked
+    (repo / "a.py").write_text("")
+    (repo / "a.py").unlink()
+    assert source_files(repo, (".py",)) == [
+        "build/q.py",
+        "pkg/b.py",
+        "src/app/venv/impl.py",
+        "vendor/z.py",
+        "venv/x.py",
+    ]
+    assert "pkg/c.txt" in source_files(repo, (".py", ".txt"))

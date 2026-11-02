@@ -119,8 +119,7 @@ def test_arch_result_shape(tmp_path: Path, lax: Path) -> None:
 
 
 def test_exclusions_result_shape(tmp_path: Path, lax: Path) -> None:
-    (tmp_path / "gauntlet.toml").write_text('language = "fake"\n')
-    (tmp_path / "a.py").write_text("x = 1  # nosec\n")
+    tree(tmp_path, {"gauntlet.toml": 'language = "fake"\n', "a.py": "x = 1  # nosec\n"})
     (tmp_path / "excludes.txt").write_text("coverage omit a.py\n")
     assert run_json(tmp_path, lax, "exclusions", str(tmp_path)) == [
         {

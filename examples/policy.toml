@@ -6,6 +6,7 @@ max_exclusions = 10         # budget of `pragma: no cover|no mutate`, `nolint`, 
 allow_config_excludes = false  # coverage omit/include/exclude_*, mutmut do_not_mutate in the repo config
 allow_unstamped = false     # accept artifacts that were not produced from the current source
 require_pin = false         # refuse a gauntlet.toml you have not pinned with `gauntlet pin`
+require_arch = false        # a gauntlet.toml without [layers] fails `check` and `run` instead of skipping the arch gate
 
 # Only for `gauntlet loop`: the coding agent that runs inside the sandbox. The prompt is appended as the last argument.
 # The token is passed by NAME; set it in the environment of the command, never here.

@@ -20,7 +20,8 @@ LANGUAGE = Language(
     suffixes=(".py",),
     markers=("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"),
     tests=r"^(tests?/|conftest\.py$)",  # only the top-level test dir: a name inside src/ cannot opt out
-    pragma=r"#\s*(?:pragma:\s*no\s+(?:mutate|cover)|nosec)\b",
+    # coverage.py's default exclude regex (case-insensitive, optional colon) plus `no branch`, mutmut and bandit
+    pragma=r"#\s*(?i:pragma)[:\s]?\s*(?i:no)\s*(?i:cover|branch)|#\s*pragma:\s*no\s+mutate\b|#\s*nosec\b",
     coverage_file="coverage.json",
     coverage_format="coveragepy",
     sdk="uv",

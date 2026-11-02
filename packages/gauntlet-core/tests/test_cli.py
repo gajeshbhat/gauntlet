@@ -492,3 +492,12 @@ def test_evidence_report_from_a_gate_has_the_real_language_hash_and_time(
     assert "- Language: fake" in text
     assert hashlib.sha256((tmp_path / "gauntlet.toml").read_bytes()).hexdigest() in text
     assert re.search(r"Generated \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00 by", text)
+
+
+def test_a_policy_can_require_arch_so_deleting_the_layers_fails_the_check(
+    tmp_path: Path, capsys: Out, write_policy: Callable[[str], Path]
+) -> None:
+    py_project(tmp_path, covered=True)
+    policy = write_policy("allow_unstamped = true\nrequire_arch = true\n")
+    assert main(["check", str(tmp_path), "--policy", str(policy)]) == 1
+    assert "arch: skipped (no layers configured)" in capsys.readouterr().out

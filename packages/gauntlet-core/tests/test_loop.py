@@ -1,4 +1,3 @@
-import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
@@ -6,6 +5,7 @@ import pytest
 from helpers import git
 
 from gauntlet import loop
+from gauntlet.provenance import git_output
 from gauntlet.results import GateResult
 from gauntlet_sandbox import ExecResult
 
@@ -66,7 +66,6 @@ def test_an_unconfigured_agent_is_an_error() -> None:
 def test_workspace_is_a_separate_git_repo_with_a_baseline(repo: Path, tmp_path: Path) -> None:
     ws = loop.prepare_workspace(repo, tmp_path / "ws")
     assert (ws / "a.py").read_text() == "x = 1\n"
-    assert (ws / ".git").is_dir()
     assert loop.patch(ws) == ""
     (ws / "a.py").write_text("x = 2\n")
     (ws / "new.py").write_text("y = 1\n")
@@ -175,12 +174,8 @@ def test_a_failing_fixer_stops_the_loop() -> None:
 
 def test_the_workspace_has_one_baseline_commit_on_main(repo: Path, tmp_path: Path) -> None:
     ws = loop.prepare_workspace(repo, tmp_path / "ws")
-    log = subprocess.run(
-        ["git", "-C", str(ws), "log", "--format=%s", "--all"], capture_output=True, text=True, check=True
-    ).stdout.split()
-    branch = subprocess.run(
-        ["git", "-C", str(ws), "branch", "--show-current"], capture_output=True, text=True, check=True
-    ).stdout.strip()
+    log = git_output(ws, "log", "--format=%s", "--all").decode().split()
+    branch = git_output(ws, "branch", "--show-current").decode().strip()
     assert (log, branch) == (["baseline"], "main")
 
 
@@ -219,8 +214,10 @@ def test_control_file_matching_is_precise() -> None:
         ".workshop/x.yaml",
         "Makefile",
         "conftest.py",
+        "docs/Makefile",
         "pyproject.toml",
-    ]
+        "src/conftest.py",
+    ]  # not gauntlet.toml.bak, .workshopx/ or src/app.py
 
 
 def test_agent_failures_show_both_stderr_and_stdout() -> None:
@@ -240,3 +237,44 @@ def test_the_patch_leaves_out_gauntlets_own_sandbox_files(repo: Path, tmp_path: 
     assert "a.py" in text
     assert "gauntlet-agent.yaml" not in text and ".workshop.lock" not in text
     assert loop.control_files(text) == [".workshop/other.yaml"]  # anything else under .workshop is still flagged
+
+
+def test_an_agent_cannot_run_commands_on_the_host_through_git_config_or_attributes(repo: Path, tmp_path: Path) -> None:
+    ws = loop.prepare_workspace(repo, tmp_path / "ws")
+    marker = tmp_path / "ran-on-host"
+    (ws / ".git").mkdir(exist_ok=True)  # what the agent could do with the workspace it can write to
+    with (ws / ".git" / "config").open("a") as f:
+        f.write(f'[filter "x"]\n\tclean = touch {marker}; cat\n')
+    (ws / ".gitattributes").write_text("* filter=x\n")
+    (ws / "a.py").write_text("x = 9\n")
+    assert "+x = 9" in loop.patch(ws)
+    assert not marker.exists()
+
+
+def test_the_workspace_git_dir_is_outside_what_the_agent_can_write(repo: Path, tmp_path: Path) -> None:
+    ws = loop.prepare_workspace(repo, tmp_path / "ws")
+    assert not (ws / ".git").exists()
+    assert (tmp_path / "ws.gauntlet-git").is_dir()
+
+
+def test_control_files_are_found_at_any_depth_and_whatever_their_name_looks_like(repo: Path, tmp_path: Path) -> None:
+    ws = loop.prepare_workspace(repo, tmp_path / "ws")
+    for rel in (
+        "packages/x/pyproject.toml",
+        "tests/conftest.py",
+        ".github/my flows/é.yml",
+        "check.sh",
+        "uv.lock",
+        "policy.ci.toml",
+        "docs/notes.md",
+    ):
+        (ws / rel).parent.mkdir(parents=True, exist_ok=True)
+        (ws / rel).write_text("x\n")
+    assert loop.control_files(loop.patch(ws)) == [
+        ".github/my flows/é.yml",
+        "check.sh",
+        "packages/x/pyproject.toml",
+        "policy.ci.toml",
+        "tests/conftest.py",
+        "uv.lock",
+    ]

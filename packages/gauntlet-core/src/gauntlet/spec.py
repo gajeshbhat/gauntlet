@@ -153,7 +153,7 @@ def _trace(ref: str, root: Path) -> list[str]:
         return [str(e)]
     if not target.is_file():
         return [f"{path} does not exist"]
-    if name and name.split("::")[-1] not in read_text(target, MAX_SOURCE_BYTES):
+    if name and not re.search(rf"\b{re.escape(name.split('::')[-1])}\b", read_text(target, MAX_SOURCE_BYTES)):
         return [f"{name} is not in {path}"]
     return []
 
