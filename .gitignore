@@ -11,3 +11,4 @@ gauntlet-manifest.json
 .gauntlet/
 .gauntlet-out/
 EVIDENCE.md
+mutmut-results.txt
