@@ -64,6 +64,14 @@ def listed(source: Path, exclude: tuple[str, ...] = ()) -> list[str]:
     return sorted({n.decode() for n in raw.split(b"\0") if n})
 
 
+def source_files(source: Path, suffixes: tuple[str, ...]) -> list[str]:
+    """The listed regular files ending in one of `suffixes`: the same set the fingerprint and the snapshot cover.
+
+    Taking names from git, not from a directory walk, leaves nothing to hide in a folder called `venv` or `vendor`.
+    """
+    return [n for n in listed(source) if n.endswith(suffixes) and (source / n).is_file()]
+
+
 def fingerprint(source: Path, exclude: tuple[str, ...] = ()) -> str:
     """Hash of HEAD plus the state of every tracked and untracked (non-ignored) file, minus the excluded paths."""
     h = hashlib.sha256()

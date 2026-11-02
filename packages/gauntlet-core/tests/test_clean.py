@@ -6,6 +6,7 @@ from fakelang import FAKE
 from gauntlet.clean import Finding, check, crap_score, function_findings
 from gauntlet.scope import Scope, parse
 
+pytestmark = pytest.mark.usefixtures("gitrepo")
 PY = FAKE
 SIMPLE = "def f(x):\n    return x\n"
 BRANCHY = (

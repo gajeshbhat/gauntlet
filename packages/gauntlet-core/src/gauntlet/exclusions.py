@@ -5,7 +5,8 @@ from pathlib import Path
 
 from gauntlet import languages
 from gauntlet.errors import GauntletError
-from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text, source_files
+from gauntlet.provenance import source_files
+from gauntlet.safefs import MAX_SOURCE_BYTES, inside, read_text
 from gauntlet.scope import Scope
 
 

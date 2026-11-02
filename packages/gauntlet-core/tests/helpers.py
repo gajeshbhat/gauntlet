@@ -25,6 +25,7 @@ def project(root: Path, toml: str) -> Path:
 
 
 def py_project(root: Path, toml: str = 'language = "fake"\n', covered: bool = False) -> Path:
+    git(root, "init", "-q")
     project(root, toml)
     (root / "mod.py").write_text(BRANCHY)
     missing = [] if covered else list(range(2, 17))
@@ -35,6 +36,7 @@ def py_project(root: Path, toml: str = 'language = "fake"\n', covered: bool = Fa
 
 
 def tree(root: Path, files: Mapping[str, str]) -> None:
+    subprocess.run(["git", "init", "-q", str(root)], check=True)  # the gates list sources through it
     for rel, text in files.items():
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,6 +83,7 @@ def sandbox_factory(covered: bool = True) -> Callable[[Path, Config, Policy], Ru
 
 
 def committed_py_project(root: Path, toml: str = 'language = "fake"\n') -> Path:
+    git(root, "init", "-q")
     project(root, toml)
     (root / "mod.py").write_text(BRANCHY)
     git(root, "init", "-q", "-b", "main")

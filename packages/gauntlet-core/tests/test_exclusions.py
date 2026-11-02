@@ -16,12 +16,15 @@ def test_counts_every_kind_of_exclusion_comment(tmp_path: Path) -> None:
     ]
 
 
-def test_only_files_of_the_language_and_not_vendored_dirs(tmp_path: Path) -> None:
-    tree(tmp_path, {".venv/lib/x.py": "# pragma: no cover\n"})
-    tree(tmp_path, {"node_modules/m.py": "# pragma: no cover\n"})
-    tree(tmp_path, {"notes.txt": "# pragma: no cover\n"})
-    tree(tmp_path, {"src/real.py": "y = 1  # pragma: no cover\n"})
+def test_only_files_of_the_language_and_not_ignored_ones(tmp_path: Path) -> None:
+    tree(tmp_path, {".gitignore": ".venv/\n", ".venv/lib/x.py": "# pragma: no cover\n"})
+    tree(tmp_path, {"notes.txt": "# pragma: no cover\n", "src/real.py": "y = 1  # pragma: no cover\n"})
     assert pragmas(tmp_path, "fake", Scope()) == ["src/real.py:1: y = 1  # pragma: no cover"]
+
+
+def test_tracked_code_is_checked_whatever_its_directory_is_called(tmp_path: Path) -> None:
+    tree(tmp_path, {"src/app/venv/x.py": "# nosec\n", "vendor/y.py": "# nosec\n", "node_modules/m.py": "# nosec\n"})
+    assert len(pragmas(tmp_path, "fake", Scope())) == 3
 
 
 def test_scope_limits_the_files_and_lines_counted(tmp_path: Path) -> None:
@@ -32,7 +35,7 @@ def test_scope_limits_the_files_and_lines_counted(tmp_path: Path) -> None:
 
 def test_symlinks_out_of_the_root_are_refused(tmp_path: Path) -> None:
     root = tmp_path / "root"
-    root.mkdir()
+    tree(root, {})
     (tmp_path / "outside.py").write_text("# nosec\n")
     (root / "link.py").symlink_to(tmp_path / "outside.py")
     with pytest.raises(ValueError, match="escapes the project root"):
