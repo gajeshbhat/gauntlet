@@ -12,7 +12,7 @@ from pathlib import Path
 
 from gauntlet import spec
 from gauntlet.errors import GauntletError
-from gauntlet.provenance import git_output
+from gauntlet.provenance import git_output, own_git_dir
 from gauntlet.results import GateResult
 from gauntlet.runner import output_tail
 from gauntlet.snapshot import snapshot
@@ -52,6 +52,7 @@ class Agent:
 
 def prepare_workspace(source: Path, dest: Path) -> Path:
     snapshot(source, dest)
+    own_git_dir(dest).mkdir()  # beside the workspace, outside what the sandbox mounts: the agent cannot edit it
     git_output(dest, "init", "-q", "-b", "main")
     git_output(dest, "add", "-A")
     git_output(dest, *IDENTITY, "commit", "-q", "-m", "baseline", "--allow-empty")
