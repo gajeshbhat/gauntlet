@@ -214,8 +214,10 @@ def test_control_file_matching_is_precise() -> None:
         ".workshop/x.yaml",
         "Makefile",
         "conftest.py",
+        "docs/Makefile",
         "pyproject.toml",
-    ]
+        "src/conftest.py",
+    ]  # not gauntlet.toml.bak, .workshopx/ or src/app.py
 
 
 def test_agent_failures_show_both_stderr_and_stdout() -> None:
@@ -253,3 +255,26 @@ def test_the_workspace_git_dir_is_outside_what_the_agent_can_write(repo: Path, t
     ws = loop.prepare_workspace(repo, tmp_path / "ws")
     assert not (ws / ".git").exists()
     assert (tmp_path / "ws.gauntlet-git").is_dir()
+
+
+def test_control_files_are_found_at_any_depth_and_whatever_their_name_looks_like(repo: Path, tmp_path: Path) -> None:
+    ws = loop.prepare_workspace(repo, tmp_path / "ws")
+    for rel in (
+        "packages/x/pyproject.toml",
+        "tests/conftest.py",
+        ".github/my flows/é.yml",
+        "check.sh",
+        "uv.lock",
+        "policy.ci.toml",
+        "docs/notes.md",
+    ):
+        (ws / rel).parent.mkdir(parents=True, exist_ok=True)
+        (ws / rel).write_text("x\n")
+    assert loop.control_files(loop.patch(ws)) == [
+        ".github/my flows/é.yml",
+        "check.sh",
+        "packages/x/pyproject.toml",
+        "policy.ci.toml",
+        "tests/conftest.py",
+        "uv.lock",
+    ]

@@ -16,7 +16,7 @@ from gauntlet.config import Config
 from gauntlet.errors import GauntletError
 from gauntlet_sandbox.names import ENV_NAME, IMAGE, MEMORY
 
-BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin")
+BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin", "require_arch")
 INTS = ("crap_ceiling", "mutation_floor", "max_exclusions")
 RANGES = {"agent_timeout": (1, 86_400), "max_rounds": (1, 20)}
 LISTS = ("agent_command", "agent_env")
@@ -37,6 +37,7 @@ class Policy:
     allow_config_excludes: bool = False  # coverage `omit` / mutmut `do_not_mutate` in the repo config
     allow_unstamped: bool = False  # accept artifacts with no provenance manifest
     require_pin: bool = False  # refuse a gauntlet.toml that was never pinned
+    require_arch: bool = False  # a gauntlet.toml without [layers] fails the check instead of skipping the arch gate
     pins: dict[str, str] = field(default_factory=lambda: dict[str, str]())
     agent_command: tuple[str, ...] = ()  # argv of the coding agent; the prompt is appended as the last argument
     agent_env: tuple[str, ...] = ()  # names of environment variables passed through to it (never their values)

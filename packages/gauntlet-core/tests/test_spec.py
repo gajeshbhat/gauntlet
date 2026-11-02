@@ -169,3 +169,12 @@ def test_free_text_elsewhere_is_still_not_understood() -> None:
     assert any("line 4: not understood" in p for p in parse(after_scenario).problems)
     after_background = "Feature: f\n  Background:\n    prose here\n"
     assert any("line 3: not understood" in p for p in parse(after_background).problems)
+
+
+def test_a_test_name_must_appear_as_a_whole_word_not_inside_another_word(tmp_path: Path) -> None:
+    text = GOOD.replace("tests/test_limiter.py::test_allows_two", "tests/test_limiter.py::test_allows")
+    path = project(tmp_path, text)
+    (tmp_path / "tests" / "test_limiter.py").write_text("def test_allows_two(): pass\n")
+    assert any("test_allows is not in tests/test_limiter.py" in p for p in check(path, tmp_path))
+    (tmp_path / "tests" / "test_limiter.py").write_text("def test_allows(): pass\n")
+    assert not any("is not in" in p for p in check(path, tmp_path))

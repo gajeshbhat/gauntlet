@@ -119,7 +119,7 @@ def _spec(run: Run) -> GateResult:
 
 
 def _check(run: Run) -> list[GateResult]:
-    skipped = GateResult("arch", True, "arch: skipped (no layers configured)")
+    skipped = GateResult("arch", not run.policy.require_arch, "arch: skipped (no layers configured)")
     return [_arch(run) if run.cfg.layers else skipped, _clean(run), _exclusions(run)]
 
 

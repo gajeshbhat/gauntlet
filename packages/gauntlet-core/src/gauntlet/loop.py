@@ -7,6 +7,7 @@ failures. The real working tree is never touched: the human reads the patch and 
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from importlib.resources import files
 from pathlib import Path
 
@@ -18,10 +19,12 @@ from gauntlet.runner import output_tail
 from gauntlet.snapshot import snapshot
 from gauntlet_sandbox import ExecResult, Sandbox
 
-CONTROL = (
-    "gauntlet.toml", "pyproject.toml", "setup.cfg", "tox.ini", "noxfile.py", "Makefile", "conftest.py", ".coveragerc",
-    ".workshop/", ".github/",
-)  # fmt: skip
+CONTROL_NAMES = (
+    "gauntlet.toml", "policy*.toml", "pyproject.toml", "setup.cfg", "setup.py", "tox.ini", "noxfile.py", "Makefile",
+    "conftest.py", "pytest.ini", ".coveragerc", "check.sh", "uv.lock", "Dockerfile", ".pre-commit-config.yaml",
+    ".gitattributes", "sitecustomize.py",
+)  # fmt: skip  # matched on the file name, at any depth: they change what runs or what is measured
+CONTROL_DIRS = {".workshop", ".github", ".devcontainer"}  # any file under one of these, at any depth
 NO_AGENT = "no agent configured: set agent_command in the policy file"
 IDENTITY = ["-c", "user.name=gauntlet", "-c", "user.email=gauntlet@localhost", "-c", "commit.gpgsign=false"]
 
@@ -64,12 +67,27 @@ OWN_FILES = (":(exclude).workshop/gauntlet-agent.yaml", ":(exclude).workshop.loc
 
 def patch(workspace: Path) -> str:
     git_output(workspace, "add", "-A", "--", ".", *OWN_FILES)
-    return git_output(workspace, "diff", "--cached", "HEAD", "--binary", "--no-ext-diff", "--no-textconv").decode()
+    return git_output(
+        workspace,
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--cached",
+        "HEAD",
+        "--binary",
+        "--no-ext-diff",
+        "--no-textconv",
+    ).decode()
 
 
 def control_files(patch_text: str) -> list[str]:
-    paths = re.findall(r"^diff --git a/(\S+) b/", patch_text, re.MULTILINE)
-    return sorted(p for p in paths if any(p == c or (c.endswith("/") and p.startswith(c)) for c in CONTROL))
+    paths = re.findall(r"^diff --git a/(.+) b/\1$", patch_text, re.MULTILINE)  # quotePath=false: names stay readable
+    return sorted(p for p in paths if _is_control(p))
+
+
+def _is_control(path: str) -> bool:
+    *dirs, name = path.split("/")
+    return bool(CONTROL_DIRS.intersection(dirs)) or any(fnmatch(name, pattern) for pattern in CONTROL_NAMES)
 
 
 def _failed(agent_name: str, done: ExecResult) -> GauntletError:
