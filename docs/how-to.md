@@ -57,12 +57,27 @@ gauntlet prefers Workshop, else Docker. In your policy, set `sandbox = "docker"`
 If the stock image can't build your project, make the artifacts yourself:
 
 ```sh
-# Go, for example:
-go test -coverprofile=cover.out ./...
-go list -e -f '{{.ImportPath}} {{join .Imports " "}}' ./... > imports.txt
-gremlins unleash -o mutation.json .
+pytest --cov=src --cov-branch --cov-report=json:coverage.json
+mutmut run && mutmut results --all true > mutmut-results.txt
 gauntlet stamp .
 gauntlet check . --artifacts .
 ```
 
-`--artifacts .` stops `check` reading `.gauntlet/`. File names: [languages table](reference.md#languages).
+`--artifacts .` stops `check` reading `.gauntlet/`. File names: [languages](reference.md#languages).
+
+## Write a language plugin
+
+A plugin is a package that exposes one `gauntlet.plugin.Language` value as a `gauntlet.languages` entry point (see
+`packages/gauntlet-python` for a full example):
+
+```toml
+[project]
+dependencies = ["gauntlet-core"]
+
+[project.entry-points."gauntlet.languages"]
+go = "gauntlet_go:LANGUAGE"
+```
+
+The `Language` fields say which files are source and tests, the fixed sandbox `steps`, how to read the coverage and
+mutation artifacts, imports and comments for the arch and exclusion gates, and a starter `gauntlet.toml`. Core never
+imports a plugin; installing it next to `gauntlet-core` is enough.

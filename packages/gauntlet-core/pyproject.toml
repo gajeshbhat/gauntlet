@@ -1,0 +1,38 @@
+[project]
+name = "gauntlet-core"
+version = "0.1.0"
+description = "Agent-agnostic quality gates and ephemeral-agent loop"
+authors = [
+    { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
+]
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "gauntlet-sandbox @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-sandbox",
+    "lizard>=1.24.1",
+]
+
+[project.optional-dependencies]
+python = ["gauntlet-python @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-python"]
+
+[tool.uv.sources]
+gauntlet-sandbox = { workspace = true }
+
+[project.scripts]
+gauntlet = "gauntlet:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "gauntlet"
+
+[dependency-groups]
+test = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

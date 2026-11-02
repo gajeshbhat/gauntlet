@@ -5,4 +5,3 @@
 FROM node:22-bookworm
 COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /uvx /usr/local/bin/
 RUN npm install --global @anthropic-ai/claude-code
-# Go projects: add Go here (https://go.dev/doc/install) so the agent can run `go test`.

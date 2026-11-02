@@ -36,29 +36,13 @@
 
 - `clean`: fails when a function's CRAP score exceeds 8 (default).
 - `harden`: fails when the mutation score is under 90% (default).
-- `arch`: fails when an import points outward through the layers. Python and Go only.
+- `arch`: fails when an import points outward through the layers.
 - `exclusions`: fails when ignore comments exceed 10 (default), or build settings hide code from the checks.
 - `spec`: fails when the Gherkin spec is malformed, or a scenario lacks an existing `@test(path::name)`.
 
 ## Languages
 
-| `language =` | Coverage | Mutation | Artifacts |
-|---|---|---|---|
-| `python` | coverage.py | mutmut | `coverage.json`, `mutmut-results.txt` |
-| `go` | `go test` | gremlins | `cover.out`, `imports.txt`, `mutation.json` |
-| `javascript` (and TypeScript) | c8 | Stryker | `lcov.info`, `stryker.json` |
-| `csharp` | coverlet (1) | Stryker.NET | `coverage.cobertura.xml`, `stryker-report.json` |
-| `java` | JaCoCo | PIT | `jacoco.xml`, `mutations.xml` |
-| `rust` | cargo-llvm-cov | cargo-mutants | `lcov.info`, `mutants-outcomes.json` |
-| `cpp` (GCC) | gcov, gcovr | universalmutator | `lcov.info`, `cpp-mutants.json` |
-| `cpp-clang` (2) | Clang | Mull | `lcov.info`, `mull-report.json` |
-| `dart` | `coverage` | none (3) | `lcov.info` |
-
-1. The test project must reference `coverlet.collector`.
-2. Never detected; set it in `gauntlet.toml`.
-3. `run` reports `harden` as skipped and fails, unless the policy sets `allow_skipped_gates = true`.
-
-`run` builds C/C++ with CMake only. Complexity comes from [lizard](https://github.com/terryyin/lizard).
+Python only: coverage.py and mutmut; artifacts `coverage.json`, `mutmut-results.txt`. Other languages (Go, JavaScript/TypeScript, C#, Java, Rust, C/C++, Dart) are archived at tag `v0.1-multilang` and branch `archive/multilang`. Complexity comes from [lizard](https://github.com/terryyin/lizard).
 
 ## `gauntlet.toml`
 
@@ -66,7 +50,7 @@ In the project root. Unknown keys are errors.
 
 ```toml
 language = "python"            # required
-src = "src"                    # Python: where module names are rooted (default ".")
+src = "src"                    # where module names are rooted (default ".")
 
 [crap]
 max = 8                        # may only tighten the policy's crap_ceiling
@@ -76,11 +60,8 @@ min_score = 90                 # may only tighten the policy's mutation_floor
 
 [layers]                       # optional: imports may only point down this list
 order = ["app.web", "app.service", "app.domain"]
-
-[go]                           # Go only, all optional
-packages = ["./..."]
-mutation_dir = "internal/pkg"
-mutate_only = ["handler.go"]
+roots = ["pkg_a/src", "pkg_b/src"]   # optional: several source roots instead of `src`; each must hold a layered module
+forbid = ["app.domain -> requests", "app.web -> app except app.web, app.service"]   # optional: banned imports
 ```
 
 ## `policy.toml`

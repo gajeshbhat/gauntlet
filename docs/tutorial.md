@@ -7,7 +7,7 @@ Install gauntlet, run it, fix a failure, run again.
 Get `git`, `uv` and a sandbox (see the [README](../README.md#quickstart)), then:
 
 ```sh
-uv tool install git+https://github.com/gajeshbhat/gauntlet
+uv tool install "gauntlet-core[python] @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core"
 gauntlet --version
 ```
 
@@ -18,7 +18,7 @@ cd your-project        # a git repository
 gauntlet init .
 ```
 
-This writes `gauntlet.toml`. If detection fails, create it with one line, such as `language = "go"`.
+This writes `gauntlet.toml`. If detection fails, create it with one line, such as `language = "python"`.
 
 ## 3. Run
 

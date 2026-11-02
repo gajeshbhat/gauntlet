@@ -22,16 +22,12 @@
   `docker_network = "none"` cuts it), and the Workshop user has sudo. On Linux, access to the Docker daemon is itself
   root-equivalent for whoever can use it. Do not run untrusted code with secrets in reach.
 - **Hidden code outside the patterns.** Settings or hints gauntlet does not know about (an unusual build file, a hint inside
-  a multi-line construct) still hide code; the pragma patterns match line by line. Dart `=>` functions are not scored.
-- **Unpinned transitive dependencies.** Tool versions are pinned and the C++ tools are hash-locked, but the other coverage
-  tools (c8, cargo-llvm-cov, Dart `coverage`, coverlet, JaCoCo) pull their own dependencies unhashed, and the project's
-  dependencies resolve as the project says (npm, Cargo, Dart use lockfiles; Maven and NuGet do not).
-- **Code outside functions.** CRAP scores functions. Top-level statements (scripts, module bodies) are not scored, except
-  in Dart where unrun lines outside any function are flagged.
+  a multi-line construct) still hide code; the pragma patterns match line by line.
+- **Unpinned transitive dependencies.** Tool versions are pinned, but the tools pull their own dependencies unhashed,
+  and the project's dependencies resolve as the project says.
+- **Code outside functions.** CRAP scores functions. Top-level statements (scripts, module bodies) are not scored.
 - **A planted or narrowed mutation report.** The mutation report is removed just before the mutation run, but repo code
-  runs in the same sandbox as the tools and can still forge it (see "Forged numbers"). PIT paths are rebuilt from the
-  package name and not checked against real files; a pom `<configuration>` for pitest beats the command-line options
-  (the exclusions gate reports it).
+  runs in the same sandbox as the tools and can still forge it (see "Forged numbers").
 - **A narrowed mutation scope.** mutmut's `source_paths`/`paths_to_mutate` and `pytest --cov-config` live in the repo and
   are not policed. Compare the mutant count in the evidence report with the size of the code.
 - **An incomplete spec.** Gates show the code meets the stated constraints, not that the constraints are enough.

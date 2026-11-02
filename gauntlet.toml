@@ -1,15 +1,14 @@
 language = "python"
-src = "src"
+src = "packages/gauntlet-core/src"
 
 # Outermost first; imports may only point down this list.
 [layers]
 order = [
+  "gauntlet_python",  # a plugin: core never imports it (it is found through the entry-point registry)
   "gauntlet.cli",
   "gauntlet.loop",
   "gauntlet.runner",
   "gauntlet.backends",
-  "gauntlet.mutation",
-  "gauntlet.golang",
   "gauntlet.spec",
   "gauntlet.diagram",
   "gauntlet.scaffold",
@@ -18,17 +17,33 @@ order = [
   "gauntlet.linecov",
   "gauntlet.arch",
   "gauntlet.exclusions",
-  "gauntlet.harden",
-  "gauntlet.docker",
-  "gauntlet.sandbox",
   "gauntlet.snapshot",
   "gauntlet.policy",
   "gauntlet.provenance",
   "gauntlet.config",
   "gauntlet.scope",
   "gauntlet.languages",
+  "gauntlet.plugin",
   "gauntlet.results",
   "gauntlet.safefs",
-  "gauntlet.names",
   "gauntlet.errors",
+  "gauntlet_sandbox",  # its facade
+  "gauntlet_sandbox.select",
+  "gauntlet_sandbox.docker",
+  "gauntlet_sandbox.workshop",
+  "gauntlet_sandbox.api",
+  "gauntlet_sandbox.names",
+  "gauntlet_sandbox.errors",
+]
+roots = ["packages/gauntlet-core/src", "packages/gauntlet-sandbox/src", "packages/gauntlet-python/src"]
+
+# gauntlet_sandbox is its own package: it imports nothing from gauntlet, and core reaches it only through its facade,
+# api and names.
+forbid = [
+  "gauntlet_sandbox -> gauntlet",
+  "gauntlet -> gauntlet_python",
+  "gauntlet -> gauntlet_sandbox.select",
+  "gauntlet -> gauntlet_sandbox.docker",
+  "gauntlet -> gauntlet_sandbox.workshop",
+  "gauntlet -> gauntlet_sandbox.errors",
 ]

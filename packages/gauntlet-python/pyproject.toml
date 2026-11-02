@@ -1,0 +1,36 @@
+[project]
+name = "gauntlet-python"
+version = "0.1.0"
+description = "Python language plugin for gauntlet"
+authors = [
+    { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
+]
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "gauntlet-core @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core",
+    "gauntlet-sandbox @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-sandbox",
+]
+
+[tool.uv.sources]
+gauntlet-core = { workspace = true }
+gauntlet-sandbox = { workspace = true }
+
+[project.entry-points."gauntlet.languages"]
+python = "gauntlet_python:LANGUAGE"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "gauntlet_python"
+
+[dependency-groups]
+test = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
