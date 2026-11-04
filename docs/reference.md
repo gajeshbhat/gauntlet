@@ -42,7 +42,7 @@
 
 ## Languages
 
-Python only: coverage.py and mutmut; artifacts `coverage.json`, `mutmut-results.txt`. Other languages (Go, JavaScript/TypeScript, C#, Java, Rust, C/C++, Dart) are archived at tag `v0.1-multilang` and branch `archive/multilang`. Complexity comes from [lizard](https://github.com/terryyin/lizard).
+Python only: coverage.py and mutmut; artifacts `coverage.json`, `mutmut-results.txt`. Complexity comes from [lizard](https://github.com/terryyin/lizard).
 
 ## `gauntlet.toml`
 

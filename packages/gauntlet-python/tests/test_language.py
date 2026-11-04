@@ -65,7 +65,7 @@ def test_python_steps_in_full() -> None:
         ),
         Step(
             "mutation",
-            ("uv", "run", "--project", "/project", "--with", "mutmut==3.8.0", "mutmut", "run"),
+            ("uv", "run", "--project", "/project", "--with", "mutmut==3.8.1", "mutmut", "run"),
             None,
             7200,
             False,
@@ -73,7 +73,7 @@ def test_python_steps_in_full() -> None:
         ),
         Step(
             "mutation-results",
-            ("uv", "run", "--project", "/project", "--with", "mutmut==3.8.0", "mutmut", "results", "--all", "true"),
+            ("uv", "run", "--project", "/project", "--with", "mutmut==3.8.1", "mutmut", "results", "--all", "true"),
             "mutmut-results.txt",
             1800,
             True,

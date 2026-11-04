@@ -3,7 +3,7 @@
 **Don't read the code an AI agent wrote. Make it run a gauntlet, and read the evidence.**
 
 gauntlet runs tests, coverage and mutation testing in a sandbox. It fails when code is too complex for its tests, when
-tests let planted bugs survive, or when code is hidden from the checks. Python only for now. Other languages (Go, JavaScript/TypeScript, C#, Java, Rust, C/C++, Dart) are archived at tag `v0.1-multilang` and branch `archive/multilang`.
+tests let planted bugs survive, or when code is hidden from the checks. For Python projects.
 
 ## Quickstart
 
@@ -25,6 +25,7 @@ In Claude Code 2.1.275 or later: `/plugin install gauntlet --marketplace gajeshb
 - [How-to guides](docs/how-to.md)
 - [Reference](docs/reference.md)
 - [Explanation](docs/explanation.md)
+- [Architecture](docs/architecture.md)
 - [Security model](SECURITY.md)
 
 ## Develop

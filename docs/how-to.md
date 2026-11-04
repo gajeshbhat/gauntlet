@@ -75,7 +75,7 @@ A plugin is a package that exposes one `gauntlet.plugin.Language` value as a `ga
 dependencies = ["gauntlet-core"]
 
 [project.entry-points."gauntlet.languages"]
-go = "gauntlet_go:LANGUAGE"
+mylang = "gauntlet_mylang:LANGUAGE"
 ```
 
 The `Language` fields say which files are source and tests, the fixed sandbox `steps`, how to read the coverage and

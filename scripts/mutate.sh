@@ -10,7 +10,7 @@ for pkg in packages/gauntlet-*/; do
     (
         cd "$pkg"
         rm -rf mutants
-        run=(uv run --isolated --project . --group test --with mutmut==3.8.0 --with pytest-cov==7.1.0 mutmut)
+        run=(uv run --isolated --project . --group test --with mutmut==3.8.1 --with pytest-cov==7.1.0 mutmut)
         "${run[@]}" run > /dev/null || true # mutants that survive make mutmut exit non-zero; `harden` judges the score
         "${run[@]}" results --all true >> "$root/mutmut-results.txt"
         rm -rf mutants

@@ -21,5 +21,4 @@ pass.
 - Agent loop: `gauntlet loop . --requirement "..."` writes a spec and stops (exit 3); show it and wait for approval.
   Then `gauntlet loop . --spec <approved.feature>` writes `.gauntlet-loop/loop.patch` and `EVIDENCE.md`. It needs
   `agent_command` in the policy and `CLAUDE_CODE_OAUTH_TOKEN` in that command's environment; never print or store it.
-- Python only for now; other languages are archived at tag `v0.1-multilang` / branch `archive/multilang`.
 - Report gate output verbatim. The user reviews the patch (control files first) and applies it.
