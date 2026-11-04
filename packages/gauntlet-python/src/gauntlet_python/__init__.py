@@ -23,7 +23,6 @@ LANGUAGE = Language(
     # coverage.py's default exclude regex (case-insensitive, optional colon) plus `no branch`, mutmut and bandit
     pragma=r"#\s*(?i:pragma)[:\s]?\s*(?i:no)\s*(?i:cover|branch)|#\s*pragma:\s*no\s+mutate\b|#\s*nosec\b",
     coverage_file="coverage.json",
-    coverage_format="coveragepy",
     sdk="uv",
     image="ghcr.io/astral-sh/uv:python3.12-bookworm",
     artifacts=("coverage.json", "mutmut-results.txt"),

@@ -13,7 +13,7 @@ def parse(language: Language, text: str) -> Lines:
     try:
         return language.read_coverage(text)
     except (KeyError, TypeError, AttributeError, ValueError):  # json.JSONDecodeError is a ValueError
-        raise GauntletError(f"cannot read {language.coverage_format} report") from None
+        raise GauntletError(f"cannot read {language.coverage_file}") from None
 
 
 def _clean_key(key: str) -> tuple[str, bool]:

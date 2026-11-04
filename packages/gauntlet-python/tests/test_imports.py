@@ -5,7 +5,12 @@ from pyhelpers import tree
 
 from gauntlet.arch import check
 from gauntlet_python import LANGUAGE
-from gauntlet_python.imports import imports
+from gauntlet_python.imports import imports_at
+
+
+def imports(source: str, package: str) -> set[str]:
+    return {name for _, name in imports_at(source, package.split(".") if package else [])}
+
 
 LAYERS = ("app.web", "app.service", "app.domain")  # outermost first
 

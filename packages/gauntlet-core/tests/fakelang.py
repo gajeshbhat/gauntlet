@@ -67,7 +67,6 @@ FAKE = Language(
     tests=r"^(tests?/|conftest\.py$)",
     pragma=r"#\s*(?:pragma:\s*no\s+(?:mutate|cover)|nosec)\b",
     coverage_file="coverage.json",
-    coverage_format="fakecov",
     sdk="fake-sdk",
     image="example.com/fake:1",
     artifacts=("coverage.json", "mutmut-results.txt"),

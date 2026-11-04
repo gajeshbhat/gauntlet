@@ -52,7 +52,7 @@ def test_malformed_input_is_a_clean_error(tmp_path: Path, capsys: Out, cli_run: 
     py_project(tmp_path)
     (tmp_path / "coverage.json").write_text("{}")
     assert cli_run("clean", tmp_path) == 2
-    assert "cannot read fakecov report" in capsys.readouterr().err
+    assert "cannot read coverage.json" in capsys.readouterr().err
 
 
 # ---- arch
@@ -121,7 +121,7 @@ def test_clean_without_coverage_exits_2(tmp_path: Path, capsys: Out, cli_run: Ca
     project(tmp_path, 'language = "fake"\n')
     assert cli_run("clean", tmp_path) == 2
     assert (
-        "coverage.json not found; produce it with: gauntlet run, or your test runner's fakecov report"
+        "coverage.json not found; produce it with: gauntlet run, or your test runner's coverage.json"
         in capsys.readouterr().err
     )
 
