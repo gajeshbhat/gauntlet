@@ -5,7 +5,7 @@ from gauntlet_sandbox import PROJECT_DIR
 
 UV = ("uv", "run", "--project", PROJECT_DIR)
 PYTEST_COV = "pytest-cov==7.1.0"
-MUTMUT = "mutmut==3.8.0"
+MUTMUT = "mutmut==3.8.1"
 
 
 def steps(src: str, out: str) -> list[Step]:

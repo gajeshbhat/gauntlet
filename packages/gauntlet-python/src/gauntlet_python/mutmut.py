@@ -8,6 +8,14 @@ from gauntlet.results import Mutation
 
 CAUGHT = {"killed", "timeout", "segfault"}
 IGNORED = {"skipped"}
+NOT_RUN = (
+    "mutmut checked no mutant: its tests never ran (a failing test or a layout it cannot handle makes it "
+    "stop before the first mutant). Run `mutmut run` in the project to see why."
+)
+
+
+def _never_ran(caught: int, unmet: list[str]) -> bool:
+    return caught == 0 and all(b.endswith(": not checked") for b in unmet)
 
 
 def check(results: str) -> Mutation:
@@ -24,4 +32,6 @@ def check(results: str) -> Mutation:
             bad.append(f"{name}: {status}")
     if total == 0:
         raise GauntletError("no mutants found; is [tool.mutmut] configured in the target repo?")
+    if _never_ran(caught, bad):
+        raise GauntletError(NOT_RUN)
     return Mutation(100 * caught / total, bad, caught, total)

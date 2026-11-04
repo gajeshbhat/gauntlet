@@ -31,3 +31,12 @@ def test_check_turns_results_into_a_mutation_result() -> None:
 
 def test_segfaults_count_as_caught() -> None:
     assert check("a: segfault\nb: survived\n").pct == 50.0
+
+
+def test_mutants_that_were_all_never_checked_mean_mutmut_did_not_run() -> None:
+    with pytest.raises(ValueError, match=r"mutmut checked no mutant: its tests never ran.*mutmut run"):
+        check("pkg.x_a__mutmut_1: not checked\npkg.x_a__mutmut_2: not checked\n")
+
+
+def test_a_few_unchecked_mutants_among_checked_ones_are_survivors_not_an_error() -> None:
+    assert check("pkg.x_a__mutmut_1: killed\npkg.x_a__mutmut_2: not checked\n").pct == 50.0
