@@ -22,3 +22,19 @@ def test_python_project_without_src(tmp_path: Path) -> None:
 def test_a_requirements_file_also_means_python(tmp_path: Path) -> None:
     (tmp_path / "requirements.txt").write_text("flask\n")
     assert load(scaffold.write_config(tmp_path)).language == "python"
+
+
+def test_a_flat_layout_points_src_at_the_one_package(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    for name in ("mypkg", "tests", "docs"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "__init__.py").write_text("")
+    assert load(scaffold.write_config(tmp_path)).src == "mypkg"
+
+
+def test_several_top_level_packages_keep_src_at_the_root(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    for name in ("one", "two"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "__init__.py").write_text("")
+    assert load(scaffold.write_config(tmp_path)).src == "."
