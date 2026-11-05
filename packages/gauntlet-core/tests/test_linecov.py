@@ -6,7 +6,7 @@ from gauntlet import linecov
 
 @pytest.mark.parametrize("text", ["garbage: [[[", '{"files": {"a.py": {}}}'])
 def test_malformed_reports_are_clean_errors(text: str) -> None:
-    with pytest.raises(ValueError, match="^cannot read fakecov report$"):
+    with pytest.raises(ValueError, match="^cannot read coverage.json$"):
         linecov.parse(FAKE, text)
 
 

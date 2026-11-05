@@ -12,7 +12,7 @@ def test_coveragepy() -> None:
 
 @pytest.mark.parametrize("text", ["garbage: [[[", '{"files": {"a.py": {}}}'])
 def test_malformed_reports_are_clean_errors(text: str) -> None:
-    with pytest.raises(ValueError, match="^cannot read coveragepy report$"):
+    with pytest.raises(ValueError, match="^cannot read coverage.json$"):
         linecov.parse(LANGUAGE, text)
 
 

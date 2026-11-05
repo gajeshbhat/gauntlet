@@ -73,7 +73,7 @@ def _clean(run: Run) -> GateResult:
     language = languages.get(run.cfg.language)
     _trusted(run, [language.coverage_file])
     text = read_artifact(
-        run.art, language.coverage_file, f"gauntlet run, or your test runner's {language.coverage_format} report"
+        run.art, language.coverage_file, f"gauntlet run, or your test runner's {language.coverage_file} report"
     )
     lines = linecov.parse(language, text)
     result = clean.check(run.root, lines, language, run.cfg.crap_max, run.scope)

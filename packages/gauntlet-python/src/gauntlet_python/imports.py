@@ -30,8 +30,3 @@ def imports_at(source: str, package: list[str]) -> list[tuple[int, str]]:
         return _walk(source, package)
     except (SyntaxError, RecursionError, MemoryError) as e:
         raise GauntletError(type(e).__name__) from None
-
-
-def imports(source: str, package: str) -> set[str]:
-    """Names imported by `source` living in dotted `package` (where relative imports resolve)."""
-    return {name for _, name in imports_at(source, package.split(".") if package else [])}

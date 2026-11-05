@@ -36,8 +36,7 @@ class Language:
     markers: tuple[str, ...]  # files (globs) whose presence says "this project uses the language" (for `init`)
     tests: str  # regex for test files: the clean gate does not hold them to the CRAP limit
     pragma: str  # regex for the comments that exclude code from the gates
-    coverage_file: str  # the artifact the clean gate reads ...
-    coverage_format: str  # ... and its name, for messages
+    coverage_file: str  # the artifact the clean gate reads
     sdk: str  # the Canonical Workshop SDK
     image: str  # the default Docker image (the policy can override it per language)
     artifacts: tuple[str, ...]  # every file the gates read; `stamp` binds these
