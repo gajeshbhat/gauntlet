@@ -9,28 +9,35 @@ An agent can write code faster than anyone can review it. gauntlet runs your Pyt
 measures how good those tests really are, and fails when the code is not proven: too complex for its tests, bugs
 planted in it that the tests miss, or code hidden from the checks.
 
-## What it checks
+## Use it in Claude Code
 
-| Check | In plain words |
-|---|---|
-| **CRAP score** | A function that is complicated *and* barely tested is risky. Score = complexity² × (1 − coverage)³ + complexity. Limit: 8. |
-| **Mutation testing** | gauntlet makes tiny deliberate bugs (`<` becomes `<=`) and reruns your tests. If they still pass, they run the code without checking it. Limit: 90% of bugs caught. |
-| **No hiding** | Caps `# pragma: no cover`, refuses config that hides files from coverage, and fails when a check examined nothing. |
-| **Layers** (optional) | Imports may only point inward, as you declare. |
-| **Spec** (optional) | A Gherkin spec you approve first; every scenario must point at a real test. |
+Needs Claude Code 2.1.275 or later.
 
-Your limits live in a policy file outside the repository, so an agent cannot loosen them by editing the repo.
+```
+/plugin install gauntlet --marketplace gajeshbhat/gauntlet
+/gauntlet run
+```
 
-## Quickstart
+Claude installs the CLI if it is missing, runs the gates, reads the evidence and fixes the cause (it is told never to
+add ignore comments or loosen a limit). `/gauntlet loop` goes further: you approve a spec, an agent implements it in a
+sandboxed copy, and you get back a patch plus the evidence.
 
-You need `git`, [`uv`](https://docs.astral.sh/uv/) and a sandbox: Docker or Podman, or
+## Use it from the terminal
+
+You need `git`, [`uv`](https://docs.astral.sh/uv/) and a sandbox: Docker, Podman, or
 [Workshop](https://snapcraft.io/workshop) on Linux.
 
 ```sh
-uv tool install "gauntlet-core[python] @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core"
-cd your-project                        # a git repository
-gauntlet init .                        # detect the project, write gauntlet.toml
-gauntlet run . --report EVIDENCE.md    # exit 0: every gate passed
+REPO=git+https://github.com/gajeshbhat/gauntlet@v0.1.0
+uv tool install \
+  "gauntlet-core[python] @ $REPO#subdirectory=packages/gauntlet-core"
+```
+
+Then, inside a git repository:
+
+```sh
+gauntlet init .                      # write gauntlet.toml
+gauntlet run . --report EVIDENCE.md  # exit 0: every gate passed
 ```
 
 A failing run says exactly what to fix:
@@ -41,8 +48,33 @@ clean: 41 function(s) checked, 1 over CRAP 8
 mutation score 84.0% < 90%
 ```
 
-Exit codes: `0` passed, `1` a gate failed, `2` error or bad input. In Claude Code, install the plugin with
-`/plugin install gauntlet --marketplace gajeshbhat/gauntlet` and run `/gauntlet`.
+Exit codes: `0` passed, `1` a gate failed, `2` error or bad input.
+
+## What it checks
+
+| Check | In plain words |
+|---|---|
+| **CRAP score** | A function that is complicated *and* barely tested is risky. Score = complexity² × (1 − coverage)³ + complexity. Limit: 8. |
+| **Mutation testing** | gauntlet plants tiny bugs (`<` becomes `<=`) and reruns your tests. If they still pass, they run the code without checking it. Limit: 90% of bugs caught. |
+| **No hiding** | Caps `# pragma: no cover`, refuses config that hides files from coverage, and fails when a check examined nothing. |
+| **Layers** (optional) | Imports may only point inward, as you declare. |
+| **Spec** (optional) | A Gherkin spec you approve first; every scenario must point at a real test. |
+
+Your limits live in a policy file outside the repository, so an agent cannot loosen them by editing the repo.
+
+## Core and plugin
+
+gauntlet is split so the checks never depend on a language.
+
+| | Language-agnostic core | Language plugin |
+|---|---|---|
+| **Package** | `gauntlet-core` | `gauntlet-python` |
+| **Knows** | The gates, the CLI, the agent loop, the sandbox contract, the trust model | How to run a language's tests, read its coverage and mutation results, and list its imports and comments |
+| **Does not know** | Any language | The gates or the CLI |
+| **Python today** | CRAP score, limits, layers, specs, evidence report | `pytest` + `coverage.py` + `mutmut` |
+
+A plugin is one small value that core finds through an entry point, so adding a language means writing a plugin and
+changing nothing in core. See [Write a language plugin](docs/how-to.md) and the [architecture](docs/architecture.md).
 
 ## How it works
 
@@ -53,7 +85,7 @@ flowchart LR
 ```
 
 Project code only ever runs inside the sandbox. The gates read results and refuse any that do not match the source.
-Details: [architecture](docs/architecture.md), [security model](SECURITY.md).
+More in the [security model](SECURITY.md).
 
 ## Limits
 
