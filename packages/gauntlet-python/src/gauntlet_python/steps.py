@@ -25,20 +25,22 @@ if "mutmut" not in tool and not (setup.exists() and "[mutmut]" in setup.read_tex
 """.strip()
 
 
-# mutmut stops at the first test that fails under its instrumentation (a pickling or recursion-depth test, say) and then
-# checks no mutant. Rerun with each such test deselected: fewer tests can only lower the score, never flatter it.
+# mutmut stops at the first test that fails under its instrumentation (a pickling or recursion-depth test, say; in its
+# stats run or its clean run) and then checks no mutant. Rerun with each such test deselected, a parametrized one whole:
+# fewer tests can only lower the score, never flatter it.
 RUN_MUTMUT = """
 import os, re, shlex, subprocess, sys
 deselected = []
-for _ in range(11):
+for _ in range(21):
     options = " ".join(shlex.quote(f"--deselect={test}") for test in deselected)
     done = subprocess.run(sys.argv[1:], env={**os.environ, "PYTEST_ADDOPTS": options}, capture_output=True, text=True)
     print(done.stdout, end="")
-    new = [t for t in re.findall(r"^FAILED (\\S+)", done.stdout + done.stderr, re.M) if t not in deselected]
-    if "failed to collect stats" not in done.stdout + done.stderr or not new:
+    seen = done.stdout + done.stderr
+    new = {t for t in re.findall(r"^FAILED ([^\\s\\[]+)", seen, re.M)} - set(deselected)
+    if not re.search("failed to collect stats|Failed to run clean test", seen) or not new:
         break
-    deselected += new
-    print("deselected " + ", ".join(new), file=sys.stderr)
+    deselected += sorted(new)
+    print("deselected " + ", ".join(sorted(new)), file=sys.stderr)
 print(done.stderr, end="", file=sys.stderr)
 sys.exit(done.returncode)
 """.strip()

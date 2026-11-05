@@ -123,3 +123,35 @@ def test_a_test_that_breaks_under_mutation_is_deselected_and_mutmut_retried() ->
 def test_a_failure_that_names_no_new_test_is_left_to_fail() -> None:
     done = _run_mutmut([sys.executable, "-c", "import sys; print('failed to collect stats'); sys.exit(3)"])
     assert done.returncode == 3
+
+
+FAKE_CLEAN_RUN = """
+import os, sys
+if "--deselect=tests/test_a.py::test_flaky" in os.environ.get("PYTEST_ADDOPTS", ""):
+    print("done")
+else:
+    print("FAILED tests/test_a.py::test_flaky - boom\\nFailed to run clean test")
+    sys.exit(1)
+"""
+
+
+def test_a_test_that_fails_mutmut_clean_run_is_deselected_too() -> None:
+    done = _run_mutmut([sys.executable, "-c", FAKE_CLEAN_RUN])
+    assert done.returncode == 0
+    assert "deselected tests/test_a.py::test_flaky" in done.stderr
+
+
+FAKE_PARAMETRIZED = """
+import os, sys
+if "--deselect=tests/test_a.py::test_p " in os.environ.get("PYTEST_ADDOPTS", "") + " ":
+    print("done")
+else:
+    print("FAILED tests/test_a.py::test_p[3-Foo] - boom\\nfailed to collect stats. runner returned 1")
+    sys.exit(1)
+"""
+
+
+def test_a_failing_parametrized_test_is_deselected_whole_in_one_retry() -> None:
+    done = _run_mutmut([sys.executable, "-c", FAKE_PARAMETRIZED])
+    assert done.returncode == 0
+    assert "deselected tests/test_a.py::test_p\n" in done.stderr
