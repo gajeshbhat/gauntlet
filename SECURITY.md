@@ -34,3 +34,8 @@
 - **Mutation-tool noise.** Reported kills and survivors are samples, not proofs.
 
 Report a vulnerability by opening a private security advisory on the repository.
+
+## Reporting a vulnerability
+
+Use GitHub's private vulnerability reporting (Security tab, "Report a vulnerability") and do not open a public issue.
+Include the gauntlet version and a minimal reproduction. Expect an acknowledgement within a week.
