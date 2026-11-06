@@ -5,14 +5,12 @@
 `gauntlet COMMAND [ROOT] [options]`. `ROOT` defaults to `.`.
 
 - `init`: write a starter `gauntlet.toml` (never overwrites).
-- `run`: sandboxed tests, coverage and mutation, then all gates. Results go to `.gauntlet/`.
+- `run`: tests, coverage and mutation on a private copy, then all gates. Results go to `.gauntlet/`.
 - `check`: `arch` (if layers are set), `clean`, `exclusions` on existing results.
 - `arch`, `clean`, `harden`, `exclusions`, `spec`: one gate.
 - `stamp`: bind artifacts to the current source.
 - `pin`: record `gauntlet.toml`'s hash in your policy.
 - `diagram`: print a Mermaid graph of the layers.
-- `loop --requirement TEXT`: write a spec, then stop (exit 3).
-- `loop --spec FILE`: implement an approved spec; writes `loop.patch` and `EVIDENCE.md`.
 
 ## Options
 
@@ -23,14 +21,14 @@
 - `--json FILE`: also write results as JSON.
 - `--report FILE`: also write an `EVIDENCE.md` report.
 - `--feature FILE`: `spec` only; the Gherkin file (default: `ROOT/spec.feature`).
-- `--out DIR`: output directory (`run`: `ROOT/.gauntlet`; `loop`: `ROOT/.gauntlet-loop`).
+- `--sandbox local|openshell`: where project code runs for `run` (default: the policy's, else `local`).
+- `--out DIR`: output directory (`run`: `ROOT/.gauntlet`).
 
 ## Exit codes
 
 - `0`: every gate passed.
 - `1`: a gate failed.
 - `2`: refused or error (bad config, missing or stale artifacts, empty gate).
-- `3`: `loop` wrote a spec and awaits approval.
 
 ## Gates
 

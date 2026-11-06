@@ -22,7 +22,7 @@ from gauntlet.spec import parse
 @pytest.mark.parametrize("bad", ["../x", "a/../b", "/abs", "a b", "a;b", "-x", ""])
 def test_unsafe_paths(bad: str) -> None:
     with pytest.raises(ValueError, match=f"^unsafe path {re.escape(repr(bad))}$"):
-        runner.steps(Config("fake", src=bad))
+        runner.steps(Config("fake", src=bad), "/p")
 
 
 # ---- the evidence report
@@ -67,7 +67,7 @@ Generated 2026-10-16T12:00:00+00:00 by gauntlet {version("gauntlet-core")}.
 ## What this does not prove
 
 - The gates measure the code against the configured constraints; they cannot show those constraints are complete.
-- Tests run in the sandbox can forge coverage or mutation results; it protects the host, not the numbers.
+- Tests can forge coverage or mutation results; a sandbox protects the host, not the numbers.
 - Mutation testing samples the mutants its tool generates; a surviving or missing mutant is no proof either way.
 - A human should read the spec the tests encode, not only this report.
 

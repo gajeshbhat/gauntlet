@@ -6,7 +6,6 @@ Only executable lines appear in a file's map; a line that is absent is not code 
 from gauntlet.errors import GauntletError
 from gauntlet.plugin import Language, Lines
 from gauntlet.safefs import SKIP_DIRS
-from gauntlet_sandbox import PROJECT_DIR
 
 
 def parse(language: Language, text: str) -> Lines:
@@ -17,9 +16,9 @@ def parse(language: Language, text: str) -> Lines:
 
 
 def _clean_key(key: str) -> tuple[str, bool]:
-    """The report path made project-relative, and whether it came from a host root outside the container."""
-    foreign_root = key.startswith("/") and not key.startswith(f"{PROJECT_DIR}/")
-    key = key.removeprefix(f"{PROJECT_DIR}/").lstrip("/")
+    """The report path made relative, and whether it was absolute (rooted at the directory the tests ran in)."""
+    foreign_root = key.startswith("/")
+    key = key.lstrip("/")
     if ".." in key.split("/"):
         raise GauntletError(f"{key!r} escapes the project root")
     return key, foreign_root

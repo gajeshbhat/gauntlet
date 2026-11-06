@@ -1,7 +1,8 @@
-"""Produce gate artifacts by running fixed, pinned commands inside a sandbox on a private snapshot of the repo.
+"""Produce gate artifacts by running fixed, pinned commands in a sandbox on a private snapshot of the repo.
 
 Nothing the repository contains chooses what runs: commands, tool versions and output names are defined here.
-Target code (its tests, mutation runs) executes only in the sandbox; its outputs are copied out and stamped on the host.
+Target code (its tests, mutation runs) executes in the sandbox (this machine unless the policy says otherwise), on the
+snapshot; its outputs are read from the snapshot and stamped.
 """
 
 import re
@@ -15,11 +16,10 @@ from gauntlet.errors import GauntletError
 from gauntlet.plugin import Step
 from gauntlet.provenance import excluded, fingerprint, stamp
 from gauntlet.safefs import MAX_ARTIFACT_BYTES
+from gauntlet.sandbox import ExecResult, Sandbox
 from gauntlet.snapshot import snapshot
-from gauntlet_sandbox import PROJECT_DIR, ExecResult, Sandbox
 
 OUT_DIR = ".gauntlet-out"
-IN_SANDBOX = f"{PROJECT_DIR}/{OUT_DIR}"
 PATH_OK = re.compile(r"^(\.|[A-Za-z0-9_][A-Za-z0-9_./-]*)$")
 
 
@@ -29,8 +29,9 @@ def _safe_path(value: str) -> str:
     return value
 
 
-def steps(cfg: Config) -> list[Step]:
-    return languages.get(cfg.language).steps(_safe_path(cfg.src), IN_SANDBOX, cfg.mutation_tool)
+def steps(cfg: Config, project_dir: str) -> list[Step]:
+    out = f"{project_dir}/{OUT_DIR}"
+    return languages.get(cfg.language).steps(_safe_path(cfg.src), project_dir, out, cfg.mutation_tool)
 
 
 def output_tail(done: ExecResult) -> str:
@@ -38,8 +39,8 @@ def output_tail(done: ExecResult) -> str:
     return " | ".join(part for part in (done.stderr.strip(), done.stdout.strip()) if part)[-2000:]
 
 
-def _stale(cfg: Config) -> tuple[str, ...]:
-    return (f"{IN_SANDBOX}/{languages.get(cfg.language).mutation[cfg.mutation_tool].artifact}",)
+def _stale(box: Sandbox, cfg: Config) -> tuple[str, ...]:
+    return (f"{box.project_dir}/{OUT_DIR}/{languages.get(cfg.language).mutation[cfg.mutation_tool].artifact}",)
 
 
 def _clear(box: Sandbox, stale: tuple[str, ...]) -> None:
@@ -108,11 +109,12 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         snap = Path(tmp) / "project"
         snapshot(source, snap)
         (snap / OUT_DIR).mkdir()
-        plan = steps(cfg)
         box = make_sandbox(snap)
-        box.ensure()
+        plan = steps(cfg, box.project_dir)
         try:
-            captured = _run_steps(box, plan, _stale(cfg))
+            box.ensure()
+            captured = _run_steps(box, plan, _stale(box, cfg))
+            box.fetch(OUT_DIR)
         finally:
             box.remove()
         found = _collect(snap, cfg.language, plan, captured)

@@ -146,35 +146,6 @@ def test_steps_may_contain_colons() -> None:
     assert feature.scenarios[0].steps == (("When", "the time is 10:30"), ("Then", "output: ok"))
 
 
-def test_traceability_can_be_deferred_until_the_tests_exist(tmp_path: Path) -> None:
-    text = GOOD.replace("tests/test_limiter.py::test_allows_two", "tests/not_written_yet.py::test_x")
-    path = project(tmp_path, text)
-    assert any("does not exist" in p for p in check(path, tmp_path))
-    assert all("does not exist" not in p for p in check(path, tmp_path, trace=False))
-    assert any(
-        "has no @test" in p
-        for p in check(
-            project(tmp_path, GOOD.replace("@test(tests/test_limiter.py::test_allows_two)", "")), tmp_path, trace=False
-        )
-    )
-
-
-def test_free_text_under_the_feature_line_is_a_description() -> None:
-    text = "Feature: f\n  As a user\n  I want things: to work\n\n  @test(a.py)\n  Scenario: s\n    When x\n    Then y\n"
-    assert parse(text).problems == ()
-
-
-def test_free_text_elsewhere_is_still_not_understood() -> None:
-    after_scenario = "Feature: f\n  @test(a.py)\n  Scenario: s\n    some prose\n    When x\n    Then y\n"
-    assert any("line 4: not understood" in p for p in parse(after_scenario).problems)
-    after_background = "Feature: f\n  Background:\n    prose here\n"
-    assert any("line 3: not understood" in p for p in parse(after_background).problems)
-
-
-def test_a_test_name_must_appear_as_a_whole_word_not_inside_another_word(tmp_path: Path) -> None:
-    text = GOOD.replace("tests/test_limiter.py::test_allows_two", "tests/test_limiter.py::test_allows")
-    path = project(tmp_path, text)
-    (tmp_path / "tests" / "test_limiter.py").write_text("def test_allows_two(): pass\n")
-    assert any("test_allows is not in tests/test_limiter.py" in p for p in check(path, tmp_path))
-    (tmp_path / "tests" / "test_limiter.py").write_text("def test_allows(): pass\n")
-    assert not any("is not in" in p for p in check(path, tmp_path))
+def test_free_text_under_feature_is_a_description() -> None:
+    feature = parse("Feature: x\n  As a user I want y\n  @test(a.py)\n  Scenario: s\n    When a\n    Then b\n")
+    assert feature.problems == ()

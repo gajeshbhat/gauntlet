@@ -49,10 +49,24 @@ def _section(path: Path, data: dict[str, Any], name: str) -> dict[str, Any]:
     return table
 
 
-def _int(path: Path, table: dict[str, Any], key: str, default: int, lo: int, hi: int) -> int:
+def integer(path: Path, table: dict[str, Any], key: str, default: int, lo: int, hi: int) -> int:
     value = table.get(key, default)
     if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
         raise GauntletError(f"{path}: {key} must be an integer between {lo} and {hi}")
+    return value
+
+
+def boolean(path: Path, table: dict[str, Any], key: str, default: bool) -> bool:
+    value = table.get(key, default)
+    if not isinstance(value, bool):
+        raise GauntletError(f"{path}: {key} must be true or false")
+    return value
+
+
+def choice(path: Path, table: dict[str, Any], key: str, allowed: tuple[str, ...]) -> str:
+    value = table.get(key, allowed[0])
+    if value not in allowed:
+        raise GauntletError(f"{path}: {key} must be one of {', '.join(allowed)}")
     return value
 
 
@@ -63,7 +77,7 @@ def _text(path: Path, table: dict[str, Any], key: str, default: str) -> str:
     return value
 
 
-def _strings(path: Path, table: dict[str, Any], key: str, default: tuple[str, ...], label: str = "") -> tuple[str, ...]:
+def strings(path: Path, table: dict[str, Any], key: str, default: tuple[str, ...], label: str = "") -> tuple[str, ...]:
     value: Any = table.get(key, list(default))
     if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
         raise GauntletError(f"{path}: {label or key} must be a list of non-empty strings")
@@ -72,7 +86,7 @@ def _strings(path: Path, table: dict[str, Any], key: str, default: tuple[str, ..
 
 def _rules(path: Path, table: dict[str, Any]) -> tuple[Rule, ...]:
     rules: list[Rule] = []
-    for text in _strings(path, table, "forbid", (), "layers.forbid"):
+    for text in strings(path, table, "forbid", (), "layers.forbid"):
         m = RULE.match(text)
         if m is None:
             raise GauntletError(f"{path}: forbid rule {text!r} must look like 'A -> B' or 'A -> B except C, D'")
@@ -96,12 +110,12 @@ def load(path: Path) -> Config:
         raise GauntletError(f"{path}: mutation.tool must be one of {', '.join(tools)}")
     return Config(
         language=language,
-        crap_max=_int(path, sections["crap"], "max", Config.crap_max, 1, 1000),
-        mutation_min=_int(path, sections["mutation"], "min_score", Config.mutation_min, 0, 100),
+        crap_max=integer(path, sections["crap"], "max", Config.crap_max, 1, 1000),
+        mutation_min=integer(path, sections["mutation"], "min_score", Config.mutation_min, 0, 100),
         mutation_tool=tool,
-        layers=_strings(path, sections["layers"], "order", (), "layers.order"),
+        layers=strings(path, sections["layers"], "order", (), "layers.order"),
         src=_text(path, top, "src", Config.src),
-        roots=_strings(path, sections["layers"], "roots", (), "layers.roots"),
+        roots=strings(path, sections["layers"], "roots", (), "layers.roots"),
         forbid=_rules(path, sections["layers"]),
         explicit=frozenset(n for n, key in (("crap", "max"), ("mutation", "min_score")) if key in sections[n]),
     )

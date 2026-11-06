@@ -8,20 +8,8 @@ allow_unstamped = false     # accept artifacts that were not produced from the c
 require_pin = false         # refuse a gauntlet.toml you have not pinned with `gauntlet pin`
 require_arch = false        # a gauntlet.toml without [layers] fails `check` and `run` instead of skipping the arch gate
 
-# Only for `gauntlet loop`: the coding agent that runs inside the sandbox. The prompt is appended as the last argument.
-# The token is passed by NAME; set it in the environment of the command, never here.
-# agent_command = ["claude", "-p", "--dangerously-skip-permissions"]
-# agent_env = ["CLAUDE_CODE_OAUTH_TOKEN"]
-# agent_timeout = 1800      # seconds per agent run
-# max_rounds = 3            # Fixer rounds before the loop gives up
-
-# Sandbox backend for `run` and `loop`: "auto" (Workshop if installed, else Docker), "workshop" or "docker".
-# sandbox = "auto"
-# container_cli = "docker"        # or "podman"
-# docker_network = "bridge"       # "none" cuts the container off (dependencies and agents then cannot download)
-# docker_memory = "4g"            # empty: no limit
-# docker_image_agent = "gauntlet-agent"   # build it from examples/agent.Dockerfile
-# [docker_images]                 # override the default image of a language
-# python = "ghcr.io/astral-sh/uv:python3.12-bookworm"
+# Where project code runs for `run`: "local" (this machine, in a private copy of the repo) or "openshell"
+# (an isolated OpenShell sandbox; needs `gauntlet-core[openshell]` and a gateway). `--sandbox` overrides it per run.
+sandbox = "local"
 
 [pins]

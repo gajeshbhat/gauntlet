@@ -1,18 +1,16 @@
-"""The fixed, pinned commands that produce the Python artifacts inside the sandbox."""
+"""The fixed, pinned commands that produce the Python artifacts in the sandbox."""
 
 from gauntlet.plugin import Step
-from gauntlet_sandbox import PROJECT_DIR
 
-UV = ("uv", "run", "--project", PROJECT_DIR)
 PYTEST_COV = "pytest-cov==7.1.0"
 MUTMUT = "mutmut==3.8.1"
 COSMIC_RAY = "cosmic-ray==8.7.0"
-# The sandbox copy has no git history, so projects that read their version from git (setuptools-scm, hatch-vcs) cannot
+# The private copy has no git history, so projects that read their version from git (setuptools-scm, hatch-vcs) cannot
 # build without one.
 ENV = (("SETUPTOOLS_SCM_PRETEND_VERSION", "0.0.0"),)
 
 # mutmut finds its source only through pyproject.toml / setup.cfg and cannot guess a flat layout. Point it at `src` in
-# the sandbox's private copy, unless the project already configures mutmut itself. Tests are never mutated.
+# the private copy, unless the project already configures mutmut itself. Tests are never mutated.
 CONFIGURE_MUTMUT = """
 import sys, tomllib
 from pathlib import Path
@@ -71,8 +69,8 @@ command = "uv run --project . --with pytest pytest -x -q"
 RUN_CR = """
 import json, os, shutil, socket, subprocess, sys, tempfile, time
 from pathlib import Path
-out = Path(sys.argv[1])
-project, base, session = out.parent, (out / "cosmic-ray.toml").read_text(), out / "session.sqlite"
+project, out = Path(sys.argv[1]), Path(sys.argv[2])
+base, session = (out / "cosmic-ray.toml").read_text(), out / "session.sqlite"
 def cr(*args, **kwargs):
     return subprocess.run(["cosmic-ray", *args], capture_output=True, text=True, **kwargs)
 def config(timeout, distributor):
@@ -135,40 +133,42 @@ for line in subprocess.run(sys.argv[1:], capture_output=True, text=True, check=T
 """.strip()
 
 
-def _tests(src: str, out: str) -> Step:
+def _tests(src: str, project: str, out: str) -> Step:
+    uv = ("uv", "run", "--project", project)
     report = f"--cov-report=json:{out}/coverage.json"
     return Step(
         "tests",
-        (*UV, "--with", PYTEST_COV, "pytest", "-q", f"--cov={src}", "--cov-branch", report),
+        (*uv, "--with", PYTEST_COV, "pytest", "-q", f"--cov={src}", "--cov-branch", report),
         timeout=3600,
         env=ENV,
     )
 
 
-def _mutmut(src: str, out: str) -> list[Step]:
+def _mutmut(src: str, project: str, out: str) -> list[Step]:
+    uv = ("uv", "run", "--project", project)
     return [
-        Step("mutation-config", ("python3", "-c", CONFIGURE_MUTMUT, PROJECT_DIR, src), timeout=60),
+        Step("mutation-config", ("python3", "-c", CONFIGURE_MUTMUT, project, src), timeout=60),
         Step(
             "mutation",
-            ("python3", "-c", RUN_MUTMUT, *UV, "--with", MUTMUT, "mutmut", "run"),
+            ("python3", "-c", RUN_MUTMUT, *uv, "--with", MUTMUT, "mutmut", "run"),
             timeout=7200,
             must_pass=False,
             env=ENV,
         ),
         Step(
             "mutation-results",
-            (*UV, "--with", MUTMUT, "mutmut", "results", "--all", "true"),
+            (*uv, "--with", MUTMUT, "mutmut", "results", "--all", "true"),
             "mutmut-results.txt",
             env=ENV,
         ),
     ]
 
 
-def _cosmic_ray(src: str, out: str) -> list[Step]:
+def _cosmic_ray(src: str, project: str, out: str) -> list[Step]:
     run = ("uv", "run", "--no-project", "--with", COSMIC_RAY, "python3", "-c")
     return [
-        Step("mutation-config", ("python3", "-c", CONFIGURE_CR, PROJECT_DIR, src, out), timeout=60),
-        Step("mutation", (*run, RUN_CR, out), timeout=7200, env=ENV),
+        Step("mutation-config", ("python3", "-c", CONFIGURE_CR, project, src, out), timeout=60),
+        Step("mutation", (*run, RUN_CR, project, out), timeout=7200, env=ENV),
         Step(
             "mutation-results",
             (*run, DUMP_CR, "cosmic-ray", "dump", f"{out}/session.sqlite"),
@@ -178,5 +178,5 @@ def _cosmic_ray(src: str, out: str) -> list[Step]:
     ]
 
 
-def steps(src: str, out: str, tool: str) -> list[Step]:
-    return [_tests(src, out), *(_cosmic_ray if tool == "cosmic-ray" else _mutmut)(src, out)]
+def steps(src: str, project: str, out: str, tool: str) -> list[Step]:
+    return [_tests(src, project, out), *(_cosmic_ray if tool == "cosmic-ray" else _mutmut)(src, project, out)]

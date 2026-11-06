@@ -25,7 +25,7 @@ class Step:
 
 @dataclass(frozen=True)
 class MutationTool:
-    artifact: str  # the file the sandbox run leaves behind
+    artifact: str  # the file the run leaves behind
     how: str  # how to produce it yourself, for the error message
     read: Callable[[str], Mutation]
 
@@ -37,10 +37,10 @@ class Language:
     tests: str  # regex for test files: the clean gate does not hold them to the CRAP limit
     pragma: str  # regex for the comments that exclude code from the gates
     coverage_file: str  # the artifact the clean gate reads
-    sdk: str  # the Canonical Workshop SDK
-    image: str  # the default Docker image (the policy can override it per language)
+    image: str  # the image of an OpenShell sandbox (isolation is optional; commands otherwise run on this machine)
     artifacts: tuple[str, ...]  # every file the gates read; `stamp` binds these
-    steps: Callable[[str, str, str], list[Step]]  # (safe src path, sandbox output dir, mutation tool) -> the commands
+    # (safe src path, project dir, output dir, mutation tool) -> the fixed commands
+    steps: Callable[[str, str, str, str], list[Step]]
     read_coverage: Callable[[str], Lines]
     mutation: dict[str, MutationTool]  # by the name `[mutation] tool` takes; core defaults to "mutmut"
     imports: Callable[[str, list[str]], list[tuple[int, str]]]  # (source, its package) -> (line, imported module)

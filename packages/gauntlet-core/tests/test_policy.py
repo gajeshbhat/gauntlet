@@ -142,7 +142,7 @@ def test_each_key_sets_only_itself(write_policy: Callable[[str], Path], line: st
 
 def test_errors_name_the_file(write_policy: Callable[[str], Path]) -> None:
     path = write_policy("crap_ceiling = -1\n")
-    with pytest.raises(ValueError, match=f"^{path}: crap_ceiling must be an integer >= 0$"):
+    with pytest.raises(ValueError, match=f"^{path}: crap_ceiling must be an integer between 0 and 1000$"):
         policy.load(path)
 
 
@@ -163,48 +163,13 @@ def test_pin_overwrites_the_previous_pin(tmp_path: Path) -> None:
     assert not path.with_suffix(".tmp").exists()
 
 
-def test_agent_settings_default_to_disabled(write_policy: Callable[[str], Path]) -> None:
-    p = policy.load(write_policy("crap_ceiling = 8\n"))
-    assert p.agent_command == ()
-    assert (p.agent_env, p.agent_timeout, p.max_rounds) == ((), 1800, 3)
-
-
-def test_agent_settings_load_and_round_trip(write_policy: Callable[[str], Path]) -> None:
-    text = (
-        'agent_command = ["claude", "-p", "--dangerously-skip-permissions"]\n'
-        'agent_env = ["CLAUDE_CODE_OAUTH_TOKEN"]\nagent_timeout = 900\nmax_rounds = 5\n'
-    )
-    p = policy.load(write_policy(text))
-    assert p.agent_command == ("claude", "-p", "--dangerously-skip-permissions")
-    assert (p.agent_env, p.agent_timeout, p.max_rounds) == (("CLAUDE_CODE_OAUTH_TOKEN",), 900, 5)
-    assert policy.load(write_policy(policy.dump(p))) == p
-
-
-@pytest.mark.parametrize(
-    ("text", "message"),
-    [
-        ('agent_command = "claude"\n', "agent_command must be a list of non-empty strings"),
-        ('agent_command = ["claude", ""]\n', "agent_command must be a list of non-empty strings"),
-        ('agent_env = ["bad name"]\n', "agent_env must be a list of environment variable names"),
-        ("agent_timeout = 0\n", "agent_timeout must be an integer between 1 and 86400"),
-        ("max_rounds = 0\n", "max_rounds must be an integer between 1 and 20"),
-        ("max_rounds = 21\n", "max_rounds must be an integer between 1 and 20"),
-    ],
-)
-def test_bad_agent_settings_are_errors(write_policy: Callable[[str], Path], text: str, message: str) -> None:
-    with pytest.raises(ValueError, match=message):
-        policy.load(write_policy(text))
-
-
 @pytest.mark.parametrize(
     "text",
     [
         "bogus = 1\n",
         "crap_ceiling = -1\n",
         "allow_unstamped = 1\n",
-        "max_rounds = 0\n",
-        "agent_command = 3\n",
-        'agent_env = ["a b"]\n',
+        "sandbox = 1\n",
         '[pins]\nx = "md5:1"\n',
     ],
 )
@@ -221,34 +186,18 @@ def test_each_boolean_defaults_to_false_and_each_can_be_set(write_policy: Callab
 
 
 def test_sandbox_settings_default_and_load(write_policy: Callable[[str], Path]) -> None:
-    d = policy.load(write_policy("max_rounds = 3\n"))
-    assert (d.sandbox, d.container_cli, d.docker_network, d.docker_memory, d.docker_image_agent) == (
-        "auto",
-        "docker",
-        "bridge",
-        "",
-        "",
-    )
-    assert d.docker_images == {}
-    text = 'sandbox = "docker"\ncontainer_cli = "podman"\ndocker_network = "none"\ndocker_memory = "4g"\ndocker_image_agent = "me/agent:1"\n'
-    p = policy.load(write_policy(text))
-    assert (p.sandbox, p.container_cli, p.docker_network, p.docker_memory) == ("docker", "podman", "none", "4g")
-    assert p.docker_image_agent == "me/agent:1"
+    d = policy.load(write_policy("max_exclusions = 3\n"))
+    assert d.sandbox == "local"
+    p = policy.load(write_policy('sandbox = "openshell"\n'))
+    assert p.sandbox == "openshell"
     assert policy.load(write_policy(policy.dump(p))) == p
 
 
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ('sandbox = "vm"\n', r"sandbox must be one of auto, workshop, docker"),
-        ('container_cli = "lxc"\n', r"container_cli must be one of docker, podman"),
-        ('docker_network = "host"\n', r"docker_network must be one of bridge, none"),
-        ('docker_memory = "lots"\n', r"docker_memory must look like 512m or 4g"),
-        ("docker_memory = 4\n", r"docker_memory must be a string"),
-        ('[docker_images]\nfake = "-v /:/x"\n', r"docker_images.fake must be a container image name"),
-        ('[docker_images]\ncobol = "img"\n', r"docker_images has unknown language 'cobol', expected one of fake"),
-        ('docker_images = "img"\n', r"docker_images must be a table of language = image"),
-        ('docker_image_agent = "--privileged"\n', r"docker_image_agent must be a container image name"),
+        ('sandbox = "docker"\n', r"sandbox must be one of local, openshell"),
+        ('sandbox = "workshop"\n', r"sandbox must be one of local, openshell"),
     ],
 )
 def test_bad_sandbox_settings_are_errors(write_policy: Callable[[str], Path], text: str, message: str) -> None:
@@ -257,7 +206,9 @@ def test_bad_sandbox_settings_are_errors(write_policy: Callable[[str], Path], te
         policy.load(path)
 
 
-def test_docker_images_round_trip(write_policy: Callable[[str], Path]) -> None:
-    p = policy.load(write_policy('[docker_images]\nfake = "me/py:1"\n'))
-    assert p.docker_images == {"fake": "me/py:1"}
-    assert policy.load(write_policy(policy.dump(p))) == p
+@pytest.mark.parametrize(
+    "key", ["container_cli", "docker_network", "docker_memory", "docker_images", "docker_image_agent"]
+)
+def test_the_container_sandbox_keys_are_gone(write_policy: Callable[[str], Path], key: str) -> None:
+    with pytest.raises(ValueError, match=f"unknown key.*{key}"):
+        policy.load(write_policy(f'{key} = "x"\n'))

@@ -50,14 +50,14 @@ def test_the_plugin_offers_both_tools_under_one_artifact() -> None:
 
 
 def test_cosmic_ray_steps_in_full() -> None:
-    out = "/project/.gauntlet-out"
+    project, out = "/tmp/snap", "/tmp/snap/.gauntlet-out"
     uv = ("uv", "run", "--no-project", "--with", "cosmic-ray==8.7.0", "python3", "-c")
     env = (("SETUPTOOLS_SCM_PRETEND_VERSION", "0.0.0"),)
-    plan = steps("src", out, "cosmic-ray")
-    assert plan[0] == steps("src", out, "mutmut")[0]  # the tests step is shared
+    plan = steps("src", project, out, "cosmic-ray")
+    assert plan[0] == steps("src", project, out, "mutmut")[0]  # the tests step is shared
     assert plan[1:] == [
-        Step("mutation-config", ("python3", "-c", CONFIGURE_CR, "/project", "src", out), None, 60, True, ()),
-        Step("mutation", (*uv, RUN_CR, out), None, 7200, True, env),
+        Step("mutation-config", ("python3", "-c", CONFIGURE_CR, project, "src", out), None, 60, True, ()),
+        Step("mutation", (*uv, RUN_CR, project, out), None, 7200, True, env),
         Step("mutation-results", (*uv, DUMP_CR, "cosmic-ray", "dump", f"{out}/session.sqlite"),
              "mutmut-results.txt", 1800, True, env),
     ]  # fmt: skip
@@ -150,7 +150,10 @@ def _run_cr(tmp_path: Path, mode: str, ready: int = 600) -> tuple[subprocess.Com
     }
     script = RUN_CR.replace("range(600)", f"range({ready})")  # the fake that hangs must not take a minute
     done = subprocess.run(
-        [sys.executable, "-c", script, str(project / ".gauntlet-out")], capture_output=True, text=True, env=env
+        [sys.executable, "-c", script, str(project), str(project / ".gauntlet-out")],
+        capture_output=True,
+        text=True,
+        env=env,
     )
     log = tmp_path / "log" / "calls.jsonl"
     return done, [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
