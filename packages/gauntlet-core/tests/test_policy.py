@@ -142,7 +142,7 @@ def test_each_key_sets_only_itself(write_policy: Callable[[str], Path], line: st
 
 def test_errors_name_the_file(write_policy: Callable[[str], Path]) -> None:
     path = write_policy("crap_ceiling = -1\n")
-    with pytest.raises(ValueError, match=f"^{path}: crap_ceiling must be an integer >= 0$"):
+    with pytest.raises(ValueError, match=f"^{path}: crap_ceiling must be an integer between 0 and 1000$"):
         policy.load(path)
 
 
@@ -202,6 +202,7 @@ def test_bad_agent_settings_are_errors(write_policy: Callable[[str], Path], text
         "bogus = 1\n",
         "crap_ceiling = -1\n",
         "allow_unstamped = 1\n",
+        "sandbox = 1\n",
         "max_rounds = 0\n",
         "agent_command = 3\n",
         'agent_env = ["a b"]\n',
@@ -222,33 +223,21 @@ def test_each_boolean_defaults_to_false_and_each_can_be_set(write_policy: Callab
 
 def test_sandbox_settings_default_and_load(write_policy: Callable[[str], Path]) -> None:
     d = policy.load(write_policy("max_rounds = 3\n"))
-    assert (d.sandbox, d.container_cli, d.docker_network, d.docker_memory, d.docker_image_agent) == (
-        "auto",
-        "docker",
-        "bridge",
-        "",
-        "",
-    )
-    assert d.docker_images == {}
-    text = 'sandbox = "docker"\ncontainer_cli = "podman"\ndocker_network = "none"\ndocker_memory = "4g"\ndocker_image_agent = "me/agent:1"\n'
+    assert (d.sandbox, d.allow_unsandboxed_agent, d.agent_hosts) == ("local", False, ())
+    text = 'sandbox = "openshell"\nallow_unsandboxed_agent = true\nagent_hosts = ["api.example.com"]\n'
     p = policy.load(write_policy(text))
-    assert (p.sandbox, p.container_cli, p.docker_network, p.docker_memory) == ("docker", "podman", "none", "4g")
-    assert p.docker_image_agent == "me/agent:1"
+    assert (p.sandbox, p.allow_unsandboxed_agent, p.agent_hosts) == ("openshell", True, ("api.example.com",))
     assert policy.load(write_policy(policy.dump(p))) == p
 
 
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ('sandbox = "vm"\n', r"sandbox must be one of auto, workshop, docker"),
-        ('container_cli = "lxc"\n', r"container_cli must be one of docker, podman"),
-        ('docker_network = "host"\n', r"docker_network must be one of bridge, none"),
-        ('docker_memory = "lots"\n', r"docker_memory must look like 512m or 4g"),
-        ("docker_memory = 4\n", r"docker_memory must be a string"),
-        ('[docker_images]\nfake = "-v /:/x"\n', r"docker_images.fake must be a container image name"),
-        ('[docker_images]\ncobol = "img"\n', r"docker_images has unknown language 'cobol', expected one of fake"),
-        ('docker_images = "img"\n', r"docker_images must be a table of language = image"),
-        ('docker_image_agent = "--privileged"\n', r"docker_image_agent must be a container image name"),
+        ('sandbox = "docker"\n', r"sandbox must be one of local, openshell"),
+        ('sandbox = "workshop"\n', r"sandbox must be one of local, openshell"),
+        ("allow_unsandboxed_agent = 1\n", r"allow_unsandboxed_agent must be true or false"),
+        ('agent_hosts = ["-v /:/x"]\n', r"agent_hosts must be a list of host names"),
+        ('agent_hosts = "example.com"\n', r"agent_hosts must be a list of non-empty strings"),
     ],
 )
 def test_bad_sandbox_settings_are_errors(write_policy: Callable[[str], Path], text: str, message: str) -> None:
@@ -257,7 +246,9 @@ def test_bad_sandbox_settings_are_errors(write_policy: Callable[[str], Path], te
         policy.load(path)
 
 
-def test_docker_images_round_trip(write_policy: Callable[[str], Path]) -> None:
-    p = policy.load(write_policy('[docker_images]\nfake = "me/py:1"\n'))
-    assert p.docker_images == {"fake": "me/py:1"}
-    assert policy.load(write_policy(policy.dump(p))) == p
+@pytest.mark.parametrize(
+    "key", ["container_cli", "docker_network", "docker_memory", "docker_images", "docker_image_agent"]
+)
+def test_the_container_sandbox_keys_are_gone(write_policy: Callable[[str], Path], key: str) -> None:
+    with pytest.raises(ValueError, match=f"unknown key.*{key}"):
+        policy.load(write_policy(f'{key} = "x"\n'))

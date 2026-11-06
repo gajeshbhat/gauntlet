@@ -31,8 +31,10 @@ Non-zero exit fails the job ([exit codes](reference.md#exit-codes)).
 
 ## Let an agent implement an approved spec
 
-1. Set `agent_command` and `agent_env` in your policy ([example](../examples/policy.toml)). With Docker, also build
-   [`examples/agent.Dockerfile`](../examples/agent.Dockerfile) and set `docker_image_agent`.
+1. Set `agent_command` and `agent_env` in your policy ([example](../examples/policy.toml)). The agent runs arbitrary
+   commands, so `loop` needs `sandbox = "openshell"` (see below), or `allow_unsandboxed_agent = true` to accept running
+   it on this machine. In OpenShell the agent's command must exist in the image, and `agent_hosts` must list the hosts
+   it talks to.
 2. Write a spec. It lands in `.gauntlet-loop/spec.feature` and the command exits `3`:
 
    ```sh
@@ -47,10 +49,18 @@ Non-zero exit fails the job ([exit codes](reference.md#exit-codes)).
 
 4. Review `.gauntlet-loop/loop.patch` (control files first), then `git apply .gauntlet-loop/loop.patch`.
 
-## Choose the sandbox
+## Run in an OpenShell sandbox
 
-gauntlet prefers Workshop, else Docker. In your policy, set `sandbox = "docker"` or `"workshop"` to force one,
-`container_cli = "podman"` for Podman, `docker_network = "none"` to cut off the network.
+By default tests and mutation runs execute on this machine, in a throwaway copy of the repo with a minimal
+environment. To isolate them, start an [OpenShell](https://github.com/NVIDIA/OpenShell) gateway and install gauntlet with the
+`openshell` extra next to `python` (`gauntlet-core[openshell,python]`, otherwise as in the README), then:
+
+```sh
+gauntlet run . --sandbox openshell   # or: sandbox = "openshell" in your policy
+```
+
+The sandbox starts from the language's image, has no network except the package index, and is deleted afterwards.
+Dependencies your project needs from elsewhere will not install.
 
 ## Use your own toolchain
 
@@ -78,6 +88,6 @@ dependencies = ["gauntlet-core"]
 mylang = "gauntlet_mylang:LANGUAGE"
 ```
 
-The `Language` fields say which files are source and tests, the fixed sandbox `steps`, how to read the coverage and
+The `Language` fields say which files are source and tests, the fixed `steps` (given the project and output directories), how to read the coverage and
 mutation artifacts, imports and comments for the arch and exclusion gates, and a starter `gauntlet.toml`. Core never
 imports a plugin; installing it next to `gauntlet-core` is enough.

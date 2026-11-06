@@ -3,7 +3,6 @@ __pycache__/
 .coverage
 .pytest_cache/
 .ruff_cache/
-.workshop.lock
 coverage.json
 mutants/
 pilots/**/artifacts/

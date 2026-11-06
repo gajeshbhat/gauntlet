@@ -5,7 +5,7 @@
 `gauntlet COMMAND [ROOT] [options]`. `ROOT` defaults to `.`.
 
 - `init`: write a starter `gauntlet.toml` (never overwrites).
-- `run`: sandboxed tests, coverage and mutation, then all gates. Results go to `.gauntlet/`.
+- `run`: tests, coverage and mutation on a private copy, then all gates. Results go to `.gauntlet/`.
 - `check`: `arch` (if layers are set), `clean`, `exclusions` on existing results.
 - `arch`, `clean`, `harden`, `exclusions`, `spec`: one gate.
 - `stamp`: bind artifacts to the current source.
@@ -23,6 +23,7 @@
 - `--json FILE`: also write results as JSON.
 - `--report FILE`: also write an `EVIDENCE.md` report.
 - `--feature FILE`: `spec` only; the Gherkin file (default: `ROOT/spec.feature`).
+- `--sandbox local|openshell`: where project code runs for `run` and `loop` (default: the policy's, else `local`).
 - `--out DIR`: output directory (`run`: `ROOT/.gauntlet`; `loop`: `ROOT/.gauntlet-loop`).
 
 ## Exit codes

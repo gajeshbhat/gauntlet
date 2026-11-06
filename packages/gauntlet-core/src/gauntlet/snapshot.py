@@ -1,6 +1,6 @@
-"""A private copy of the working tree (tracked + untracked, minus ignored) for the sandbox to work in.
+"""A private copy of the working tree (tracked + untracked, minus ignored) for the commands to work in.
 
-The sandbox never sees the real checkout: it cannot edit gauntlet's own sandbox definition or the source mid-run.
+They never touch the real checkout, so they cannot edit the source mid-run.
 """
 
 import shutil

@@ -4,7 +4,7 @@ Install gauntlet, run it, fix a failure, run again.
 
 ## 1. Install
 
-Get `git`, `uv` and a sandbox (see the [README](../README.md#quickstart)), then:
+Get `git` and `uv`, then:
 
 ```sh
 uv tool install "gauntlet-core[python] @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core"

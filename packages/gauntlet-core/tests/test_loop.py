@@ -7,7 +7,7 @@ from helpers import git
 from gauntlet import loop
 from gauntlet.provenance import git_output
 from gauntlet.results import GateResult
-from gauntlet_sandbox import ExecResult
+from gauntlet.sandbox import ExecResult
 
 
 @pytest.fixture
@@ -29,6 +29,8 @@ def ok(argv: Sequence[str]) -> ExecResult:  # noqa: ARG001
 class FakeSandbox:
     def __init__(self, behave: Callable[[Sequence[str]], ExecResult] | None = None) -> None:
         self.calls: list[tuple[list[str], dict[str, str | None], int]] = []
+        self.fetched: list[str] = []
+        self.project_dir = "/ws"
         self.behave: Callable[[Sequence[str]], ExecResult] = behave or ok
 
     def ensure(self) -> None: ...
@@ -36,6 +38,9 @@ class FakeSandbox:
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
         self.calls.append((list(argv), dict(env or {}), timeout))
         return self.behave(argv)
+
+    def fetch(self, subdir: str) -> None:
+        self.fetched.append(subdir)
 
     def remove(self) -> None: ...
 
@@ -55,6 +60,7 @@ def test_each_agent_run_is_a_fresh_process_with_only_the_named_secrets() -> None
     agent.run("ROLE", "TASK 2")
     assert [c[0] for c in box.calls] == [["claude", "-p", "ROLE\n\nTASK"], ["claude", "-p", "ROLE\n\nTASK 2"]]
     assert all(c[1] == {"TOKEN": None} and c[2] == 900 for c in box.calls)
+    assert box.fetched == [".", "."]  # what the agent changed is copied back after each run
 
 
 def test_an_unconfigured_agent_is_an_error() -> None:
@@ -78,10 +84,10 @@ def test_workspace_is_a_separate_git_repo_with_a_baseline(repo: Path, tmp_path: 
 def test_control_files_in_a_patch_are_flagged(repo: Path, tmp_path: Path) -> None:
     ws = loop.prepare_workspace(repo, tmp_path / "ws")
     (ws / "gauntlet.toml").write_text('language = "fake"\n[crap]\nmax = 99\n')
-    (ws / ".workshop").mkdir()
-    (ws / ".workshop" / "x.yaml").write_text("x")
+    (ws / ".devcontainer").mkdir()
+    (ws / ".devcontainer" / "x.json").write_text("x")
     (ws / "a.py").write_text("x = 3\n")
-    assert loop.control_files(loop.patch(ws)) == [".workshop/x.yaml", "gauntlet.toml"]
+    assert loop.control_files(loop.patch(ws)) == [".devcontainer/x.json", "gauntlet.toml"]
 
 
 # ---- specify
@@ -207,36 +213,23 @@ def test_specify_does_not_require_the_tests_to_exist_yet(tmp_path: Path) -> None
 def test_control_file_matching_is_precise() -> None:
     diff = "".join(f"diff --git a/{p} b/{p}\n" for p in [
         ".github/workflows/ci.yml", "Makefile", "docs/Makefile", "gauntlet.toml.bak", "src/conftest.py",
-        "conftest.py", ".workshop/x.yaml", ".workshopx/y", "pyproject.toml", "src/app.py",
+        "conftest.py", ".devcontainer/x.json", ".devcontainerx/y", "pyproject.toml", "src/app.py",
     ])  # fmt: skip
     assert loop.control_files(diff) == [
+        ".devcontainer/x.json",
         ".github/workflows/ci.yml",
-        ".workshop/x.yaml",
         "Makefile",
         "conftest.py",
         "docs/Makefile",
         "pyproject.toml",
         "src/conftest.py",
-    ]  # not gauntlet.toml.bak, .workshopx/ or src/app.py
+    ]  # not gauntlet.toml.bak, .devcontainerx/ or src/app.py
 
 
 def test_agent_failures_show_both_stderr_and_stdout() -> None:
     box = FakeSandbox(lambda argv: ExecResult(1, "Not logged in", "a warning"))
     with pytest.raises(ValueError, match=r"^coder failed \(exit 1\): a warning \| Not logged in$"):
         loop.implement(loop.Agent(box, ("a",), (), 60), loop.load_roles(), "SPEC", lambda: result(True), 3)
-
-
-def test_the_patch_leaves_out_gauntlets_own_sandbox_files(repo: Path, tmp_path: Path) -> None:
-    ws = loop.prepare_workspace(repo, tmp_path / "ws")
-    (ws / ".workshop").mkdir()
-    (ws / ".workshop" / "gauntlet-agent.yaml").write_text("name: gauntlet-agent\n")
-    (ws / ".workshop.lock").write_text("lock\n")
-    (ws / ".workshop" / "other.yaml").write_text("an agent added this\n")
-    (ws / "a.py").write_text("x = 5\n")
-    text = loop.patch(ws)
-    assert "a.py" in text
-    assert "gauntlet-agent.yaml" not in text and ".workshop.lock" not in text
-    assert loop.control_files(text) == [".workshop/other.yaml"]  # anything else under .workshop is still flagged
 
 
 def test_an_agent_cannot_run_commands_on_the_host_through_git_config_or_attributes(repo: Path, tmp_path: Path) -> None:

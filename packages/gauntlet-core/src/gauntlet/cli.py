@@ -28,11 +28,11 @@ from gauntlet import (
 )
 from gauntlet.config import Config, load
 from gauntlet.errors import GauntletError
-from gauntlet.policy import Policy
+from gauntlet.policy import SANDBOXES, Policy
 from gauntlet.results import GateResult
 from gauntlet.safefs import read_artifact, read_text
+from gauntlet.sandbox import Sandbox
 from gauntlet.scope import Scope, parse
-from gauntlet_sandbox import Sandbox, SandboxError
 
 
 @dataclass(frozen=True)
@@ -148,6 +148,10 @@ OPTIONS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("--spec", {"type": Path, "metavar": "FILE", "help": "loop: the approved spec to implement"}),
     ("--report", {"type": Path, "metavar": "FILE", "help": "also write an EVIDENCE.md report"}),
     ("--out", {"type": Path, "metavar": "DIR", "help": "run: where artifacts are written (default: ROOT/.gauntlet)"}),
+    (
+        "--sandbox",
+        {"choices": SANDBOXES, "help": "run, loop: where project code runs (default: the policy's, else local)"},
+    ),
 )
 
 
@@ -205,7 +209,17 @@ def _stamp(run: Run) -> int:
     return 0
 
 
+def _notice(pol: Policy) -> None:
+    if pol.sandbox == "local":
+        print(
+            'note: project code runs on this machine; for isolation set sandbox = "openshell" in the policy '
+            "or pass --sandbox openshell",
+            file=sys.stderr,
+        )
+
+
 def _run_pipeline(run: Run) -> list[GateResult]:
+    _notice(run.policy)
     names = runner.produce(run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
     print(f"produced {', '.join(names)}")
     return [*_check(run), _harden(run)]
@@ -250,14 +264,20 @@ def _loop(run: Run, args: argparse.Namespace) -> int:
         raise GauntletError(loop.NO_AGENT)
     if not (args.requirement or args.spec):
         raise GauntletError("give --requirement (to write a spec) or --spec (an approved spec to implement)")
+    if run.policy.sandbox == "local" and not run.policy.allow_unsandboxed_agent:
+        raise GauntletError(
+            'the agent runs arbitrary commands: set sandbox = "openshell" in the policy (or pass --sandbox openshell), '
+            "or accept the risk with allow_unsandboxed_agent = true"
+        )
+    _notice(run.policy)
     out: Path = args.out or run.root / ".gauntlet-loop"
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="gauntlet-loop-") as tmp:
         workspace = loop.prepare_workspace(run.source, Path(tmp) / "ws")
         box = MAKE_AGENT_SANDBOX(workspace, run.cfg, run.policy)
         agent = loop.Agent(box, run.policy.agent_command, run.policy.agent_env, run.policy.agent_timeout)
-        box.ensure()
         try:
+            box.ensure()
             return _loop_stages(run, args, agent, workspace, out)
         finally:
             box.remove()
@@ -270,6 +290,11 @@ def _pin(args: argparse.Namespace, pol: Policy) -> int:
     return 0
 
 
+def _flagged(pol: Policy, sandbox: str | None) -> Policy:
+    """The flag beats the policy's sandbox for this run only (it is never written back by `pin`)."""
+    return replace(pol, sandbox=sandbox or pol.sandbox)
+
+
 def _build_run(args: argparse.Namespace, pol: Policy) -> Run:
     config_path = args.root / "gauntlet.toml"
     raw = load(config_path)
@@ -279,13 +304,14 @@ def _build_run(args: argparse.Namespace, pol: Policy) -> Run:
     use_last = args.gate == "run" or (args.gate != "stamp" and (last_run / provenance.MANIFEST).is_file())
     art = args.artifacts or args.out or (last_run if use_last else args.root)
     scope = parse(args.only or [])
+    pol = _flagged(pol, args.sandbox)
     return Run(args.root, art, args.source or args.root, policy.apply(raw, pol), scope, pol, args.feature)
 
 
 def _init(args: argparse.Namespace) -> int:
     path = scaffold.write_config(args.root)
     print(f"wrote {path}")
-    print("next: gauntlet run . --report EVIDENCE.md   (needs Workshop or Docker; see docs/tutorial.md)")
+    print("next: gauntlet run . --report EVIDENCE.md   (see docs/tutorial.md)")
     return 0
 
 
@@ -314,7 +340,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         return _dispatch(args)
-    except (OSError, GauntletError, SandboxError) as e:
+    except (OSError, GauntletError) as e:
         print(f"gauntlet: {e}", file=sys.stderr)
     except KeyError as e:  # an artifact without a field its reader needs
         print(f"gauntlet: malformed input, missing {e}", file=sys.stderr)
