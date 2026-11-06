@@ -9,6 +9,8 @@ order = [
   "gauntlet.loop",
   "gauntlet.runner",
   "gauntlet.backends",
+  "gauntlet.openshell",
+  "gauntlet.sandbox",
   "gauntlet.spec",
   "gauntlet.diagram",
   "gauntlet.scaffold",
@@ -27,23 +29,10 @@ order = [
   "gauntlet.results",
   "gauntlet.safefs",
   "gauntlet.errors",
-  "gauntlet_sandbox",  # its facade
-  "gauntlet_sandbox.select",
-  "gauntlet_sandbox.docker",
-  "gauntlet_sandbox.workshop",
-  "gauntlet_sandbox.api",
-  "gauntlet_sandbox.names",
-  "gauntlet_sandbox.errors",
 ]
-roots = ["packages/gauntlet-core/src", "packages/gauntlet-sandbox/src", "packages/gauntlet-python/src"]
+roots = ["packages/gauntlet-core/src", "packages/gauntlet-python/src"]
 
-# gauntlet_sandbox is its own package: it imports nothing from gauntlet, and core reaches it only through its facade,
-# api and names.
+# Core never imports the plugin (it is found through the entry-point registry).
 forbid = [
-  "gauntlet_sandbox -> gauntlet",
   "gauntlet -> gauntlet_python",
-  "gauntlet -> gauntlet_sandbox.select",
-  "gauntlet -> gauntlet_sandbox.docker",
-  "gauntlet -> gauntlet_sandbox.workshop",
-  "gauntlet -> gauntlet_sandbox.errors",
 ]

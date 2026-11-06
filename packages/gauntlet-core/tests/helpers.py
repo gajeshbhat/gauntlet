@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 from gauntlet.config import Config
+from gauntlet.errors import GauntletError
 from gauntlet.policy import Policy
-from gauntlet_sandbox import ExecResult
-from gauntlet_sandbox.workshop import WorkshopSandbox
+from gauntlet.sandbox import ExecResult
 
 BRANCHY = "def g(x):\n" + "".join(f"    if x == {i}:\n        return {i}\n" for i in range(1, 8)) + "    return 0\n"
 
@@ -56,10 +56,11 @@ def git(root: Path, *args: str) -> None:
 
 
 class RunSandbox:
-    """Stands in for Workshop: 'runs' the python steps by writing what they would have produced."""
+    """Stands in for the gate sandbox: 'runs' the python steps by writing what they would have produced."""
 
     def __init__(self, project: Path, covered: bool = True) -> None:
         self.project, self.covered, self.removed = project, covered, False
+        self.project_dir = str(project)
 
     def ensure(self) -> None: ...
 
@@ -73,6 +74,8 @@ class RunSandbox:
         if "fake-results" in argv:
             return ExecResult(0, "p.x: killed\n" * 9 + "p.y: survived\n", "")
         return ExecResult(0, "", "")
+
+    def fetch(self, subdir: str) -> None: ...
 
     def remove(self) -> None:
         self.removed = True
@@ -92,10 +95,22 @@ def committed_py_project(root: Path, toml: str = 'language = "fake"\n') -> Path:
     return root
 
 
-def failing_workshop(name: str) -> Callable[[Path, Config, Policy], WorkshopSandbox]:
-    """A real Workshop sandbox whose `workshop` binary always fails with 'boom'."""
+class BrokenSandbox:
+    """A sandbox that cannot start, like an OpenShell gateway that is down."""
 
-    def boom(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(argv, 1, "", "boom")
+    def __init__(self, project: Path) -> None:
+        self.project, self.project_dir = project, str(project)
 
-    return lambda project, cfg, policy: WorkshopSandbox(project, name, run=boom)  # noqa: ARG005
+    def ensure(self) -> None:
+        raise GauntletError("cannot start an OpenShell sandbox: boom")
+
+    def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
+        raise AssertionError("never started")
+
+    def fetch(self, subdir: str) -> None: ...
+
+    def remove(self) -> None: ...
+
+
+def broken_sandbox(project: Path, cfg: Config, policy: Policy) -> BrokenSandbox:  # noqa: ARG001
+    return BrokenSandbox(project)

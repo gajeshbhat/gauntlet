@@ -16,15 +16,15 @@ from gauntlet.errors import GauntletError
 from gauntlet.provenance import git_output, own_git_dir
 from gauntlet.results import GateResult
 from gauntlet.runner import output_tail
+from gauntlet.sandbox import ExecResult, Sandbox
 from gauntlet.snapshot import snapshot
-from gauntlet_sandbox import ExecResult, Sandbox
 
 CONTROL_NAMES = (
     "gauntlet.toml", "policy*.toml", "pyproject.toml", "setup.cfg", "setup.py", "tox.ini", "noxfile.py", "Makefile",
     "conftest.py", "pytest.ini", ".coveragerc", "check.sh", "uv.lock", "Dockerfile", ".pre-commit-config.yaml",
     ".gitattributes", "sitecustomize.py",
 )  # fmt: skip  # matched on the file name, at any depth: they change what runs or what is measured
-CONTROL_DIRS = {".workshop", ".github", ".devcontainer"}  # any file under one of these, at any depth
+CONTROL_DIRS = {".github", ".devcontainer"}  # any file under one of these, at any depth
 NO_AGENT = "no agent configured: set agent_command in the policy file"
 IDENTITY = ["-c", "user.name=gauntlet", "-c", "user.email=gauntlet@localhost", "-c", "commit.gpgsign=false"]
 
@@ -50,23 +50,22 @@ class Agent:
         self.sandbox, self.command, self.env, self.timeout = sandbox, tuple(command), tuple(env), timeout
 
     def run(self, role: str, task: str) -> ExecResult:
-        return self.sandbox.exec([*self.command, f"{role}\n\n{task}"], {name: None for name in self.env}, self.timeout)
+        done = self.sandbox.exec([*self.command, f"{role}\n\n{task}"], {name: None for name in self.env}, self.timeout)
+        self.sandbox.fetch(".")  # what the agent changed, back into the workspace
+        return done
 
 
 def prepare_workspace(source: Path, dest: Path) -> Path:
     snapshot(source, dest)
-    own_git_dir(dest).mkdir()  # beside the workspace, outside what the sandbox mounts: the agent cannot edit it
+    own_git_dir(dest).mkdir()  # beside the workspace, outside what the agent works in: it cannot edit it
     git_output(dest, "init", "-q", "-b", "main")
     git_output(dest, "add", "-A")
     git_output(dest, *IDENTITY, "commit", "-q", "-m", "baseline", "--allow-empty")
     return dest
 
 
-OWN_FILES = (":(exclude).workshop/gauntlet-agent.yaml", ":(exclude).workshop.lock")  # not the agent's work
-
-
 def patch(workspace: Path) -> str:
-    git_output(workspace, "add", "-A", "--", ".", *OWN_FILES)
+    git_output(workspace, "add", "-A")
     return git_output(
         workspace,
         "-c",

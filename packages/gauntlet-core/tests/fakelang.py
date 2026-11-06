@@ -13,7 +13,7 @@ from gauntlet.plugin import Language, Lines, MutationTool, Step
 from gauntlet.results import Mutation
 
 
-def steps(src: str, out: str) -> list[Step]:
+def steps(src: str, project: str, out: str) -> list[Step]:
     return [
         Step("tests", ("fake-test", src, out), timeout=3600),
         Step("mutation", ("fake-mutate",), timeout=7200, must_pass=False),
@@ -67,7 +67,6 @@ FAKE = Language(
     tests=r"^(tests?/|conftest\.py$)",
     pragma=r"#\s*(?:pragma:\s*no\s+(?:mutate|cover)|nosec)\b",
     coverage_file="coverage.json",
-    sdk="fake-sdk",
     image="example.com/fake:1",
     artifacts=("coverage.json", "mutmut-results.txt"),
     steps=steps,

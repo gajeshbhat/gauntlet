@@ -1,21 +1,22 @@
 import json
-from functools import partial
 from pathlib import Path
 
 import pytest
 from helpers import (
     Out,
+    RunSandbox,
+    broken_sandbox,
     committed_py_project,
-    failing_workshop,
     sandbox_factory,
 )
 
-from gauntlet import backends, cli
+from gauntlet import cli
 from gauntlet.cli import main
-from gauntlet_sandbox import NO_SANDBOX
+from gauntlet.config import Config
+from gauntlet.policy import Policy
 
 
-# ---- run (sandboxed pipeline)
+# ---- run (the pipeline in a sandbox)
 def test_run_produces_artifacts_in_the_sandbox_then_evaluates_every_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
 ) -> None:
@@ -76,20 +77,45 @@ def test_stamp_never_blesses_the_results_of_an_old_run(
     assert main(["clean", str(root), "--artifacts", str(root)]) == 0  # the fresh ones, not the old run's
 
 
-# ---- sandbox errors end as `gauntlet: <message>` with exit 2, not a traceback or "malformed input"
-def test_run_without_any_sandbox_installed_is_a_clean_error(
+# ---- where project code runs
+def test_run_says_once_that_project_code_runs_here(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
 ) -> None:
     root = committed_py_project(tmp_path)
-    monkeypatch.setattr(cli, "MAKE_SANDBOX", partial(backends.gate_sandbox, which=lambda _: None))
-    assert main(["run", str(root)]) == 2
-    assert capsys.readouterr().err == f"gauntlet: {NO_SANDBOX}\n"
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", sandbox_factory())
+    assert main(["run", str(root)]) == 0
+    err = capsys.readouterr().err
+    assert err.count("project code runs on this machine") == 1
+    assert 'sandbox = "openshell"' in err and "--sandbox openshell" in err
 
 
-def test_run_with_a_sandbox_that_fails_to_start_is_a_clean_error(
+def test_the_flag_picks_the_sandbox_for_this_run_and_silences_the_notice(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
 ) -> None:
     root = committed_py_project(tmp_path)
-    monkeypatch.setattr(cli, "MAKE_SANDBOX", failing_workshop("gauntlet"))
-    assert main(["run", str(root)]) == 2
-    assert capsys.readouterr().err == "gauntlet: workshop init failed: boom\n"
+    seen: list[str] = []
+
+    def factory(project: Path, cfg: Config, policy: Policy) -> RunSandbox:
+        seen.append(policy.sandbox)
+        return RunSandbox(project)
+
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", factory)
+    assert main(["run", str(root), "--sandbox", "openshell"]) == 0
+    assert seen == ["openshell"]
+    assert "project code runs" not in capsys.readouterr().err
+
+
+def test_pin_does_not_write_the_sandbox_flag_into_the_policy(tmp_path: Path, capsys: Out) -> None:
+    root = committed_py_project(tmp_path)
+    pol = tmp_path / "policy.toml"
+    assert main(["pin", str(root), "--policy", str(pol), "--sandbox", "openshell"]) == 0
+    assert 'sandbox = "local"' in pol.read_text()
+
+
+def test_run_with_a_sandbox_that_cannot_start_is_a_clean_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = committed_py_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", broken_sandbox)
+    assert main(["run", str(root), "--sandbox", "openshell"]) == 2
+    assert capsys.readouterr().err == "gauntlet: cannot start an OpenShell sandbox: boom\n"

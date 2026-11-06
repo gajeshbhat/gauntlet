@@ -8,7 +8,7 @@ from gauntlet.results import GateResult
 
 LIMITS = (
     "- The gates measure the code against the configured constraints; they cannot show those constraints are complete.",
-    "- Tests run in the sandbox can forge coverage or mutation results; it protects the host, not the numbers.",
+    "- Tests can forge coverage or mutation results; a sandbox protects the host, not the numbers.",
     "- Mutation testing samples the mutants its tool generates; a surviving or missing mutant is no proof either way.",
     "- A human should read the spec the tests encode, not only this report.",
 )

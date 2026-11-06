@@ -1,7 +1,7 @@
 {
   "name": "gauntlet",
   "version": "0.1.0",
-  "description": "Prove agent-written Python code works: CRAP, mutation, architecture, exclusion and spec gates, run in a Workshop sandbox",
+  "description": "Prove agent-written Python code works: CRAP, mutation, architecture, exclusion and spec gates",
   "author": {
     "name": "Gajesh Bhat"
   },

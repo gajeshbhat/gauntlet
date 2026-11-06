@@ -5,7 +5,7 @@
 
 **Don't read the code an AI agent wrote. Make it run a gauntlet, and read the evidence.**
 
-An agent can write code faster than anyone can review it. gauntlet runs your Python project's tests in a sandbox,
+An agent can write code faster than anyone can review it. gauntlet runs your Python project's tests,
 measures how good those tests really are, and fails when the code is not proven: too complex for its tests, bugs
 planted in it that the tests miss, or code hidden from the checks.
 
@@ -20,12 +20,12 @@ Needs Claude Code 2.1.275 or later.
 
 Claude installs the CLI if it is missing, runs the gates, reads the evidence and fixes the cause (it is told never to
 add ignore comments or loosen a limit). `/gauntlet loop` goes further: you approve a spec, an agent implements it in a
-sandboxed copy, and you get back a patch plus the evidence.
+sandboxed copy (OpenShell), and you get back a patch plus the evidence.
 
 ## Use it from the terminal
 
-You need `git`, [`uv`](https://docs.astral.sh/uv/) and a sandbox: Docker, Podman, or
-[Workshop](https://snapcraft.io/workshop) on Linux.
+You need `git` and [`uv`](https://docs.astral.sh/uv/). Your tests run on this machine, in a private copy of the
+repo; for isolation, see [Run in an OpenShell sandbox](docs/how-to.md#run-in-an-openshell-sandbox).
 
 ```sh
 REPO=git+https://github.com/gajeshbhat/gauntlet@v0.1.0
@@ -69,7 +69,7 @@ gauntlet is split so the checks never depend on a language.
 | | Language-agnostic core | Language plugin |
 |---|---|---|
 | **Package** | `gauntlet-core` | `gauntlet-python` |
-| **Knows** | The gates, the CLI, the agent loop, the sandbox contract, the trust model | How to run a language's tests, read its coverage and mutation results, and list its imports and comments |
+| **Knows** | The gates, the CLI, the agent loop, the trust model | How to run a language's tests, read its coverage and mutation results, and list its imports and comments |
 | **Does not know** | Any language | The gates or the CLI |
 | **Python today** | CRAP score, limits, layers, specs, evidence report | `pytest` + `coverage.py` + `mutmut` |
 
@@ -80,20 +80,21 @@ changing nothing in core. See [Write a language plugin](docs/how-to.md) and the 
 
 ```mermaid
 flowchart LR
-    A["1. produce<br/>sandbox runs tests + mutation<br/>on a private copy"] --> B["2. bind<br/>hash the results<br/>together with the source"]
+    A["1. produce<br/>run tests + mutation<br/>on a private copy"] --> B["2. bind<br/>hash the results<br/>together with the source"]
     B --> C["3. judge<br/>gates read the results<br/>and print evidence"]
 ```
 
-Project code only ever runs inside the sandbox. The gates read results and refuse any that do not match the source.
-More in the [security model](SECURITY.md).
+Project code runs only in step 1, in a throwaway copy of the repo: on this machine by default, or in an OpenShell
+sandbox if you ask. The gates read results and refuse any that do not match the source. More in the
+[security model](SECURITY.md).
 
 ## Limits
 
 - Python only, for now. The first run of a large project can take a long time: mutation testing reruns the tests once
   per bug it plants.
-- Projects that need services or system libraries may need setup. When a project's own tests fail in the sandbox,
+- Projects that need services or system libraries may need setup. When a project's own tests fail,
   gauntlet stops with a clear error instead of reporting a wrong number.
-- Tests inside the sandbox could forge their own numbers. The sandbox protects your machine, not the numbers.
+- Tests could forge their own numbers. A sandbox protects your machine, not the numbers.
 
 ## Documentation
 

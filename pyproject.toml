@@ -3,7 +3,7 @@ name = "gauntlet-workspace"
 version = "0.1.0"
 description = "Dev workspace for gauntlet (not published)"
 requires-python = ">=3.12"
-dependencies = ["gauntlet-core", "gauntlet-python"]
+dependencies = ["gauntlet-core[openshell]", "gauntlet-python"]
 
 [tool.uv]
 package = false
@@ -27,7 +27,7 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-src = ["packages/gauntlet-core/src", "packages/gauntlet-sandbox/src", "packages/gauntlet-python/src"]
+src = ["packages/gauntlet-core/src", "packages/gauntlet-python/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
@@ -40,13 +40,13 @@ max-complexity = 8  # same ceiling the clean gate enforces on target repos
 
 [tool.pyright]
 include = ["packages"]
-extraPaths = ["packages/gauntlet-core/src", "packages/gauntlet-sandbox/src", "packages/gauntlet-python/src"]
+extraPaths = ["packages/gauntlet-core/src", "packages/gauntlet-python/src"]
 typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]
-addopts = "--cov=gauntlet --cov=gauntlet_sandbox --cov=gauntlet_python --cov-branch --cov-fail-under=100 --cov-report=term-missing --cov-report=json"
+addopts = "--cov=gauntlet --cov=gauntlet_python --cov-branch --cov-fail-under=100 --cov-report=term-missing --cov-report=json"
 testpaths = ["packages/*/tests"]
 
 [tool.mutmut]
-source_paths = ["packages/gauntlet-core/src/gauntlet/", "packages/gauntlet-sandbox/src/gauntlet_sandbox/", "packages/gauntlet-python/src/gauntlet_python/"]
+source_paths = ["packages/gauntlet-core/src/gauntlet/", "packages/gauntlet-python/src/gauntlet_python/"]
 pytest_add_cli_args = ["--no-cov"]

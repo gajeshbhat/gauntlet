@@ -9,7 +9,7 @@ from helpers import git
 from gauntlet import runner
 from gauntlet.config import Config
 from gauntlet.provenance import MANIFEST, verify
-from gauntlet_sandbox import ExecResult
+from gauntlet.sandbox import ExecResult
 
 
 @pytest.fixture
@@ -31,6 +31,8 @@ class FakeSandbox:
 
     def __init__(self, project: Path, behave: Behave) -> None:
         self.project, self.behave = project, behave
+        self.project_dir = f"{project}/inner"  # as the commands see it, which need not be where the host keeps it
+        self.fetched: list[str] = []
         self.calls: list[tuple[list[str], dict[str, str | None], int]] = []
         self.ensured = self.removed = False
 
@@ -40,6 +42,9 @@ class FakeSandbox:
     def exec(self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600) -> ExecResult:
         self.calls.append((list(argv), dict(env or {}), timeout))
         return self.behave(list(argv), self.project)
+
+    def fetch(self, subdir: str) -> None:
+        self.fetched.append(subdir)
 
     def remove(self) -> None:
         self.removed = True
@@ -69,7 +74,7 @@ def make(
 @pytest.mark.parametrize("src", ["../x", "/abs", "a b", "a;b", "$(x)", "-rf"])
 def test_the_src_must_be_a_safe_relative_path(src: str) -> None:
     with pytest.raises(ValueError, match="unsafe path"):
-        runner.steps(Config(language="fake", src=src))
+        runner.steps(Config(language="fake", src=src), "/p")
 
 
 def test_produce_runs_in_a_snapshot_copies_artifacts_and_stamps(repo: Path, tmp_path: Path) -> None:
@@ -79,6 +84,7 @@ def test_produce_runs_in_a_snapshot_copies_artifacts_and_stamps(repo: Path, tmp_
     assert names == ["coverage.json", "mutmut-results.txt"]
     (box,) = made
     assert box.ensured and box.removed
+    assert box.fetched == [runner.OUT_DIR]  # results are brought back from the sandbox before it goes
     assert box.project != repo
     assert box.calls[0][0][:2] == ["fake-test", "."]
     assert (out / "mutmut-results.txt").read_text() == "p.x_a__mutmut_1: killed\n"
@@ -227,7 +233,7 @@ def test_the_stale_report_is_removed_by_the_sandbox_right_before_the_mutation_st
     runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
     calls = made[0].calls
     removal = next(i for i, c in enumerate(calls) if c[0][0] == "rm")
-    assert calls[removal][0][-1] == "/project/.gauntlet-out/mutmut-results.txt"
+    assert calls[removal][0][-1] == f"{made[0].project}/inner/.gauntlet-out/mutmut-results.txt"
     assert calls[removal + 1][0] == ["fake-mutate"]  # the mutation run follows at once
     assert calls[removal][1:] == ({}, 60) and calls[removal][0][:2] == ["rm", "-rf"]
 
@@ -252,3 +258,19 @@ def test_a_symlinked_output_directory_is_refused_before_anything_is_read(repo: P
     factory, _ = make(behave)
     with pytest.raises(ValueError, match=r"\.gauntlet-out is a symlink"):
         runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
+
+
+def test_a_sandbox_that_fails_to_start_is_still_removed(repo: Path, tmp_path: Path) -> None:
+    class Broken(FakeSandbox):
+        def ensure(self) -> None:
+            raise ValueError("cannot start")
+
+    made: list[Broken] = []
+
+    def factory(project: Path) -> Broken:
+        made.append(Broken(project, python_behaviour))
+        return made[-1]
+
+    with pytest.raises(ValueError, match="cannot start"):
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
+    assert made[0].removed and not made[0].calls

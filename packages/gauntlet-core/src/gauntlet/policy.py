@@ -6,27 +6,26 @@ The repo's `gauntlet.toml` may tighten these limits, never weaken them, and can 
 import hashlib
 import json
 import os
+import re
 import tomllib
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
-from gauntlet import languages
-from gauntlet.config import Config
+from gauntlet.config import Config, boolean, choice, integer, strings
 from gauntlet.errors import GauntletError
-from gauntlet_sandbox.names import ENV_NAME, IMAGE, MEMORY
 
-BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin", "require_arch")
-INTS = ("crap_ceiling", "mutation_floor", "max_exclusions")
-RANGES = {"agent_timeout": (1, 86_400), "max_rounds": (1, 20)}
-LISTS = ("agent_command", "agent_env")
-CHOICES = {
-    "sandbox": ("auto", "workshop", "docker"),
-    "container_cli": ("docker", "podman"),
-    "docker_network": ("bridge", "none"),
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+HOST = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$")
+BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin", "require_arch", "allow_unsandboxed_agent")
+RANGES = {
+    "crap_ceiling": (0, 1000),
+    "mutation_floor": (0, 100),
+    "max_exclusions": (0, 100_000),
+    "agent_timeout": (1, 86_400),
+    "max_rounds": (1, 20),
 }
-IMAGES = ("docker_image_agent",)  # may be empty (unset)
-STRINGS = ("docker_memory",)
+SANDBOXES = ("local", "openshell")
 
 
 @dataclass(frozen=True)
@@ -43,14 +42,9 @@ class Policy:
     agent_env: tuple[str, ...] = ()  # names of environment variables passed through to it (never their values)
     agent_timeout: int = 1800
     max_rounds: int = 3  # fixer rounds before the loop gives up
-    sandbox: str = (
-        "auto"  # workshop (Linux), docker (Linux, macOS, Windows), or auto: workshop if installed, else docker
-    )
-    container_cli: str = "docker"  # or podman
-    docker_network: str = "bridge"  # none cuts the container off (dependencies and agents then cannot download)
-    docker_memory: str = ""  # e.g. 4g; empty means no limit
-    docker_images: dict[str, str] = field(default_factory=lambda: dict[str, str]())  # language -> image override
-    docker_image_agent: str = ""  # an image with your coding agent and the toolchain; see examples/agent.Dockerfile
+    sandbox: str = "local"  # local: on this machine; openshell: in an isolated OpenShell sandbox
+    allow_unsandboxed_agent: bool = False  # let `loop` run the agent on this machine (sandbox = "local")
+    agent_hosts: tuple[str, ...] = ()  # hosts (port 443) the agent may reach from an OpenShell sandbox
 
 
 def default_path() -> Path:
@@ -58,85 +52,11 @@ def default_path() -> Path:
     return (Path(base) if base else Path.home() / ".config") / "gauntlet" / "policy.toml"
 
 
-def _check_values(path: Path, data: dict[str, Any]) -> None:
-    unknown = sorted(set(data) - {*BOOLS, *INTS, *RANGES, *LISTS, *CHOICES, *IMAGES, *STRINGS, "pins", "docker_images"})
-    if unknown:
-        raise GauntletError(f"{path}: unknown key(s) {', '.join(unknown)}")
-    _check_ints(path, data)
-    _check_bools(path, data)
-    _check_ranges(path, data)
-    _check_lists(path, data)
-    _check_choices(path, data)
-    _check_memory(path, data)
-    _check_images(path, data)
-
-
-def _check_ints(path: Path, data: dict[str, Any]) -> None:
-    for key in INTS:
-        value = data.get(key, 0)
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise GauntletError(f"{path}: {key} must be an integer >= 0")
-
-
-def _check_bools(path: Path, data: dict[str, Any]) -> None:
-    for key in BOOLS:
-        if not isinstance(data.get(key, False), bool):
-            raise GauntletError(f"{path}: {key} must be true or false")
-
-
-def _check_ranges(path: Path, data: dict[str, Any]) -> None:
-    for key, (lo, hi) in RANGES.items():
-        value = data.get(key, lo)
-        if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
-            raise GauntletError(f"{path}: {key} must be an integer between {lo} and {hi}")
-
-
-def _strings(value: Any) -> list[str] | None:
-    items: list[Any] = list(value) if isinstance(value, list) else []  # pyright: ignore[reportUnknownArgumentType]
-    ok = isinstance(value, list) and all(isinstance(x, str) and x for x in items)
-    return [str(x) for x in items] if ok else None
-
-
-def _check_lists(path: Path, data: dict[str, Any]) -> None:
-    if _strings(data.get("agent_command", [])) is None:
-        raise GauntletError(f"{path}: agent_command must be a list of non-empty strings")
-    env = _strings(data.get("agent_env", []))
-    if env is None or not all(ENV_NAME.match(name) for name in env):
-        raise GauntletError(f"{path}: agent_env must be a list of environment variable names")
-
-
-def _check_choices(path: Path, data: dict[str, Any]) -> None:
-    for key, allowed in CHOICES.items():
-        if data.get(key, allowed[0]) not in allowed:
-            raise GauntletError(f"{path}: {key} must be one of {', '.join(allowed)}")
-
-
-def _check_memory(path: Path, data: dict[str, Any]) -> None:
-    memory = data.get("docker_memory", "")
-    if not isinstance(memory, str):
-        raise GauntletError(f"{path}: docker_memory must be a string")
-    if memory and not MEMORY.match(memory):
-        raise GauntletError(f"{path}: docker_memory must look like 512m or 4g")
-
-
-def _check_images(path: Path, data: dict[str, Any]) -> None:
-    value = data.get("docker_image_agent", "")
-    if not isinstance(value, str) or (value and not IMAGE.match(value)):
-        raise GauntletError(f"{path}: docker_image_agent must be a container image name")
-
-
-def _images(path: Path, data: dict[str, Any]) -> dict[str, str]:
-    table: Any = data.get("docker_images", {})
-    if not isinstance(table, dict):
-        raise GauntletError(f"{path}: docker_images must be a table of language = image")
-    for name, image in table.items():  # pyright: ignore[reportUnknownVariableType]
-        if name not in languages.registry():
-            raise GauntletError(
-                f"{path}: docker_images has unknown language {name!r}, expected one of {languages.names()}"
-            )
-        if not isinstance(image, str) or not IMAGE.match(image):
-            raise GauntletError(f"{path}: docker_images.{name} must be a container image name")
-    return {str(k): str(v) for k, v in table.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+def _names(path: Path, data: dict[str, Any], key: str, pattern: re.Pattern[str], what: str) -> tuple[str, ...]:
+    values = strings(path, data, key, ())
+    if not all(pattern.match(v) for v in values):
+        raise GauntletError(f"{path}: {key} must be a list of {what}")
+    return values
 
 
 def _pins(path: Path, data: dict[str, Any]) -> dict[str, str]:
@@ -147,12 +67,21 @@ def _pins(path: Path, data: dict[str, Any]) -> dict[str, str]:
 
 
 def _checked(path: Path, data: dict[str, Any]) -> Policy:
-    _check_values(path, data)
-    pins, images = _pins(path, data), _images(path, data)
-    kw: dict[str, Any] = {
-        k: tuple(v) if k in LISTS else v for k, v in data.items() if k not in {"pins", "docker_images"}
-    }
-    return Policy(**kw, pins=pins, docker_images=images)
+    unknown = sorted(set(data) - {f.name for f in fields(Policy)})
+    if unknown:
+        raise GauntletError(f"{path}: unknown key(s) {', '.join(unknown)}")
+    default = Policy()
+    flags: dict[str, Any] = {key: boolean(path, data, key, getattr(default, key)) for key in BOOLS}
+    numbers: dict[str, Any] = {k: integer(path, data, k, getattr(default, k), *b) for k, b in RANGES.items()}
+    return Policy(
+        **flags,
+        **numbers,
+        pins=_pins(path, data),
+        agent_command=strings(path, data, "agent_command", ()),
+        agent_env=_names(path, data, "agent_env", ENV_NAME, "environment variable names"),
+        agent_hosts=_names(path, data, "agent_hosts", HOST, "host names"),
+        sandbox=choice(path, data, "sandbox", SANDBOXES),
+    )
 
 
 def load(path: Path | None, missing_ok: bool = False) -> Policy:
@@ -164,17 +93,10 @@ def load(path: Path | None, missing_ok: bool = False) -> Policy:
     return _checked(path, tomllib.loads(path.read_text()))
 
 
-def _table(name: str, values: dict[str, str]) -> list[str]:
-    return ["", f"[{name}]", *[f"{json.dumps(k)} = {json.dumps(v)}" for k, v in sorted(values.items())]]
-
-
 def dump(p: Policy) -> str:
-    lines = [f"{k} = {getattr(p, k)}" for k in INTS]
-    lines += [f"{k} = {str(getattr(p, k)).lower()}" for k in BOOLS]
-    lines += [f"{k} = {json.dumps(list(getattr(p, k)))}" for k in LISTS if getattr(p, k)]
-    lines += [f"{k} = {getattr(p, k)}" for k in RANGES]
-    lines += [f"{k} = {json.dumps(getattr(p, k))}" for k in (*CHOICES, *STRINGS, *IMAGES)]
-    return "\n".join([*lines, *_table("docker_images", p.docker_images), *_table("pins", p.pins)]) + "\n"
+    lines = [f"{f.name} = {json.dumps(getattr(p, f.name))}" for f in fields(p) if f.name != "pins"]  # tuples as lists
+    pins = [f"{json.dumps(k)} = {json.dumps(v)}" for k, v in sorted(p.pins.items())]
+    return "\n".join([*lines, "", "[pins]", *pins]) + "\n"
 
 
 def apply(cfg: Config, p: Policy) -> Config:
