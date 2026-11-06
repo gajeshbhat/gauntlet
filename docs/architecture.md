@@ -91,6 +91,8 @@ A language plugin is one `gauntlet.plugin.Language` value (`plugin.py`):
 - **Data:** source suffixes, test-file regex, ignore-comment regex, coverage file name, default sandbox image.
 - **Steps:** the fixed commands to run in the sandbox. The Python plugin runs
   `pytest --cov`, `mutmut run`, then `mutmut results`.
+- **Mutation tools:** a name (`[mutation] tool`) to a step list and a reader that both reduce to the same
+  score, survivors and counts. Python has `mutmut` (default) and `cosmic-ray`.
 - **Readers:** parse coverage and mutation output, list a file's imports and comments, find config-level excludes,
   and write a starter `gauntlet.toml`.
 

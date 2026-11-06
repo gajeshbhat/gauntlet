@@ -13,10 +13,10 @@ from gauntlet.plugin import Language, Lines, MutationTool, Step
 from gauntlet.results import Mutation
 
 
-def steps(src: str, out: str) -> list[Step]:
+def steps(src: str, out: str, tool: str) -> list[Step]:
     return [
         Step("tests", ("fake-test", src, out), timeout=3600),
-        Step("mutation", ("fake-mutate",), timeout=7200, must_pass=False),
+        Step("mutation", ("fake-mutate", tool), timeout=7200, must_pass=False),
         Step("mutation-results", ("fake-results",), "mutmut-results.txt"),
     ]
 
@@ -72,7 +72,10 @@ FAKE = Language(
     artifacts=("coverage.json", "mutmut-results.txt"),
     steps=steps,
     read_coverage=coverage,
-    mutation=MutationTool("mutmut-results.txt", "run the fake mutator (or: gauntlet run)", mutants),
+    mutation={
+        "mutmut": MutationTool("mutmut-results.txt", "run the fake mutator (or: gauntlet run)", mutants),
+        "other": MutationTool("mutmut-results.txt", "run the other fake mutator (or: gauntlet run)", mutants),
+    },
     imports=imports,
     comments=comments,
     config_excludes=config_excludes,

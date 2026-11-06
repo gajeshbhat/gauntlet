@@ -30,7 +30,7 @@ def _safe_path(value: str) -> str:
 
 
 def steps(cfg: Config) -> list[Step]:
-    return languages.get(cfg.language).steps(_safe_path(cfg.src), IN_SANDBOX)
+    return languages.get(cfg.language).steps(_safe_path(cfg.src), IN_SANDBOX, cfg.mutation_tool)
 
 
 def output_tail(done: ExecResult) -> str:
@@ -38,8 +38,8 @@ def output_tail(done: ExecResult) -> str:
     return " | ".join(part for part in (done.stderr.strip(), done.stdout.strip()) if part)[-2000:]
 
 
-def _stale(language: str) -> tuple[str, ...]:
-    return (f"{IN_SANDBOX}/{languages.get(language).mutation.artifact}",)
+def _stale(cfg: Config) -> tuple[str, ...]:
+    return (f"{IN_SANDBOX}/{languages.get(cfg.language).mutation[cfg.mutation_tool].artifact}",)
 
 
 def _clear(box: Sandbox, stale: tuple[str, ...]) -> None:
@@ -112,7 +112,7 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         box = make_sandbox(snap)
         box.ensure()
         try:
-            captured = _run_steps(box, plan, _stale(cfg.language))
+            captured = _run_steps(box, plan, _stale(cfg))
         finally:
             box.remove()
         found = _collect(snap, cfg.language, plan, captured)

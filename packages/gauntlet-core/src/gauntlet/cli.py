@@ -90,7 +90,7 @@ def _clean(run: Run) -> GateResult:
 
 def _harden(run: Run) -> GateResult:
     cfg = run.cfg
-    tool = languages.get(cfg.language).mutation
+    tool = languages.get(cfg.language).mutation[cfg.mutation_tool]
     _trusted(run, [tool.artifact])
     m = tool.read(read_artifact(run.art, tool.artifact, tool.how))
     ok = m.pct >= cfg.mutation_min

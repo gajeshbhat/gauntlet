@@ -40,9 +40,9 @@ class Language:
     sdk: str  # the Canonical Workshop SDK
     image: str  # the default Docker image (the policy can override it per language)
     artifacts: tuple[str, ...]  # every file the gates read; `stamp` binds these
-    steps: Callable[[str, str], list[Step]]  # (safe src path, sandbox output dir) -> the fixed commands to run
+    steps: Callable[[str, str, str], list[Step]]  # (safe src path, sandbox output dir, mutation tool) -> the commands
     read_coverage: Callable[[str], Lines]
-    mutation: MutationTool
+    mutation: dict[str, MutationTool]  # by the name `[mutation] tool` takes; core defaults to "mutmut"
     imports: Callable[[str, list[str]], list[tuple[int, str]]]  # (source, its package) -> (line, imported module)
     comments: Callable[[str], list[tuple[int, str]]]  # source -> (line, comment text); real comments only
     config_excludes: Callable[[Path], list[str]]  # exclusion settings in the repo's own tool config

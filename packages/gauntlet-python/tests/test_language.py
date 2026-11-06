@@ -60,7 +60,7 @@ def test_detect_by_marker_files(tmp_path: Path) -> None:
 def test_python_steps_in_full() -> None:
     uv = ("uv", "run", "--project", "/project")
     env = (("SETUPTOOLS_SCM_PRETEND_VERSION", "0.0.0"),)
-    assert LANGUAGE.steps("src", "/project/.gauntlet-out") == [
+    assert LANGUAGE.steps("src", "/project/.gauntlet-out", "mutmut") == [
         Step("tests", (*uv, "--with", "pytest-cov==7.1.0", "pytest", "-q", "--cov=src", "--cov-branch",
                        "--cov-report=json:/project/.gauntlet-out/coverage.json"), None, 3600, True, env),
         Step("mutation-config", ("python3", "-c", CONFIGURE_MUTMUT, "/project", "src"), None, 60, True, ()),
@@ -95,7 +95,7 @@ def test_a_projects_own_mutmut_config_is_left_alone(tmp_path: Path, name: str, t
 
 
 def test_the_python_mutation_reader_is_registered() -> None:
-    tool = LANGUAGE.mutation
+    tool = LANGUAGE.mutation["mutmut"]
     assert tool.read("p.x: killed\np.y: survived\n").pct == 50.0
     assert tool.artifact == "mutmut-results.txt"
 
