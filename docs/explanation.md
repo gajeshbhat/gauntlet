@@ -29,8 +29,3 @@ pass today's code.
 Tests and mutation tools run on a throwaway copy of the repo; gates only read the results. That copy is on your machine
 unless you choose an OpenShell sandbox, which also keeps the code away from your files and network. A sandbox
 protects your machine, not the numbers. See [SECURITY.md](../SECURITY.md).
-
-## The agent loop
-
-You approve the spec; agents implement it in an isolated sandbox and return a patch. Edits to control files (CI, `gauntlet.toml`, build
-config) are flagged, since they could weaken the checks.

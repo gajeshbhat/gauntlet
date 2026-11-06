@@ -6,24 +6,19 @@ The repo's `gauntlet.toml` may tighten these limits, never weaken them, and can 
 import hashlib
 import json
 import os
-import re
 import tomllib
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
-from gauntlet.config import Config, boolean, choice, integer, strings
+from gauntlet.config import Config, boolean, choice, integer
 from gauntlet.errors import GauntletError
 
-ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-HOST = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$")
-BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin", "require_arch", "allow_unsandboxed_agent")
+BOOLS = ("allow_config_excludes", "allow_unstamped", "require_pin", "require_arch")
 RANGES = {
     "crap_ceiling": (0, 1000),
     "mutation_floor": (0, 100),
     "max_exclusions": (0, 100_000),
-    "agent_timeout": (1, 86_400),
-    "max_rounds": (1, 20),
 }
 SANDBOXES = ("local", "openshell")
 
@@ -38,25 +33,12 @@ class Policy:
     require_pin: bool = False  # refuse a gauntlet.toml that was never pinned
     require_arch: bool = False  # a gauntlet.toml without [layers] fails the check instead of skipping the arch gate
     pins: dict[str, str] = field(default_factory=lambda: dict[str, str]())
-    agent_command: tuple[str, ...] = ()  # argv of the coding agent; the prompt is appended as the last argument
-    agent_env: tuple[str, ...] = ()  # names of environment variables passed through to it (never their values)
-    agent_timeout: int = 1800
-    max_rounds: int = 3  # fixer rounds before the loop gives up
     sandbox: str = "local"  # local: on this machine; openshell: in an isolated OpenShell sandbox
-    allow_unsandboxed_agent: bool = False  # let `loop` run the agent on this machine (sandbox = "local")
-    agent_hosts: tuple[str, ...] = ()  # hosts (port 443) the agent may reach from an OpenShell sandbox
 
 
 def default_path() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME")
     return (Path(base) if base else Path.home() / ".config") / "gauntlet" / "policy.toml"
-
-
-def _names(path: Path, data: dict[str, Any], key: str, pattern: re.Pattern[str], what: str) -> tuple[str, ...]:
-    values = strings(path, data, key, ())
-    if not all(pattern.match(v) for v in values):
-        raise GauntletError(f"{path}: {key} must be a list of {what}")
-    return values
 
 
 def _pins(path: Path, data: dict[str, Any]) -> dict[str, str]:
@@ -77,9 +59,6 @@ def _checked(path: Path, data: dict[str, Any]) -> Policy:
         **flags,
         **numbers,
         pins=_pins(path, data),
-        agent_command=strings(path, data, "agent_command", ()),
-        agent_env=_names(path, data, "agent_env", ENV_NAME, "environment variable names"),
-        agent_hosts=_names(path, data, "agent_hosts", HOST, "host names"),
         sandbox=choice(path, data, "sandbox", SANDBOXES),
     )
 

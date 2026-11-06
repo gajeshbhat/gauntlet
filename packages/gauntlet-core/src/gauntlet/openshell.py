@@ -1,6 +1,6 @@
 """Optional isolation: run commands in an OpenShell sandbox (`pip install 'gauntlet-core[openshell]'`, plus a gateway).
 
-The sandbox starts from an image, with no network except the package index (and `agent_hosts`), and has no mount of
+The sandbox starts from an image, with no network except the package index, and has no mount of
 the host: the snapshot is copied in as a tar and results are copied back out as one, in small pieces because a single
 call carries about 1 MB at most. Everything reaches the SDK through `import_module`, so the extra stays optional.
 """
@@ -35,7 +35,7 @@ READ_ONLY = [
 READ_WRITE = ["/tmp", "/dev/null", "/dev/shm"]  # shared memory is what mutmut's worker pool needs
 HINT = "install the SDK with `pip install 'gauntlet-core[openshell]'` and start a gateway (see docs/how-to.md)"
 
-Connect = Callable[[str, str, tuple[str, ...]], AbstractContextManager[Any]]
+Connect = Callable[[str, str], AbstractContextManager[Any]]
 
 
 def _rule(name: str, hosts: Sequence[str], binary: str) -> Any:
@@ -44,15 +44,14 @@ def _rule(name: str, hosts: Sequence[str], binary: str) -> Any:
     return pb.NetworkPolicyRule(name=name, endpoints=endpoints, binaries=[pb.NetworkBinary(path=binary)])
 
 
-def gateway(name: str, image: str, hosts: tuple[str, ...]) -> AbstractContextManager[Any]:
-    """The SDK's sandbox over `image`: the package index is open to uv, `hosts` to anything, the rest is denied."""
+def gateway(name: str, image: str) -> AbstractContextManager[Any]:
+    """The SDK's sandbox over `image`: the package index is open to uv, the rest is denied."""
     try:
         sdk = import_module("openshell")
         spec, policy = import_module("openshell._proto.openshell_pb2"), import_module("openshell._proto.sandbox_pb2")
     except ImportError:
         raise GauntletError(f"the openshell SDK is not installed: {HINT}") from None
     rules = {"pypi": _rule("pypi", PYPI, "/usr/local/bin/uv")}
-    rules |= {"agent": _rule("agent", hosts, "/**")} if hosts else {}
     files = policy.FilesystemPolicy(include_workdir=True, read_only=READ_ONLY, read_write=READ_WRITE)
     template = spec.SandboxSpec(
         template=spec.SandboxTemplate(image=image),
@@ -62,18 +61,16 @@ def gateway(name: str, image: str, hosts: tuple[str, ...]) -> AbstractContextMan
 
 
 class OpenShellSandbox:
-    def __init__(
-        self, project: Path, image: str, *, hosts: tuple[str, ...] = (), root: str = ROOT, connect: Connect = gateway
-    ) -> None:
+    def __init__(self, project: Path, image: str, *, root: str = ROOT, connect: Connect = gateway) -> None:
         self.project, self.root, self.project_dir = project, root, f"{root}/project"
         self._tar, self._b64 = f"{root}/gauntlet.tar", f"{root}/gauntlet.b64"
-        self.image, self.hosts, self._connect = image, hosts, connect
+        self.image, self._connect = image, connect
         self._cm: AbstractContextManager[Any] | None = None
         self._box: Any = None
 
     def ensure(self) -> None:
         try:
-            cm = self._connect(f"gauntlet-{secrets.token_hex(4)}", self.image, self.hosts)
+            cm = self._connect(f"gauntlet-{secrets.token_hex(4)}", self.image)
             self._box = cm.__enter__()
         except GauntletError:
             raise
@@ -118,11 +115,11 @@ class OpenShellSandbox:
             raise GauntletError(f"{subdir} is too big to copy out of the sandbox")
         try:
             data = self._read(size)
-            for old in list(self.project.iterdir()) if subdir == "." else [self.project / subdir]:
-                if old.is_dir() and not old.is_symlink():
-                    shutil.rmtree(old)
-                else:
-                    old.unlink(missing_ok=True)
+            old = self.project / subdir
+            if old.is_dir() and not old.is_symlink():
+                shutil.rmtree(old)
+            else:
+                old.unlink(missing_ok=True)
             with tarfile.open(fileobj=io.BytesIO(data)) as tar:
                 tar.extractall(self.project, filter="data")  # refuses links and paths that leave the directory
         except (tarfile.TarError, ValueError):

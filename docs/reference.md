@@ -11,8 +11,6 @@
 - `stamp`: bind artifacts to the current source.
 - `pin`: record `gauntlet.toml`'s hash in your policy.
 - `diagram`: print a Mermaid graph of the layers.
-- `loop --requirement TEXT`: write a spec, then stop (exit 3).
-- `loop --spec FILE`: implement an approved spec; writes `loop.patch` and `EVIDENCE.md`.
 
 ## Options
 
@@ -23,15 +21,14 @@
 - `--json FILE`: also write results as JSON.
 - `--report FILE`: also write an `EVIDENCE.md` report.
 - `--feature FILE`: `spec` only; the Gherkin file (default: `ROOT/spec.feature`).
-- `--sandbox local|openshell`: where project code runs for `run` and `loop` (default: the policy's, else `local`).
-- `--out DIR`: output directory (`run`: `ROOT/.gauntlet`; `loop`: `ROOT/.gauntlet-loop`).
+- `--sandbox local|openshell`: where project code runs for `run` (default: the policy's, else `local`).
+- `--out DIR`: output directory (`run`: `ROOT/.gauntlet`).
 
 ## Exit codes
 
 - `0`: every gate passed.
 - `1`: a gate failed.
 - `2`: refused or error (bad config, missing or stale artifacts, empty gate).
-- `3`: `loop` wrote a spec and awaits approval.
 
 ## Gates
 

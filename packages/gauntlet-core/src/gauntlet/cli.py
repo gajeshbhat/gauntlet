@@ -2,7 +2,6 @@ import argparse
 import hashlib
 import json
 import sys
-import tempfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
@@ -18,7 +17,6 @@ from gauntlet import (
     exclusions,
     languages,
     linecov,
-    loop,
     policy,
     provenance,
     report,
@@ -30,7 +28,7 @@ from gauntlet.config import Config, load
 from gauntlet.errors import GauntletError
 from gauntlet.policy import SANDBOXES, Policy
 from gauntlet.results import GateResult
-from gauntlet.safefs import read_artifact, read_text
+from gauntlet.safefs import read_artifact
 from gauntlet.sandbox import Sandbox
 from gauntlet.scope import Scope, parse
 
@@ -131,10 +129,9 @@ GATES: dict[str, Callable[[Run], list[GateResult]]] = {
     "spec": lambda run: [_spec(run)],
     "check": _check,
 }
-COMMANDS = ("init", "stamp", "pin", "run", "diagram", "loop")
+COMMANDS = ("init", "stamp", "pin", "run", "diagram")
 SandboxFactory = Callable[[Path, Config, Policy], Sandbox]
 MAKE_SANDBOX: SandboxFactory = backends.gate_sandbox
-MAKE_AGENT_SANDBOX: SandboxFactory = backends.agent_sandbox
 
 
 OPTIONS: tuple[tuple[str, dict[str, Any]], ...] = (
@@ -144,14 +141,9 @@ OPTIONS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("--policy", {"type": Path, "metavar": "FILE", "help": "policy file (default: ~/.config/gauntlet/policy.toml)"}),
     ("--json", {"type": Path, "metavar": "FILE", "help": "also write the gate results as JSON"}),
     ("--feature", {"type": Path, "metavar": "FILE", "help": "spec: the Gherkin file (default: ROOT/spec.feature)"}),
-    ("--requirement", {"type": str, "metavar": "TEXT", "help": "loop: what to build (the Specifier writes a spec)"}),
-    ("--spec", {"type": Path, "metavar": "FILE", "help": "loop: the approved spec to implement"}),
     ("--report", {"type": Path, "metavar": "FILE", "help": "also write an EVIDENCE.md report"}),
     ("--out", {"type": Path, "metavar": "DIR", "help": "run: where artifacts are written (default: ROOT/.gauntlet)"}),
-    (
-        "--sandbox",
-        {"choices": SANDBOXES, "help": "run, loop: where project code runs (default: the policy's, else local)"},
-    ),
+    ("--sandbox", {"choices": SANDBOXES, "help": "run: where project code runs (default: the policy's, else local)"}),
 )
 
 
@@ -180,11 +172,11 @@ def _fingerprint(run: Run) -> str:
         return "unavailable (not a git repository)"
 
 
-def _evidence(run: Run, results: list[GateResult], fingerprinted: Run, command: str) -> str:
+def _evidence(run: Run, results: list[GateResult], command: str) -> str:
     return report.render(
         results,
         language=run.cfg.language,
-        fingerprint=_fingerprint(fingerprinted),
+        fingerprint=_fingerprint(run),
         config_sha256=hashlib.sha256((run.root / "gauntlet.toml").read_bytes()).hexdigest(),
         policy=run.policy,
         created=datetime.now(UTC).isoformat(timespec="seconds"),
@@ -196,7 +188,7 @@ def _write_outputs(run: Run, args: argparse.Namespace, results: list[GateResult]
     if args.json:
         args.json.write_text(json.dumps([asdict(r) for r in results], indent=2) + "\n")
     if args.report:
-        args.report.write_text(_evidence(run, results, run, f"gauntlet {args.gate} {args.root}"))
+        args.report.write_text(_evidence(run, results, f"gauntlet {args.gate} {args.root}"))
 
 
 def _stamp(run: Run) -> int:
@@ -223,64 +215,6 @@ def _run_pipeline(run: Run) -> list[GateResult]:
     names = runner.produce(run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
     print(f"produced {', '.join(names)}")
     return [*_check(run), _harden(run)]
-
-
-def _evaluator(run: Run, workspace: Path, out: Path, approved: Path) -> Callable[[], list[GateResult]]:
-    def evaluate() -> list[GateResult]:
-        sub = replace(run, root=workspace, source=workspace, art=out / "artifacts", feature=approved)
-        runner.produce(workspace, run.cfg, sub.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
-        return [*_check(sub), _harden(sub), _spec(sub)]
-
-    return evaluate
-
-
-def _loop_finish(run: Run, args: argparse.Namespace, workspace: Path, out: Path, result: loop.LoopResult) -> int:
-    diff = loop.patch(workspace)
-    (out / "loop.patch").write_text(diff)
-    sub = replace(run, source=workspace, art=out / "artifacts")
-    command = f"gauntlet loop {args.root} --spec {args.spec}"
-    (out / "EVIDENCE.md").write_text(_evidence(run, result.results, sub, command))
-    code = _emit(result.results)
-    print(f"fixer rounds: {result.rounds}; patch: {out / 'loop.patch'}; evidence: {out / 'EVIDENCE.md'}")
-    if control := loop.control_files(diff):
-        print(f"warning: the patch touches control files: {', '.join(control)} (review these first)")
-    return code
-
-
-def _loop_stages(run: Run, args: argparse.Namespace, agent: loop.Agent, workspace: Path, out: Path) -> int:
-    roles = loop.load_roles()
-    if args.spec is None:
-        written = out / "spec.feature"
-        written.write_text(loop.specify(agent, roles, args.requirement, workspace))
-        print(f"spec written to {written}; review it, then rerun with --spec {written}")
-        return 3
-    approved = read_text(args.spec, spec.MAX_SPEC_BYTES)
-    result = loop.implement(agent, roles, approved, _evaluator(run, workspace, out, args.spec), run.policy.max_rounds)
-    return _loop_finish(run, args, workspace, out, result)
-
-
-def _loop(run: Run, args: argparse.Namespace) -> int:
-    if not run.policy.agent_command:
-        raise GauntletError(loop.NO_AGENT)
-    if not (args.requirement or args.spec):
-        raise GauntletError("give --requirement (to write a spec) or --spec (an approved spec to implement)")
-    if run.policy.sandbox == "local" and not run.policy.allow_unsandboxed_agent:
-        raise GauntletError(
-            'the agent runs arbitrary commands: set sandbox = "openshell" in the policy (or pass --sandbox openshell), '
-            "or accept the risk with allow_unsandboxed_agent = true"
-        )
-    _notice(run.policy)
-    out: Path = args.out or run.root / ".gauntlet-loop"
-    out.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="gauntlet-loop-") as tmp:
-        workspace = loop.prepare_workspace(run.source, Path(tmp) / "ws")
-        box = MAKE_AGENT_SANDBOX(workspace, run.cfg, run.policy)
-        agent = loop.Agent(box, run.policy.agent_command, run.policy.agent_env, run.policy.agent_timeout)
-        try:
-            box.ensure()
-            return _loop_stages(run, args, agent, workspace, out)
-        finally:
-            box.remove()
 
 
 def _pin(args: argparse.Namespace, pol: Policy) -> int:
@@ -325,8 +259,6 @@ def _dispatch(args: argparse.Namespace) -> int:
     run = _build_run(args, pol)
     if args.gate == "stamp":
         return _stamp(run)
-    if args.gate == "loop":
-        return _loop(run, args)
     if args.gate == "diagram":
         print(diagram.render(run.cfg.layers, _arch_result(run).edges), end="")
         return 0

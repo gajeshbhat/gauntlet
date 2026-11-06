@@ -1,7 +1,7 @@
 [project]
 name = "gauntlet-core"
 version = "0.1.0"
-description = "Agent-agnostic quality gates and ephemeral-agent loop"
+description = "Agent-agnostic quality gates"
 authors = [
     { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
 ]
