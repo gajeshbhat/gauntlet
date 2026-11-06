@@ -1,5 +1,7 @@
 """The Python language plugin: registered as the `python` entry point of the `gauntlet.languages` group."""
 
+from pathlib import Path
+
 from gauntlet.plugin import Language, MutationTool
 
 from .coverage import coveragepy
@@ -15,6 +17,17 @@ src = "{src}"
 # [layers]
 # order = ["app.web", "app.service", "app.domain"]
 """
+
+NOT_SOURCE = {"tests", "test", "docs", "doc", "examples", "benchmarks", "scripts", "build", "dist"}
+
+
+def source_dir(root: Path) -> str:
+    """`src` for a src layout; the one top-level package of a flat layout; else the project root."""
+    if (root / "src").is_dir():
+        return "src"
+    packages = [p.name for p in sorted(root.iterdir()) if (p / "__init__.py").is_file() and p.name not in NOT_SOURCE]
+    return packages[0] if len(packages) == 1 else "."
+
 
 LANGUAGE = Language(
     suffixes=(".py",),
@@ -35,5 +48,5 @@ LANGUAGE = Language(
     imports=imports_at,
     comments=comments,
     config_excludes=config_excludes,
-    template=lambda root: TEMPLATE.format(src="src" if (root / "src").is_dir() else "."),
+    template=lambda root: TEMPLATE.format(src=source_dir(root)),
 )
