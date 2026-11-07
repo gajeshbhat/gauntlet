@@ -1,6 +1,6 @@
 [project]
 name = "gauntlet-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Agent-agnostic quality gates"
 authors = [
     { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
@@ -13,7 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 openshell = ["openshell==0.1.7"]
-python = ["gauntlet-python @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-python"]
+python = ["gauntlet-python @ git+https://github.com/gajeshbhat/gauntlet@v0.2.0#subdirectory=packages/gauntlet-python"]
 
 [project.scripts]
 gauntlet = "gauntlet:main"

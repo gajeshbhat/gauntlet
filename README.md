@@ -27,7 +27,7 @@ You need `git` and [`uv`](https://docs.astral.sh/uv/). Your tests run on this ma
 repo; for isolation, see [Run in an OpenShell sandbox](docs/how-to.md#run-in-an-openshell-sandbox).
 
 ```sh
-REPO=git+https://github.com/gajeshbhat/gauntlet@v0.1.0
+REPO=git+https://github.com/gajeshbhat/gauntlet@v0.2.0
 uv tool install \
   "gauntlet-core[python] @ $REPO#subdirectory=packages/gauntlet-core"
 ```
