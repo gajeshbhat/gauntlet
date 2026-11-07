@@ -75,8 +75,10 @@ flowchart TB
 A language plugin is one `gauntlet.plugin.Language` value (`plugin.py`):
 
 - **Data:** source suffixes, test-file regex, ignore-comment regex, coverage file name, OpenShell image.
-- **Steps:** the fixed commands, built from the project and output directories. The Python plugin runs
-  `pytest --cov`, `mutmut run`, then `mutmut results`.
+- **Steps:** the fixed commands, built from the source path, the project and output directories, and the mutation tool.
+  The Python plugin runs `pytest --cov`, then `mutmut run` and `mutmut results` (or the Cosmic Ray equivalents).
+- **Mutation tools:** a name (`[mutation] tool`) to a step list and a reader that both reduce to the same
+  score, survivors and counts. Python has `mutmut` (default) and `cosmic-ray`.
 - **Readers:** parse coverage and mutation output, list a file's imports and comments, find config-level excludes,
   and write a starter `gauntlet.toml`.
 

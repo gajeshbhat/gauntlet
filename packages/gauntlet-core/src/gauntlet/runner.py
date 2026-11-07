@@ -30,7 +30,8 @@ def _safe_path(value: str) -> str:
 
 
 def steps(cfg: Config, project_dir: str) -> list[Step]:
-    return languages.get(cfg.language).steps(_safe_path(cfg.src), project_dir, f"{project_dir}/{OUT_DIR}")
+    out = f"{project_dir}/{OUT_DIR}"
+    return languages.get(cfg.language).steps(_safe_path(cfg.src), project_dir, out, cfg.mutation_tool)
 
 
 def output_tail(done: ExecResult) -> str:
@@ -38,8 +39,8 @@ def output_tail(done: ExecResult) -> str:
     return " | ".join(part for part in (done.stderr.strip(), done.stdout.strip()) if part)[-2000:]
 
 
-def _stale(box: Sandbox, language: str) -> tuple[str, ...]:
-    return (f"{box.project_dir}/{OUT_DIR}/{languages.get(language).mutation.artifact}",)
+def _stale(box: Sandbox, cfg: Config) -> tuple[str, ...]:
+    return (f"{box.project_dir}/{OUT_DIR}/{languages.get(cfg.language).mutation[cfg.mutation_tool].artifact}",)
 
 
 def _clear(box: Sandbox, stale: tuple[str, ...]) -> None:
@@ -112,7 +113,7 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         plan = steps(cfg, box.project_dir)
         try:
             box.ensure()
-            captured = _run_steps(box, plan, _stale(box, cfg.language))
+            captured = _run_steps(box, plan, _stale(box, cfg))
             box.fetch(OUT_DIR)
         finally:
             box.remove()

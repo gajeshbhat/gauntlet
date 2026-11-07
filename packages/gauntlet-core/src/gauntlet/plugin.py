@@ -39,9 +39,10 @@ class Language:
     coverage_file: str  # the artifact the clean gate reads
     image: str  # the image of an OpenShell sandbox (isolation is optional; commands otherwise run on this machine)
     artifacts: tuple[str, ...]  # every file the gates read; `stamp` binds these
-    steps: Callable[[str, str, str], list[Step]]  # (safe src path, project dir, output dir) -> the fixed commands
+    # (safe src path, project dir, output dir, mutation tool) -> the fixed commands
+    steps: Callable[[str, str, str, str], list[Step]]
     read_coverage: Callable[[str], Lines]
-    mutation: MutationTool
+    mutation: dict[str, MutationTool]  # by the name `[mutation] tool` takes; core defaults to "mutmut"
     imports: Callable[[str, list[str]], list[tuple[int, str]]]  # (source, its package) -> (line, imported module)
     comments: Callable[[str], list[tuple[int, str]]]  # source -> (line, comment text); real comments only
     config_excludes: Callable[[Path], list[str]]  # exclusion settings in the repo's own tool config

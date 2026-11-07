@@ -42,9 +42,15 @@ gauntlet run . --sandbox openshell   # or: sandbox = "openshell" in your policy
 The sandbox starts from the language's image, has no network except the package index, and is deleted afterwards.
 Dependencies your project needs from elsewhere will not install.
 
+## Choose the mutation tool
+
+`mutmut` is the default. For projects mutmut cannot handle, set `tool = "cosmic-ray"` under `[mutation]` in
+`gauntlet.toml`. Cosmic Ray runs one mutant at a time per worker, with one worker per CPU, each in its own copy of the
+snapshot, on this machine or in the OpenShell sandbox. Both tools feed the same gate and the same floor.
+
 ## Use your own toolchain
 
-If the stock image can't build your project, make the artifacts yourself:
+If the stock setup can't build your project, make the artifacts yourself:
 
 ```sh
 pytest --cov=src --cov-branch --cov-report=json:coverage.json

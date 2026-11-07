@@ -40,7 +40,7 @@
 
 ## Languages
 
-Python only: coverage.py and mutmut; artifacts `coverage.json`, `mutmut-results.txt`. Complexity comes from [lizard](https://github.com/terryyin/lizard).
+Python only: coverage.py and mutmut (or Cosmic Ray, see `[mutation] tool`); artifacts `coverage.json`, `mutmut-results.txt`. Complexity comes from [lizard](https://github.com/terryyin/lizard).
 
 ## `gauntlet.toml`
 
@@ -55,6 +55,7 @@ max = 8                        # may only tighten the policy's crap_ceiling
 
 [mutation]
 min_score = 90                 # may only tighten the policy's mutation_floor
+tool = "mutmut"                # or "cosmic-ray": one mutant per CPU, in worker copies of the project
 
 [layers]                       # optional: imports may only point down this list
 order = ["app.web", "app.service", "app.domain"]
