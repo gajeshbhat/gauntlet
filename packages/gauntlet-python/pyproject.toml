@@ -1,6 +1,6 @@
 [project]
 name = "gauntlet-python"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python language plugin for gauntlet"
 authors = [
     { name = "Gajesh Bhat", email = "gajeshbht@gmail.com" }
@@ -8,7 +8,7 @@ authors = [
 requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
-    "gauntlet-core @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core",
+    "gauntlet-core @ git+https://github.com/gajeshbhat/gauntlet@v0.2.0#subdirectory=packages/gauntlet-core",
 ]
 
 [tool.uv.sources]

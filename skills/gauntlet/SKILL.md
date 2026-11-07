@@ -7,7 +7,7 @@ Work from the project root. Never edit `~/.config/gauntlet/policy.toml` or a rep
 pass.
 
 ## Setup
-1. `command -v gauntlet || uv tool install "gauntlet-core[python] @ git+https://github.com/gajeshbhat/gauntlet@v0.1.0#subdirectory=packages/gauntlet-core"`.
+1. `command -v gauntlet || uv tool install "gauntlet-core[python] @ git+https://github.com/gajeshbhat/gauntlet@v0.2.0#subdirectory=packages/gauntlet-core"`.
 2. `run` executes the project's tests on this machine (a private copy, minimal environment). For isolation the user
    can set `sandbox = "openshell"` in the policy (`gauntlet-core[openshell]` and a gateway).
 3. No `gauntlet.toml`: `gauntlet init .`.
