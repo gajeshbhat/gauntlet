@@ -6,7 +6,6 @@ src = "packages/gauntlet-core/src"
 order = [
   "gauntlet_python",  # a plugin: core never imports it (it is found through the entry-point registry)
   "gauntlet.cli",
-  "gauntlet.loop",
   "gauntlet.runner",
   "gauntlet.backends",
   "gauntlet.openshell",

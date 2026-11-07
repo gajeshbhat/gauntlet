@@ -12,7 +12,7 @@ from gauntlet.errors import GauntletError
 KEYS = {
     "": {"language", "src", "crap", "mutation", "layers"},
     "crap": {"max"},
-    "mutation": {"min_score"},
+    "mutation": {"min_score", "tool"},
     "layers": {"order", "roots", "forbid"},
 }
 RULE = re.compile(r"^(\S+) -> (\S+)(?: except (\S+(?:, \S+)*))?$")  # "A -> B" or "A -> B except C, D"
@@ -37,6 +37,7 @@ class Config:
     roots: tuple[str, ...] = ()  # several such roots (e.g. one per package); empty means just `src`
     forbid: tuple[Rule, ...] = ()  # imports banned even where the layers would allow them
     explicit: frozenset[str] = frozenset()  # sections the repo set itself ("crap", "mutation"); the rest are defaults
+    mutation_tool: str = "mutmut"  # one of the language's mutation tools
 
 
 def _section(path: Path, data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -101,13 +102,17 @@ def load(path: Path) -> Config:
     if language is None:
         raise GauntletError(f"{path}: 'language' is required")
     try:
-        languages.get(language)
+        tools = languages.get(language).mutation
     except ValueError as e:
         raise GauntletError(f"{path}: {e}") from None
+    tool = _text(path, sections["mutation"], "tool", Config.mutation_tool)
+    if tool not in tools:
+        raise GauntletError(f"{path}: mutation.tool must be one of {', '.join(tools)}")
     return Config(
         language=language,
         crap_max=integer(path, sections["crap"], "max", Config.crap_max, 1, 1000),
         mutation_min=integer(path, sections["mutation"], "min_score", Config.mutation_min, 0, 100),
+        mutation_tool=tool,
         layers=strings(path, sections["layers"], "order", (), "layers.order"),
         src=_text(path, top, "src", Config.src),
         roots=strings(path, sections["layers"], "roots", (), "layers.roots"),

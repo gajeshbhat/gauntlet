@@ -170,6 +170,14 @@ def test_harden_fails_below_threshold(tmp_path: Path, capsys: Out, cli_run: Call
     assert "mutation score 50.0% < 90%" in out
 
 
+def test_harden_names_how_to_produce_the_configured_tools_report(
+    tmp_path: Path, capsys: Out, cli_run: Callable[..., int]
+) -> None:
+    project(tmp_path, 'language = "fake"\n[mutation]\ntool = "other"\n')
+    assert cli_run("harden", tmp_path) == 2
+    assert "run the other fake mutator" in capsys.readouterr().err
+
+
 def test_harden_passes_at_threshold(tmp_path: Path, capsys: Out, write_policy: Callable[[str], Path]) -> None:
     project(tmp_path, 'language = "fake"\n[mutation]\nmin_score = 50\n')
     (tmp_path / "mutmut-results.txt").write_text(MUTMUT)

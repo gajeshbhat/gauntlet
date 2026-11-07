@@ -163,18 +163,18 @@ def _step_problems(s: Scenario) -> list[str]:
     return [f"'{s.name}' has no {k}" for k in ("When", "Then") if k not in kinds]
 
 
-def _trace_problems(s: Scenario, root: Path, trace: bool) -> list[str]:
+def _trace_problems(s: Scenario, root: Path) -> list[str]:
     refs = [m[1] for m in (TEST_TAG.match(t) for t in s.tags) if m]
     if not refs:
         return [f"'{s.name}' has no @test(...) tag"]
-    return [p for r in refs for p in _trace(r, root)] if trace else []
+    return [p for r in refs for p in _trace(r, root)]
 
 
-def check(path: Path, root: Path, trace: bool = True) -> list[str]:
+def check(path: Path, root: Path) -> list[str]:
     feature = parse(read_text(path, MAX_SPEC_BYTES))
     problems = list(feature.problems)
     if not feature.scenarios:
         problems.append("the Feature has no scenarios")
     for s in feature.scenarios:
-        problems += _step_problems(s) + _trace_problems(s, root, trace) + _outline_problems(s)
+        problems += _step_problems(s) + _trace_problems(s, root) + _outline_problems(s)
     return problems

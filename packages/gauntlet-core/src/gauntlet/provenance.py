@@ -27,25 +27,9 @@ GIT_ENV = {
 }
 
 
-def own_git_dir(source: Path) -> Path:
-    """Where gauntlet keeps the repository of a directory an agent writes into (see `git_output`)."""
-    base = source.resolve()  # "." has no name to hang a suffix on
-    return base.with_name(base.name + ".gauntlet-git")
-
-
 def git_output(source: Path, *args: str) -> bytes:
-    """Run git on `source`. If gauntlet keeps its own git dir for it, that one is used and `source/.git` is ignored.
-
-    An agent that can write to `source` can plant a clean filter in `.git/config` (plus a `.gitattributes`) or edit
-    `.git/info/exclude`, to run a command on the host at the next `git add` or to hide files from the listing.
-    """
-    own = own_git_dir(source)
-    explicit = [f"--git-dir={own}", f"--work-tree={source}"] if own.is_dir() else []
-    done = subprocess.run(
-        ["git", *SAFE_GIT, *explicit, "-C", str(source), *args],
-        capture_output=True,
-        env=GIT_ENV,
-    )
+    """Run git on `source` with a scrubbed environment and no repo-configured hooks."""
+    done = subprocess.run(["git", *SAFE_GIT, "-C", str(source), *args], capture_output=True, env=GIT_ENV)
     if done.returncode != 0:
         raise GauntletError(f"{source} is not a git repository (or git refused to read it)")
     return done.stdout

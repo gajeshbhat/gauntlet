@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -56,7 +57,7 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> World:
     (host / "pkg" / "b.py").write_text("y = 2\n")
     fake, root = FakeBox(), tmp_path / "sbx"
     root.mkdir()
-    return OpenShellSandbox(host, "img:1", root=str(root), connect=lambda name, image, hosts: fake), fake, root
+    return OpenShellSandbox(host, "img:1", root=str(root), connect=lambda name, image: fake), fake, root
 
 
 def test_ensure_copies_the_snapshot_in_small_pieces(world: World) -> None:
@@ -96,17 +97,14 @@ def test_fetch_replaces_a_directory_with_the_sandboxs_copy(world: World) -> None
     assert not (box.project / ".gauntlet-out" / "stale.txt").exists()
 
 
-def test_fetching_everything_mirrors_additions_changes_and_deletions(world: World) -> None:
+def test_fetch_replaces_a_leftover_that_is_not_a_directory(world: World) -> None:
     box, _, root = world
     box.ensure()
-    (root / "project" / "a.py").write_text("x = 2\n")
-    (root / "project" / "new.py").write_text("n = 1\n")
-    (root / "project" / "pkg" / "b.py").unlink()
-    (root / "project" / "pkg").rmdir()
-    (box.project / "link").symlink_to("a.py")  # a leftover that is not a directory
-    box.fetch(".")
-    assert sorted(p.name for p in box.project.iterdir()) == [".gauntlet-out", "a.py", "new.py"]
-    assert (box.project / "a.py").read_text() == "x = 2\n"
+    (root / "project" / ".gauntlet-out" / "coverage.json").write_text("{}")
+    shutil.rmtree(box.project / ".gauntlet-out")
+    (box.project / ".gauntlet-out").symlink_to("elsewhere")
+    box.fetch(".gauntlet-out")
+    assert (box.project / ".gauntlet-out" / "coverage.json").read_text() == "{}"
 
 
 def test_a_hostile_archive_is_refused(world: World) -> None:
@@ -129,8 +127,8 @@ def test_a_huge_copy_is_refused(world: World, monkeypatch: pytest.MonkeyPatch) -
     box, _, _ = world
     box.ensure()
     monkeypatch.setattr(openshell, "MAX_FETCH", 1)
-    with pytest.raises(GauntletError, match=r"^\. is too big to copy out of the sandbox$"):
-        box.fetch(".")
+    with pytest.raises(GauntletError, match=r"^\.gauntlet-out is too big to copy out of the sandbox$"):
+        box.fetch(".gauntlet-out")
 
 
 def test_a_failing_helper_command_names_itself_and_its_error(world: World) -> None:
@@ -141,7 +139,7 @@ def test_a_failing_helper_command_names_itself_and_its_error(world: World) -> No
 
 
 def test_a_sandbox_that_will_not_start_is_a_clean_error_with_a_hint(tmp_path: Path) -> None:
-    def down(name: str, image: str, hosts: tuple[str, ...]) -> Any:
+    def down(name: str, image: str) -> Any:
         raise ConnectionError("gateway unreachable")
 
     with pytest.raises(GauntletError, match=r"cannot start an OpenShell sandbox: gateway unreachable; install the SDK"):
@@ -149,7 +147,7 @@ def test_a_sandbox_that_will_not_start_is_a_clean_error_with_a_hint(tmp_path: Pa
 
 
 def test_our_own_errors_pass_through_unchanged(tmp_path: Path) -> None:
-    def missing(name: str, image: str, hosts: tuple[str, ...]) -> Any:
+    def missing(name: str, image: str) -> Any:
         raise GauntletError("the openshell SDK is not installed")
 
     with pytest.raises(GauntletError, match=r"^the openshell SDK is not installed$"):
@@ -169,7 +167,7 @@ def test_remove_leaves_the_sandbox_once_and_is_safe_before_ensure(world: World) 
 def test_names_are_unique_per_sandbox(tmp_path: Path) -> None:
     names: list[str] = []
 
-    def record(name: str, image: str, hosts: tuple[str, ...]) -> Any:
+    def record(name: str, image: str) -> Any:
         names.append(name)
         raise GauntletError("stop")
 
@@ -201,7 +199,7 @@ def stub_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_the_gateway_sandbox_allows_the_package_index_to_uv_and_nothing_else(monkeypatch: pytest.MonkeyPatch) -> None:
     stub_sdk(monkeypatch)
-    made: Any = openshell.gateway("n", "img:1", ())
+    made: Any = openshell.gateway("n", "img:1")
     assert (made["workspace"], made["name"], made["delete_on_exit"]) == ("default", "n", True)
     spec = made["spec"]
     assert spec["template"] == {"image": "img:1"}
@@ -211,18 +209,10 @@ def test_the_gateway_sandbox_allows_the_package_index_to_uv_and_nothing_else(mon
     assert pypi["binaries"] == [{"path": "/usr/local/bin/uv"}]
 
 
-def test_agent_hosts_are_open_to_any_program_on_443(monkeypatch: pytest.MonkeyPatch) -> None:
-    stub_sdk(monkeypatch)
-    made: Any = openshell.gateway("n", "img", ("api.example.com",))
-    rules = made["spec"]["policy"]["network_policies"]
-    assert rules["agent"]["endpoints"] == [{"host": "api.example.com", "port": 443}]
-    assert rules["agent"]["binaries"] == [{"path": "/**"}]
-
-
 def test_a_missing_sdk_says_how_to_install_it(monkeypatch: pytest.MonkeyPatch) -> None:
     def gone(name: str) -> object:
         raise ImportError(name)
 
     monkeypatch.setattr(openshell, "import_module", gone)
     with pytest.raises(GauntletError, match=r"openshell SDK is not installed.*gauntlet-core\[openshell\]"):
-        openshell.gateway("n", "img", ())
+        openshell.gateway("n", "img")

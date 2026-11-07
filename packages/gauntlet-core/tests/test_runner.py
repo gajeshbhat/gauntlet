@@ -77,6 +77,11 @@ def test_the_src_must_be_a_safe_relative_path(src: str) -> None:
         runner.steps(Config(language="fake", src=src), "/p")
 
 
+def test_the_plan_is_built_for_the_configured_mutation_tool() -> None:
+    plan = runner.steps(Config(language="fake", mutation_tool="other"), "/p")
+    assert [s.argv for s in plan if s.name == "mutation"] == [("fake-mutate", "other")]
+
+
 def test_produce_runs_in_a_snapshot_copies_artifacts_and_stamps(repo: Path, tmp_path: Path) -> None:
     factory, made = make(python_behaviour)
     out = tmp_path / "out"
@@ -234,7 +239,7 @@ def test_the_stale_report_is_removed_by_the_sandbox_right_before_the_mutation_st
     calls = made[0].calls
     removal = next(i for i, c in enumerate(calls) if c[0][0] == "rm")
     assert calls[removal][0][-1] == f"{made[0].project}/inner/.gauntlet-out/mutmut-results.txt"
-    assert calls[removal + 1][0] == ["fake-mutate"]  # the mutation run follows at once
+    assert calls[removal + 1][0] == ["fake-mutate", "mutmut"]  # the mutation run follows at once
     assert calls[removal][1:] == ({}, 60) and calls[removal][0][:2] == ["rm", "-rf"]
 
 

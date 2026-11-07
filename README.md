@@ -19,8 +19,7 @@ Needs Claude Code 2.1.275 or later.
 ```
 
 Claude installs the CLI if it is missing, runs the gates, reads the evidence and fixes the cause (it is told never to
-add ignore comments or loosen a limit). `/gauntlet loop` goes further: you approve a spec, an agent implements it in a
-sandboxed copy (OpenShell), and you get back a patch plus the evidence.
+add ignore comments or loosen a limit).
 
 ## Use it from the terminal
 
@@ -69,7 +68,7 @@ gauntlet is split so the checks never depend on a language.
 | | Language-agnostic core | Language plugin |
 |---|---|---|
 | **Package** | `gauntlet-core` | `gauntlet-python` |
-| **Knows** | The gates, the CLI, the agent loop, the trust model | How to run a language's tests, read its coverage and mutation results, and list its imports and comments |
+| **Knows** | The gates, the CLI, the trust model | How to run a language's tests, read its coverage and mutation results, and list its imports and comments |
 | **Does not know** | Any language | The gates or the CLI |
 | **Python today** | CRAP score, limits, layers, specs, evidence report | `pytest` + `coverage.py` + `mutmut` |
 

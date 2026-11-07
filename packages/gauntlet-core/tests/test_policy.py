@@ -163,39 +163,6 @@ def test_pin_overwrites_the_previous_pin(tmp_path: Path) -> None:
     assert not path.with_suffix(".tmp").exists()
 
 
-def test_agent_settings_default_to_disabled(write_policy: Callable[[str], Path]) -> None:
-    p = policy.load(write_policy("crap_ceiling = 8\n"))
-    assert p.agent_command == ()
-    assert (p.agent_env, p.agent_timeout, p.max_rounds) == ((), 1800, 3)
-
-
-def test_agent_settings_load_and_round_trip(write_policy: Callable[[str], Path]) -> None:
-    text = (
-        'agent_command = ["claude", "-p", "--dangerously-skip-permissions"]\n'
-        'agent_env = ["CLAUDE_CODE_OAUTH_TOKEN"]\nagent_timeout = 900\nmax_rounds = 5\n'
-    )
-    p = policy.load(write_policy(text))
-    assert p.agent_command == ("claude", "-p", "--dangerously-skip-permissions")
-    assert (p.agent_env, p.agent_timeout, p.max_rounds) == (("CLAUDE_CODE_OAUTH_TOKEN",), 900, 5)
-    assert policy.load(write_policy(policy.dump(p))) == p
-
-
-@pytest.mark.parametrize(
-    ("text", "message"),
-    [
-        ('agent_command = "claude"\n', "agent_command must be a list of non-empty strings"),
-        ('agent_command = ["claude", ""]\n', "agent_command must be a list of non-empty strings"),
-        ('agent_env = ["bad name"]\n', "agent_env must be a list of environment variable names"),
-        ("agent_timeout = 0\n", "agent_timeout must be an integer between 1 and 86400"),
-        ("max_rounds = 0\n", "max_rounds must be an integer between 1 and 20"),
-        ("max_rounds = 21\n", "max_rounds must be an integer between 1 and 20"),
-    ],
-)
-def test_bad_agent_settings_are_errors(write_policy: Callable[[str], Path], text: str, message: str) -> None:
-    with pytest.raises(ValueError, match=message):
-        policy.load(write_policy(text))
-
-
 @pytest.mark.parametrize(
     "text",
     [
@@ -203,9 +170,6 @@ def test_bad_agent_settings_are_errors(write_policy: Callable[[str], Path], text
         "crap_ceiling = -1\n",
         "allow_unstamped = 1\n",
         "sandbox = 1\n",
-        "max_rounds = 0\n",
-        "agent_command = 3\n",
-        'agent_env = ["a b"]\n',
         '[pins]\nx = "md5:1"\n',
     ],
 )
@@ -222,11 +186,10 @@ def test_each_boolean_defaults_to_false_and_each_can_be_set(write_policy: Callab
 
 
 def test_sandbox_settings_default_and_load(write_policy: Callable[[str], Path]) -> None:
-    d = policy.load(write_policy("max_rounds = 3\n"))
-    assert (d.sandbox, d.allow_unsandboxed_agent, d.agent_hosts) == ("local", False, ())
-    text = 'sandbox = "openshell"\nallow_unsandboxed_agent = true\nagent_hosts = ["api.example.com"]\n'
-    p = policy.load(write_policy(text))
-    assert (p.sandbox, p.allow_unsandboxed_agent, p.agent_hosts) == ("openshell", True, ("api.example.com",))
+    d = policy.load(write_policy("max_exclusions = 3\n"))
+    assert d.sandbox == "local"
+    p = policy.load(write_policy('sandbox = "openshell"\n'))
+    assert p.sandbox == "openshell"
     assert policy.load(write_policy(policy.dump(p))) == p
 
 
@@ -235,9 +198,6 @@ def test_sandbox_settings_default_and_load(write_policy: Callable[[str], Path]) 
     [
         ('sandbox = "docker"\n', r"sandbox must be one of local, openshell"),
         ('sandbox = "workshop"\n', r"sandbox must be one of local, openshell"),
-        ("allow_unsandboxed_agent = 1\n", r"allow_unsandboxed_agent must be true or false"),
-        ('agent_hosts = ["-v /:/x"]\n', r"agent_hosts must be a list of host names"),
-        ('agent_hosts = "example.com"\n', r"agent_hosts must be a list of non-empty strings"),
     ],
 )
 def test_bad_sandbox_settings_are_errors(write_policy: Callable[[str], Path], text: str, message: str) -> None:

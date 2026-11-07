@@ -59,7 +59,7 @@ def test_detect_by_marker_files(tmp_path: Path) -> None:
 def test_python_steps_in_full() -> None:
     uv = ("uv", "run", "--project", "/tmp/snap")
     env = (("SETUPTOOLS_SCM_PRETEND_VERSION", "0.0.0"),)
-    assert LANGUAGE.steps("src", "/tmp/snap", "/tmp/snap/.gauntlet-out") == [
+    assert LANGUAGE.steps("src", "/tmp/snap", "/tmp/snap/.gauntlet-out", "mutmut") == [
         Step("tests", (*uv, "--with", "pytest-cov==7.1.0", "pytest", "-q", "--cov=src", "--cov-branch",
                        "--cov-report=json:/tmp/snap/.gauntlet-out/coverage.json"), None, 3600, True, env),
         Step("mutation-config", ("python3", "-c", CONFIGURE_MUTMUT, "/tmp/snap", "src"), None, 60, True, ()),
@@ -95,7 +95,7 @@ def test_a_projects_own_mutmut_config_is_left_alone(tmp_path: Path, name: str, t
 
 
 def test_the_python_mutation_reader_is_registered() -> None:
-    tool = LANGUAGE.mutation
+    tool = LANGUAGE.mutation["mutmut"]
     assert tool.read("p.x: killed\np.y: survived\n").pct == 50.0
     assert tool.artifact == "mutmut-results.txt"
 
@@ -123,3 +123,35 @@ def test_a_test_that_breaks_under_mutation_is_deselected_and_mutmut_retried() ->
 def test_a_failure_that_names_no_new_test_is_left_to_fail() -> None:
     done = _run_mutmut([sys.executable, "-c", "import sys; print('failed to collect stats'); sys.exit(3)"])
     assert done.returncode == 3
+
+
+FAKE_CLEAN_RUN = """
+import os, sys
+if "--deselect=tests/test_a.py::test_flaky" in os.environ.get("PYTEST_ADDOPTS", ""):
+    print("done")
+else:
+    print("FAILED tests/test_a.py::test_flaky - boom\\nFailed to run clean test")
+    sys.exit(1)
+"""
+
+
+def test_a_test_that_fails_mutmut_clean_run_is_deselected_too() -> None:
+    done = _run_mutmut([sys.executable, "-c", FAKE_CLEAN_RUN])
+    assert done.returncode == 0
+    assert "deselected tests/test_a.py::test_flaky" in done.stderr
+
+
+FAKE_PARAMETRIZED = """
+import os, sys
+if "--deselect=tests/test_a.py::test_p " in os.environ.get("PYTEST_ADDOPTS", "") + " ":
+    print("done")
+else:
+    print("FAILED tests/test_a.py::test_p[3-Foo] - boom\\nfailed to collect stats. runner returned 1")
+    sys.exit(1)
+"""
+
+
+def test_a_failing_parametrized_test_is_deselected_whole_in_one_retry() -> None:
+    done = _run_mutmut([sys.executable, "-c", FAKE_PARAMETRIZED])
+    assert done.returncode == 0
+    assert "deselected tests/test_a.py::test_p\n" in done.stderr

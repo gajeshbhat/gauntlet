@@ -29,26 +29,6 @@ gauntlet run . --policy /etc/gauntlet/policy.toml --json results.json --report E
 
 Non-zero exit fails the job ([exit codes](reference.md#exit-codes)).
 
-## Let an agent implement an approved spec
-
-1. Set `agent_command` and `agent_env` in your policy ([example](../examples/policy.toml)). The agent runs arbitrary
-   commands, so `loop` needs `sandbox = "openshell"` (see below), or `allow_unsandboxed_agent = true` to accept running
-   it on this machine. In OpenShell the agent's command must exist in the image, and `agent_hosts` must list the hosts
-   it talks to.
-2. Write a spec. It lands in `.gauntlet-loop/spec.feature` and the command exits `3`:
-
-   ```sh
-   gauntlet loop . --requirement "Reject uploads over 10 MB"
-   ```
-
-3. Edit the spec, then implement it:
-
-   ```sh
-   gauntlet loop . --spec .gauntlet-loop/spec.feature
-   ```
-
-4. Review `.gauntlet-loop/loop.patch` (control files first), then `git apply .gauntlet-loop/loop.patch`.
-
 ## Run in an OpenShell sandbox
 
 By default tests and mutation runs execute on this machine, in a throwaway copy of the repo with a minimal
@@ -62,9 +42,15 @@ gauntlet run . --sandbox openshell   # or: sandbox = "openshell" in your policy
 The sandbox starts from the language's image, has no network except the package index, and is deleted afterwards.
 Dependencies your project needs from elsewhere will not install.
 
+## Choose the mutation tool
+
+`mutmut` is the default. For projects mutmut cannot handle, set `tool = "cosmic-ray"` under `[mutation]` in
+`gauntlet.toml`. Cosmic Ray runs one mutant at a time per worker, with one worker per CPU, each in its own copy of the
+snapshot, on this machine or in the OpenShell sandbox. Both tools feed the same gate and the same floor.
+
 ## Use your own toolchain
 
-If the stock image can't build your project, make the artifacts yourself:
+If the stock setup can't build your project, make the artifacts yourself:
 
 ```sh
 pytest --cov=src --cov-branch --cov-report=json:coverage.json

@@ -31,6 +31,22 @@ order = ["web", "service", "domain"]
     assert cfg == Config("fake", 6, 95, ("web", "service", "domain"), "pkg", explicit=frozenset({"crap", "mutation"}))
 
 
+def test_the_mutation_tool_defaults_to_mutmut_and_can_be_chosen(tmp_path: Path) -> None:
+    assert load(write(tmp_path, 'language = "fake"\n')).mutation_tool == "mutmut"
+    cfg = load(write(tmp_path, 'language = "fake"\n[mutation]\ntool = "other"\n'))
+    assert cfg.mutation_tool == "other"
+    assert cfg.explicit == frozenset()  # choosing a tool does not claim a score floor
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [('"nope"', "mutation.tool must be one of mutmut, other"), ("5", "tool must be a string")],
+)
+def test_a_bad_mutation_tool_is_an_error(tmp_path: Path, value: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        load(write(tmp_path, f'language = "fake"\n[mutation]\ntool = {value}\n'))
+
+
 def test_language_required(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="language"):
         load(write(tmp_path, "[crap]\nmax = 6\n"))
