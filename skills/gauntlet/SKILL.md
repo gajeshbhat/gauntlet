@@ -13,8 +13,11 @@ pass.
 3. No `gauntlet.toml`: `gauntlet init .`.
 
 ## Use
-- `gauntlet run .` proves a change (`--report EVIDENCE.md` to share). `gauntlet check .` re-checks the last run;
-  "stale" means run again.
+- `gauntlet run .` proves the project (`--report EVIDENCE.md` to share). While iterating, `gauntlet run . --changed`
+  checks only uncommitted work and `--changed main` the whole branch: much faster. Finish with a full run.
+  `gauntlet check .` re-checks the last run; "stale" means run again.
+- A `survived` line is `file:line: mutant: survived [old -> new]`: no test fails when `old` becomes `new` in the
+  function at `file:line`. Add the assertion that does.
 - Exit codes: 0 pass; 1 gate failed; 2 refused or error (read the message).
 - Fix the cause: split complex functions, add missing tests, strengthen tests that let mutants survive. Never add
   ignore comments (`# pragma: no cover|no mutate`, `nosec`), coverage `omit`, or relax a limit.

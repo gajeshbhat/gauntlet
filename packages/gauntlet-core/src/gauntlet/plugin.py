@@ -8,9 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from gauntlet.results import Mutation
-
 Lines = dict[str, dict[int, int]]  # coverage as one shape: {file: {line: hit count}}; only executable lines appear
+Where = tuple[str, int, int]  # where a mutant's code is: project-relative file, first line, last line
 
 
 @dataclass(frozen=True)
@@ -25,9 +24,16 @@ class Step:
 
 @dataclass(frozen=True)
 class MutationTool:
+    """Its report is one `<mutant>: <status>` line per mutant (see harden.py); these say what the report means."""
+
     artifact: str  # the file the run leaves behind
     how: str  # how to produce it yourself, for the error message
-    read: Callable[[str], Mutation]
+    caught: frozenset[str]  # statuses that mean the tests noticed the mutant
+    ignored: frozenset[str]  # statuses of lines that are no mutant at all
+    never_ran: frozenset[str]  # statuses a run that did not work leaves on every mutant
+    empty: str  # the error for a report without mutants
+    broken: str  # the error for a report where no mutant ever ran
+    locate: Callable[[list[str], Path], dict[str, Where]]  # (mutants, project root) -> where each one's code is
 
 
 @dataclass(frozen=True)
@@ -39,8 +45,9 @@ class Language:
     coverage_file: str  # the artifact the clean gate reads
     image: str  # the image of an OpenShell sandbox (isolation is optional; commands otherwise run on this machine)
     artifacts: tuple[str, ...]  # every file the gates read; `stamp` binds these
-    # (safe src path, project dir, output dir, mutation tool) -> the fixed commands
-    steps: Callable[[str, str, str, str], list[Step]]
+    # (safe src path, project dir, output dir, mutation tool, source files in scope) -> the fixed commands.
+    # No files in scope means all of them; with some, the mutation step may skip every other file.
+    steps: Callable[[str, str, str, str, tuple[str, ...]], list[Step]]
     read_coverage: Callable[[str], Lines]
     mutation: dict[str, MutationTool]  # by the name `[mutation] tool` takes; core defaults to "mutmut"
     imports: Callable[[str, list[str]], list[tuple[int, str]]]  # (source, its package) -> (line, imported module)

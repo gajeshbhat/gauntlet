@@ -34,6 +34,7 @@ def test_report_in_full() -> None:
     text = render(
         results,
         language="fake",
+        scope="mod.py:3-9",
         fingerprint="f" * 64,
         config_sha256="c" * 64,
         policy=Policy(crap_ceiling=7, mutation_floor=91, max_exclusions=3),
@@ -47,6 +48,7 @@ def test_report_in_full() -> None:
 Generated 2026-10-16T12:00:00+00:00 by gauntlet {version("gauntlet-core")}.
 
 - Language: fake
+- Scope: mod.py:3-9
 - Source fingerprint: `{"f" * 64}`
 - gauntlet.toml sha256: `{"c" * 64}`
 - Policy: crap ceiling 7, mutation floor 91, exclusion budget 3

@@ -6,6 +6,7 @@ snapshot; its outputs are read from the snapshot and stamped.
 """
 
 import re
+import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -14,9 +15,10 @@ from gauntlet import languages
 from gauntlet.config import Config
 from gauntlet.errors import GauntletError
 from gauntlet.plugin import Step
-from gauntlet.provenance import excluded, fingerprint, stamp
+from gauntlet.provenance import excluded, fingerprint, source_files, stamp
 from gauntlet.safefs import MAX_ARTIFACT_BYTES
 from gauntlet.sandbox import ExecResult, Sandbox
+from gauntlet.scope import EVERYTHING, Scope
 from gauntlet.snapshot import snapshot
 
 OUT_DIR = ".gauntlet-out"
@@ -29,9 +31,23 @@ def _safe_path(value: str) -> str:
     return value
 
 
-def steps(cfg: Config, project_dir: str) -> list[Step]:
+def steps(cfg: Config, project_dir: str, only: tuple[str, ...] = ()) -> list[Step]:
     out = f"{project_dir}/{OUT_DIR}"
-    return languages.get(cfg.language).steps(_safe_path(cfg.src), project_dir, out, cfg.mutation_tool)
+    return languages.get(cfg.language).steps(_safe_path(cfg.src), project_dir, out, cfg.mutation_tool, only)
+
+
+def in_scope(source: Path, cfg: Config, scope: Scope) -> tuple[str, ...]:
+    """The source files outside the tests that the scope touches: all the mutation step has to look at.
+
+    No scope means every file, said as (). A scope that touches none has nothing to prove, and says so before any
+    test runs."""
+    if not scope.entries:
+        return ()
+    row = languages.get(cfg.language)
+    found = tuple(f for f in scope.files(source_files(source, row.suffixes)) if not re.search(row.tests, f))
+    if not found:
+        raise GauntletError("nothing to check: the scope touches no source file outside the tests")
+    return found
 
 
 def output_tail(done: ExecResult) -> str:
@@ -58,6 +74,7 @@ def _run_steps(box: Sandbox, plan: list[Step], stale: tuple[str, ...] = ()) -> d
     for step in plan:
         if stale and step.name == "mutation":
             _clear(box, stale)
+        print(f"gauntlet: {step.name} (up to {step.timeout // 60} min)", file=sys.stderr, flush=True)
         done = box.exec(step.argv, dict(step.env), step.timeout)
         if done.code != 0 and step.must_pass:
             raise GauntletError(f"step {step.name!r} failed (exit {done.code}): {output_tail(done)}")
@@ -101,8 +118,11 @@ def _collect(snap: Path, language: str, plan: list[Step], captured: dict[str, by
     return found
 
 
-def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path], Sandbox]) -> list[str]:
+def produce(
+    source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path], Sandbox], scope: Scope = EVERYTHING
+) -> list[str]:
     """Run the pipeline in a sandbox; leave stamped artifacts in `out`. Returns the artifact names."""
+    only = in_scope(source, cfg, scope)
     skip = excluded(out, source, ())
     before = fingerprint(source, skip)
     with tempfile.TemporaryDirectory(prefix="gauntlet-") as tmp:
@@ -110,7 +130,7 @@ def produce(source: Path, cfg: Config, out: Path, make_sandbox: Callable[[Path],
         snapshot(source, snap)
         (snap / OUT_DIR).mkdir()
         box = make_sandbox(snap)
-        plan = steps(cfg, box.project_dir)
+        plan = steps(cfg, box.project_dir, only)
         try:
             box.ensure()
             captured = _run_steps(box, plan, _stale(box, cfg))

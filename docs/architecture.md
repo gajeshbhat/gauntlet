@@ -37,7 +37,7 @@ flowchart LR
 | Gate | Reads | Fails when |
 |---|---|---|
 | `clean` | coverage | a function's CRAP score exceeds the limit (default 8); a source file missing from coverage counts as 0% |
-| `harden` | mutation results | the mutation score is under the floor (default 90%); mutants that never ran count as survivors |
+| `harden` | mutation results + source | the mutation score is under the floor (default 90%); mutants that never ran count as survivors. Under a scope only the mutants of functions it touches count; one that cannot be placed counts only if it survived |
 | `exclusions` | source + tool config | more than `max_exclusions` ignore comments, or coverage/mutation settings that hide files |
 | `arch` | source imports | an import points at an outer layer, or breaks a `forbid` rule |
 | `spec` | a Gherkin file | a scenario has no When/Then, or its `@test(path::name)` points at no real test |
@@ -66,7 +66,7 @@ flowchart TB
 | Project code and tests | Run only in step 1, on a copy: on this machine with a scrubbed environment, or in an OpenShell sandbox. Gates never execute them. |
 | Artifacts the run wrote | Size caps, symlink checks, the stale mutation report is deleted just before the mutation run, and stamping binds them to the source. |
 | Repo config (`gauntlet.toml`, coverage settings) | Policy ratchet, pin, exclusion budget. |
-| Git itself | Asked for names only, with a scrubbed environment; contents are hashed in Python. |
+| Git itself | Asked for names (and, for `--changed`, old file contents through `cat-file`), with a scrubbed environment; contents are hashed and compared in Python. |
 
 **Not defended:** tests can forge coverage or mutation numbers. A sandbox protects your machine, not the numbers. See [SECURITY.md](../SECURITY.md).
 
@@ -75,12 +75,14 @@ flowchart TB
 A language plugin is one `gauntlet.plugin.Language` value (`plugin.py`):
 
 - **Data:** source suffixes, test-file regex, ignore-comment regex, coverage file name, OpenShell image.
-- **Steps:** the fixed commands, built from the source path, the project and output directories, and the mutation tool.
-  The Python plugin runs `pytest --cov`, then `mutmut run` and `mutmut results` (or the Cosmic Ray equivalents).
-- **Mutation tools:** a name (`[mutation] tool`) to a step list and a reader that both reduce to the same
-  score, survivors and counts. Python has `mutmut` (default) and `cosmic-ray`.
-- **Readers:** parse coverage and mutation output, list a file's imports and comments, find config-level excludes,
-  and write a starter `gauntlet.toml`.
+- **Steps:** the fixed commands, built from the source path, the project and output directories, the mutation tool and
+  the source files in scope (none means all). The Python plugin runs `pytest --cov`, then `mutmut run` and
+  `mutmut results` (or the Cosmic Ray equivalents); with files in scope it mutates only those.
+- **Mutation tools:** a name (`[mutation] tool`) to a report of `<mutant>: <status>` lines, which statuses mean
+  caught, ignored or never ran, and `locate`: where each mutant's code is. Core (`harden.py`) does the counting and
+  the scoping, the same for every tool. Python has `mutmut` (default) and `cosmic-ray`.
+- **Readers:** parse coverage, list a file's imports and comments, find config-level excludes, and write a starter
+  `gauntlet.toml`.
 
 Register it as `[project.entry-points."gauntlet.languages"]` and install it next to `gauntlet-core`.
 

@@ -12,9 +12,11 @@ from typing import Any
 from gauntlet import (
     arch,
     backends,
+    changed,
     clean,
     diagram,
     exclusions,
+    harden,
     languages,
     linecov,
     policy,
@@ -90,7 +92,7 @@ def _harden(run: Run) -> GateResult:
     cfg = run.cfg
     tool = languages.get(cfg.language).mutation[cfg.mutation_tool]
     _trusted(run, [tool.artifact])
-    m = tool.read(read_artifact(run.art, tool.artifact, tool.how))
+    m = harden.check(read_artifact(run.art, tool.artifact, tool.how), tool, run.source, run.scope)
     ok = m.pct >= cfg.mutation_min
     summary = f"mutation score {m.pct:.1f}% {'>=' if ok else '<'} {cfg.mutation_min}%"
     return GateResult("harden", ok, summary, tuple(m.survivors), {"score": m.pct, "caught": m.caught, "total": m.total})
@@ -136,6 +138,15 @@ MAKE_SANDBOX: SandboxFactory = backends.gate_sandbox
 
 OPTIONS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("--only", {"action": "append", "metavar": "PATH[:LO-HI]", "help": "limit to a file, directory/ or line range"}),
+    (
+        "--changed",
+        {
+            "nargs": "?",
+            "const": "HEAD",
+            "metavar": "REF",
+            "help": "limit to the lines that differ from REF (default HEAD: your uncommitted work)",
+        },
+    ),
     ("--artifacts", {"type": Path, "metavar": "DIR", "help": "where artifacts are read from (default: ROOT)"}),
     ("--source", {"type": Path, "metavar": "DIR", "help": "git checkout the artifacts come from (default: ROOT)"}),
     ("--policy", {"type": Path, "metavar": "FILE", "help": "policy file (default: ~/.config/gauntlet/policy.toml)"}),
@@ -176,6 +187,7 @@ def _evidence(run: Run, results: list[GateResult], command: str) -> str:
     return report.render(
         results,
         language=run.cfg.language,
+        scope=str(run.scope),
         fingerprint=_fingerprint(run),
         config_sha256=hashlib.sha256((run.root / "gauntlet.toml").read_bytes()).hexdigest(),
         policy=run.policy,
@@ -184,11 +196,18 @@ def _evidence(run: Run, results: list[GateResult], command: str) -> str:
     )
 
 
+def _command(args: argparse.Namespace) -> str:
+    picked: list[str] = args.only or []
+    only = [f"--only {item}" for item in picked]
+    since = [f"--changed {args.changed}"] if args.changed else []
+    return " ".join([f"gauntlet {args.gate} {args.root}", *only, *since])
+
+
 def _write_outputs(run: Run, args: argparse.Namespace, results: list[GateResult]) -> None:
     if args.json:
         args.json.write_text(json.dumps([asdict(r) for r in results], indent=2) + "\n")
     if args.report:
-        args.report.write_text(_evidence(run, results, f"gauntlet {args.gate} {args.root}"))
+        args.report.write_text(_evidence(run, results, _command(args)))
 
 
 def _stamp(run: Run) -> int:
@@ -212,7 +231,9 @@ def _notice(pol: Policy) -> None:
 
 def _run_pipeline(run: Run) -> list[GateResult]:
     _notice(run.policy)
-    names = runner.produce(run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy))
+    names = runner.produce(
+        run.source, run.cfg, run.art, lambda project: MAKE_SANDBOX(project, run.cfg, run.policy), run.scope
+    )
     print(f"produced {', '.join(names)}")
     return [*_check(run), _harden(run)]
 
@@ -229,6 +250,17 @@ def _flagged(pol: Policy, sandbox: str | None) -> Policy:
     return replace(pol, sandbox=sandbox or pol.sandbox)
 
 
+def _scope(args: argparse.Namespace, source: Path, language: str) -> Scope:
+    """`--only` and `--changed` add up: the code they name is all that the gates look at."""
+    picked = parse(args.only or [])
+    if args.changed is None:
+        return picked
+    found = changed.entries(source, args.changed, languages.get(language).suffixes)
+    if not found:
+        raise GauntletError(f"nothing to check: no source file differs from {args.changed}")
+    return Scope((*picked.entries, *found))
+
+
 def _build_run(args: argparse.Namespace, pol: Policy) -> Run:
     config_path = args.root / "gauntlet.toml"
     raw = load(config_path)
@@ -237,9 +269,9 @@ def _build_run(args: argparse.Namespace, pol: Policy) -> Run:
     # `stamp` binds the artifacts you just produced, so it must never default to an old run's results.
     use_last = args.gate == "run" or (args.gate != "stamp" and (last_run / provenance.MANIFEST).is_file())
     art = args.artifacts or args.out or (last_run if use_last else args.root)
-    scope = parse(args.only or [])
+    source = args.source or args.root
     pol = _flagged(pol, args.sandbox)
-    return Run(args.root, art, args.source or args.root, policy.apply(raw, pol), scope, pol, args.feature)
+    return Run(args.root, art, source, policy.apply(raw, pol), _scope(args, source, raw.language), pol, args.feature)
 
 
 def _init(args: argparse.Namespace) -> int:

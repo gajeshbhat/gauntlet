@@ -1,5 +1,7 @@
 """The fixed, pinned commands that produce the Python artifacts in the sandbox."""
 
+from pathlib import PurePosixPath
+
 from gauntlet.plugin import Step
 
 PYTEST_COV = "pytest-cov==7.1.0"
@@ -45,17 +47,42 @@ sys.exit(done.returncode)
 """.strip()
 
 
-# Cosmic Ray needs the mutable files listed (never tests, hidden or generated dirs). Its test command runs inside each
-# worker's own copy of the project, hence the relative `--project .`.
+# `mutmut results` only names the mutants. Add to each survivor the line it changed (from `mutmut show`), so the
+# report says which check is missing: `<mutant>: survived<TAB><old line> -> <new line>`. The first 500, 8 at a time.
+RESULTS_MUTMUT = """
+import re, subprocess, sys
+from concurrent.futures import ThreadPoolExecutor
+def mutmut(*args):
+    return subprocess.run([sys.executable, "-m", "mutmut", *args], capture_output=True, text=True)
+done = mutmut("results", "--all", "true")
+if done.returncode:
+    print(done.stderr, end="", file=sys.stderr)
+    sys.exit(done.returncode)
+lines = done.stdout.splitlines()
+def detail(line):
+    diff = mutmut("show", line.strip().partition(": ")[0]).stdout
+    sides = [re.search(f"^{mark}(?!{mark}{mark})(.*)$", diff, re.M) for mark in ("-", "[+]")]
+    return f"{line}\\t{' -> '.join(' '.join(side[1].split()) for side in sides)}" if all(sides) else line
+survivors = [line for line in lines if line.endswith(": survived")][:500]
+with ThreadPoolExecutor(8) as pool:
+    shown = dict(zip(survivors, pool.map(detail, survivors)))
+print("\\n".join(shown.get(line, line) for line in lines))
+""".strip()
+
+
+# Cosmic Ray needs the mutable files listed (never tests, hidden or generated dirs): those of the files in scope
+# (the arguments after the output directory), or all of them. Its test command runs inside each worker's own copy of
+# the project, hence the relative `--project .`.
 CONFIGURE_CR = """
 import json, sys
 from pathlib import Path
-root, src, out = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+root, src, out, only = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3]), set(sys.argv[4:])
 def mutable(path):
     parts = path.relative_to(root).parts
     skipped = any(p.startswith(".") or p in ("tests", "test", "mutants") for p in parts)
     return not skipped and not (path.name.startswith("test_") or path.name == "conftest.py")
 files = sorted(str(p.relative_to(root)) for p in (root / src).rglob("*.py") if mutable(p))
+files = [f for f in files if f in only] if only else files
 command = "uv run --project . --with pytest pytest -x -q"
 (out / "cosmic-ray.toml").write_text(
     f"[cosmic-ray]\\nmodule-path = {json.dumps(files)}\\ntest-command = {json.dumps(command)}\\n"
@@ -144,30 +171,47 @@ def _tests(src: str, project: str, out: str) -> Step:
     )
 
 
-def _mutmut(src: str, project: str, out: str) -> list[Step]:
+def mutants(only: tuple[str, ...]) -> tuple[str, ...]:
+    """mutmut's names for the mutants of the files in scope (`pkg.mod.x_*`, `pkg.mod.xǁ*`); none means all of them.
+
+    mutmut names a module by its path from the project root, less a leading `src/` or `source/`. A file it cannot
+    name gets no pattern: its mutants are not run, and a mutant that was not run never counts as caught."""
+    found: list[str] = []
+    for rel in only:
+        parts = list(PurePosixPath(rel).with_suffix("").parts)
+        if parts[0] in ("src", "source"):
+            del parts[0]
+        if parts[-1:] == ["__init__"]:
+            del parts[-1]
+        if parts and all(part.isidentifier() for part in parts):
+            found += [f"{'.'.join(parts)}.x_*", f"{'.'.join(parts)}.xǁ*"]
+    return tuple(found)
+
+
+def _mutmut(src: str, project: str, out: str, only: tuple[str, ...]) -> list[Step]:
     uv = ("uv", "run", "--project", project)
     return [
         Step("mutation-config", ("python3", "-c", CONFIGURE_MUTMUT, project, src), timeout=60),
         Step(
             "mutation",
-            ("python3", "-c", RUN_MUTMUT, *uv, "--with", MUTMUT, "mutmut", "run"),
+            ("python3", "-c", RUN_MUTMUT, *uv, "--with", MUTMUT, "mutmut", "run", *mutants(only)),
             timeout=7200,
             must_pass=False,
             env=ENV,
         ),
         Step(
             "mutation-results",
-            (*uv, "--with", MUTMUT, "mutmut", "results", "--all", "true"),
+            (*uv, "--with", MUTMUT, "python3", "-c", RESULTS_MUTMUT),
             "mutmut-results.txt",
             env=ENV,
         ),
     ]
 
 
-def _cosmic_ray(src: str, project: str, out: str) -> list[Step]:
+def _cosmic_ray(src: str, project: str, out: str, only: tuple[str, ...]) -> list[Step]:
     run = ("uv", "run", "--no-project", "--with", COSMIC_RAY, "python3", "-c")
     return [
-        Step("mutation-config", ("python3", "-c", CONFIGURE_CR, project, src, out), timeout=60),
+        Step("mutation-config", ("python3", "-c", CONFIGURE_CR, project, src, out, *only), timeout=60),
         Step("mutation", (*run, RUN_CR, project, out), timeout=7200, env=ENV),
         Step(
             "mutation-results",
@@ -178,5 +222,5 @@ def _cosmic_ray(src: str, project: str, out: str) -> list[Step]:
     ]
 
 
-def steps(src: str, project: str, out: str, tool: str) -> list[Step]:
-    return [_tests(src, project, out), *(_cosmic_ray if tool == "cosmic-ray" else _mutmut)(src, project, out)]
+def steps(src: str, project: str, out: str, tool: str, only: tuple[str, ...]) -> list[Step]:
+    return [_tests(src, project, out), *(_cosmic_ray if tool == "cosmic-ray" else _mutmut)(src, project, out, only)]

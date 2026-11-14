@@ -94,8 +94,14 @@ def _rules(path: Path, table: dict[str, Any]) -> tuple[Rule, ...]:
     return tuple(rules)
 
 
+def _read(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise GauntletError(f"{path} not found; write one with: gauntlet init {path.parent}")
+    return tomllib.loads(path.read_text())
+
+
 def load(path: Path) -> Config:
-    data = tomllib.loads(path.read_text())
+    data = _read(path)
     top = _section(path, data, "")
     sections = {name: _section(path, data, name) for name in KEYS if name}
     language = top.get("language")

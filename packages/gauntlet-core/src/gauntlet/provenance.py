@@ -27,9 +27,9 @@ GIT_ENV = {
 }
 
 
-def git_output(source: Path, *args: str) -> bytes:
+def git_output(source: Path, *args: str, stdin: bytes = b"") -> bytes:
     """Run git on `source` with a scrubbed environment and no repo-configured hooks."""
-    done = subprocess.run(["git", *SAFE_GIT, "-C", str(source), *args], capture_output=True, env=GIT_ENV)
+    done = subprocess.run(["git", *SAFE_GIT, "-C", str(source), *args], input=stdin, capture_output=True, env=GIT_ENV)
     if done.returncode != 0:
         raise GauntletError(f"{source} is not a git repository (or git refused to read it)")
     return done.stdout

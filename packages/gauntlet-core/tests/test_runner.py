@@ -10,6 +10,7 @@ from gauntlet import runner
 from gauntlet.config import Config
 from gauntlet.provenance import MANIFEST, verify
 from gauntlet.sandbox import ExecResult
+from gauntlet.scope import parse
 
 
 @pytest.fixture
@@ -80,6 +81,47 @@ def test_the_src_must_be_a_safe_relative_path(src: str) -> None:
 def test_the_plan_is_built_for_the_configured_mutation_tool() -> None:
     plan = runner.steps(Config(language="fake", mutation_tool="other"), "/p")
     assert [s.argv for s in plan if s.name == "mutation"] == [("fake-mutate", "other")]
+
+
+def test_without_a_scope_the_plan_covers_every_file(repo: Path) -> None:
+    assert runner.in_scope(repo, Config(language="fake"), parse([])) == ()
+    plan = runner.steps(Config(language="fake"), "/p")
+    assert [s.argv for s in plan if s.name == "mutation"] == [("fake-mutate", "mutmut")]
+
+
+def test_a_scope_names_the_source_files_the_mutation_step_looks_at(repo: Path, tmp_path: Path) -> None:
+    for name in ("b.py", "tests/test_a.py", "conftest.py", "notes.txt"):
+        (repo / name).parent.mkdir(exist_ok=True)
+        (repo / name).write_text("x = 1\n")
+    cfg = Config(language="fake")
+    scope = parse(["a.py:1-1", "tests/", "conftest.py", "notes.txt", "gone.py"])
+    assert runner.in_scope(repo, cfg, scope) == ("a.py",)  # never a test, never a file that is no source
+    factory, made = make(python_behaviour)
+    runner.produce(repo, cfg, tmp_path / "out", factory, scope)
+    assert [argv for argv, _, _ in made[0].calls if argv[0] == "fake-mutate"] == [["fake-mutate", "mutmut", "a.py"]]
+
+
+@pytest.mark.parametrize("only", ["tests/", "notes.txt", "gone.py"])
+def test_a_scope_with_no_source_outside_the_tests_stops_before_anything_runs(
+    repo: Path, tmp_path: Path, only: str
+) -> None:
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_a.py").write_text("x = 1\n")
+    (repo / "notes.txt").write_text("x\n")
+    factory, made = make(python_behaviour)
+    with pytest.raises(ValueError, match="^nothing to check: the scope touches no source file outside the tests$"):
+        runner.produce(repo, Config(language="fake"), tmp_path / "out", factory, parse([only]))
+    assert made == []
+
+
+def test_each_step_is_announced_before_it_runs(repo: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    factory, _ = make(python_behaviour)
+    runner.produce(repo, Config(language="fake"), tmp_path / "out", factory)
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "gauntlet: tests (up to 60 min)\ngauntlet: mutation (up to 120 min)\ngauntlet: mutation-results (up to 30 min)\n"
+    )
+    assert captured.out == ""
 
 
 def test_produce_runs_in_a_snapshot_copies_artifacts_and_stamps(repo: Path, tmp_path: Path) -> None:

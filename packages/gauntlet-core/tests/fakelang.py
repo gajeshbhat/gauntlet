@@ -9,14 +9,13 @@ import re
 from pathlib import Path
 
 from gauntlet.errors import GauntletError
-from gauntlet.plugin import Language, Lines, MutationTool, Step
-from gauntlet.results import Mutation
+from gauntlet.plugin import Language, Lines, MutationTool, Step, Where
 
 
-def steps(src: str, project: str, out: str, tool: str) -> list[Step]:
+def steps(src: str, project: str, out: str, tool: str, only: tuple[str, ...]) -> list[Step]:
     return [
         Step("tests", ("fake-test", src, out), timeout=3600),
-        Step("mutation", ("fake-mutate", tool), timeout=7200, must_pass=False),
+        Step("mutation", ("fake-mutate", tool, *only), timeout=7200, must_pass=False),
         Step("mutation-results", ("fake-results",), "mutmut-results.txt"),
     ]
 
@@ -29,13 +28,20 @@ def coverage(text: str) -> Lines:
     }
 
 
-def mutants(text: str) -> Mutation:
-    statuses = [line.partition(": ") for line in text.splitlines() if ": " in line]
-    caught = sum(status == "killed" for _, _, status in statuses)
-    bad = [f"{name}: {status}" for name, _, status in statuses if status != "killed"]
-    if not statuses:
-        raise GauntletError("no mutants found")
-    return Mutation(100 * caught / len(statuses), bad, caught, len(statuses))
+def locate(names: list[str], root: Path) -> dict[str, Where]:  # noqa: ARG001
+    """`file.py@3-9 anything` is on lines 3 to 9 of file.py; any other name is nowhere."""
+    found: dict[str, Where] = {}
+    for name in names:
+        if m := re.match(r"(\S+)@(\d+)-(\d+)", name):
+            found[name] = (m[1], int(m[2]), int(m[3]))
+    return found
+
+
+def tool(how: str) -> MutationTool:
+    return MutationTool(
+        "mutmut-results.txt", how, frozenset({"killed"}), frozenset({"skipped"}), frozenset({"not checked"}),
+        "no mutants found", "the fake mutator checked no mutant", locate,
+    )  # fmt: skip
 
 
 def imports(source: str, package: list[str]) -> list[tuple[int, str]]:
@@ -72,8 +78,8 @@ FAKE = Language(
     steps=steps,
     read_coverage=coverage,
     mutation={
-        "mutmut": MutationTool("mutmut-results.txt", "run the fake mutator (or: gauntlet run)", mutants),
-        "other": MutationTool("mutmut-results.txt", "run the other fake mutator (or: gauntlet run)", mutants),
+        "mutmut": tool("run the fake mutator (or: gauntlet run)"),
+        "other": tool("run the other fake mutator (or: gauntlet run)"),
     },
     imports=imports,
     comments=comments,

@@ -138,3 +138,12 @@ def test_bad_forbid_rules_are_rejected(tmp_path: Path, rule: str) -> None:
     text = f'language = "fake"\n[layers]\nforbid = ["{rule}"]\n'
     with pytest.raises(ValueError, match=rf"^{tmp_path}/gauntlet.toml: forbid rule {rule!r} must look like"):
         load(write(tmp_path, text))
+
+
+def test_a_missing_config_says_how_to_write_one(tmp_path: Path) -> None:
+    path = tmp_path / "gauntlet.toml"
+    with pytest.raises(ValueError, match=rf"^{path} not found; write one with: gauntlet init {tmp_path}$"):
+        load(path)
+    path.mkdir()
+    with pytest.raises(ValueError, match="not found; write one with"):
+        load(path)

@@ -9,9 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from gauntlet import harden
 from gauntlet.plugin import Step
+from gauntlet.results import Mutation
+from gauntlet.scope import Scope, parse
 from gauntlet_python import LANGUAGE
-from gauntlet_python.cosmic import check
+from gauntlet_python.cosmic import TOOL, locate
 from gauntlet_python.steps import CONFIGURE_CR, DUMP_CR, RUN_CR, steps
 
 RESULTS = """
@@ -21,6 +24,10 @@ src/a.py:4 core/Op_Eq_NotEq: survived
 src/a.py:5 core/Op_Lt_Gt: abnormal
 src/a.py:6 core/Op_Gt_Lt: no-test
 """
+
+
+def check(results: str) -> Mutation:
+    return harden.check(results, TOOL, Path("unused"), Scope())
 
 
 def test_killed_and_incompetent_are_caught_and_no_test_is_ignored() -> None:
@@ -34,27 +41,40 @@ def test_no_mutants_is_an_error() -> None:
         check("src/a.py:6 core/Op_Gt_Lt: no-test\n")
 
 
-def test_when_no_mutant_ever_ran_cosmic_ray_did_not_work() -> None:
-    with pytest.raises(ValueError, match="cosmic-ray ran no mutant"):
-        check("src/a.py:2 core/Op: abnormal\nsrc/a.py:3 core/Op: pending\n")
+@pytest.mark.parametrize("status", ["abnormal", "exception", "pending"])
+def test_when_no_mutant_ever_ran_cosmic_ray_did_not_work(status: str) -> None:
+    with pytest.raises(ValueError, match=r"^cosmic-ray ran no mutant: its workers.*`cosmic-ray exec` in the project"):
+        check(f"src/a.py:2 core/Op: {status}\n")
 
 
 def test_a_few_abnormal_mutants_among_checked_ones_are_survivors_not_an_error() -> None:
     assert check("a: killed\nb: exception\n").pct == 50.0
 
 
+def test_a_mutant_is_on_the_line_its_name_starts_with() -> None:
+    names = ["src/a.py:4 core/Op_Eq_NotEq", "C:/a.py:12 core/Op two", "src/a.py:x core/Op", ":3 core/Op", "plain"]
+    assert locate(names, Path("unused")) == {names[0]: ("src/a.py", 4, 4), names[1]: ("C:/a.py", 12, 12)}
+
+
+def test_a_scope_keeps_only_the_mutants_on_its_lines() -> None:
+    scoped = harden.check(RESULTS, TOOL, Path("unused"), parse(["src/a.py:3-4"]))
+    assert (scoped.caught, scoped.total) == (1, 2)
+    assert scoped.survivors == ["src/a.py:4 core/Op_Eq_NotEq: survived"]
+
+
 def test_the_plugin_offers_both_tools_under_one_artifact() -> None:
     assert list(LANGUAGE.mutation) == ["mutmut", "cosmic-ray"]
     assert {t.artifact for t in LANGUAGE.mutation.values()} == {"mutmut-results.txt"}
-    assert LANGUAGE.mutation["cosmic-ray"].read is check
+    assert LANGUAGE.mutation["cosmic-ray"] is TOOL
+    assert TOOL.how == 'set [mutation] tool = "cosmic-ray" and run: gauntlet run'
 
 
 def test_cosmic_ray_steps_in_full() -> None:
     project, out = "/tmp/snap", "/tmp/snap/.gauntlet-out"
     uv = ("uv", "run", "--no-project", "--with", "cosmic-ray==8.7.0", "python3", "-c")
     env = (("SETUPTOOLS_SCM_PRETEND_VERSION", "0.0.0"),)
-    plan = steps("src", project, out, "cosmic-ray")
-    assert plan[0] == steps("src", project, out, "mutmut")[0]  # the tests step is shared
+    plan = steps("src", project, out, "cosmic-ray", ())
+    assert plan[0] == steps("src", project, out, "mutmut", ())[0]  # the tests step is shared
     assert plan[1:] == [
         Step("mutation-config", ("python3", "-c", CONFIGURE_CR, project, "src", out), None, 60, True, ()),
         Step("mutation", (*uv, RUN_CR, project, out), None, 7200, True, env),
@@ -63,7 +83,21 @@ def test_cosmic_ray_steps_in_full() -> None:
     ]  # fmt: skip
 
 
+def test_with_files_in_scope_cosmic_ray_is_told_which() -> None:
+    plan = steps("src", "/p", "/p/out", "cosmic-ray", ("src/a.py", "src/b.py"))
+    assert plan[1].argv[-5:] == ("/p", "src", "/p/out", "src/a.py", "src/b.py")
+
+
 # ---- sandbox scripts
+def test_with_files_in_scope_the_config_lists_only_those(tmp_path: Path) -> None:
+    for name in ("src/p/a.py", "src/p/b.py", "src/p/test_c.py"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("x = 1\n")
+    only = ["src/p/b.py", "src/p/test_c.py", "elsewhere.py"]  # a test or a file outside src is never mutated
+    subprocess.run([sys.executable, "-c", CONFIGURE_CR, str(tmp_path), "src", str(tmp_path), *only], check=True)
+    assert 'module-path = ["src/p/b.py"]' in (tmp_path / "cosmic-ray.toml").read_text()
+
+
 def test_the_config_lists_mutable_files_only(tmp_path: Path) -> None:
     for name in (
         "src/p/a.py",

@@ -2,13 +2,12 @@
 
 from pathlib import Path
 
-from gauntlet.plugin import Language, MutationTool
+from gauntlet.plugin import Language
 
-from .cosmic import check as check_cosmic
+from . import cosmic, mutmut
 from .coverage import coveragepy
 from .excludes import comments, config_excludes
 from .imports import imports_at
-from .mutmut import check as check_mutmut
 from .steps import steps
 
 TEMPLATE = """language = "python"
@@ -41,16 +40,7 @@ LANGUAGE = Language(
     artifacts=("coverage.json", "mutmut-results.txt"),
     steps=steps,
     read_coverage=coveragepy,
-    mutation={  # both write the same artifact name; the name predates the second tool
-        "mutmut": MutationTool(
-            "mutmut-results.txt",
-            "mutmut run && mutmut results --all true > mutmut-results.txt (or: gauntlet run)",
-            check_mutmut,
-        ),
-        "cosmic-ray": MutationTool(
-            "mutmut-results.txt", 'set [mutation] tool = "cosmic-ray" and run: gauntlet run', check_cosmic
-        ),
-    },
+    mutation={"mutmut": mutmut.TOOL, "cosmic-ray": cosmic.TOOL},
     imports=imports_at,
     comments=comments,
     config_excludes=config_excludes,

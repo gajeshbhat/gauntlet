@@ -3,8 +3,14 @@
 ## Check only changed code
 
 ```sh
+gauntlet run . --changed          # what differs from HEAD: your uncommitted work
+gauntlet run . --changed main     # everything this branch changed
 gauntlet run . --only src/app/parse.py:10-40 --only src/app/new/
 ```
+
+A function is checked when any of its lines is in scope. The tests still run in full; mutation testing runs only on the
+files in scope, which is where the time goes. Nothing in scope (no source changed, or only tests) exits 2: a gate that
+checked nothing never passes. The evidence report records the scope.
 
 ## Re-check without re-running tests
 

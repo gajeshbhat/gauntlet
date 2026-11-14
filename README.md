@@ -37,6 +37,7 @@ Then, inside a git repository:
 ```sh
 gauntlet init .                      # write gauntlet.toml
 gauntlet run . --report EVIDENCE.md  # exit 0: every gate passed
+gauntlet run . --changed main        # later: only the code that differs from main
 ```
 
 A failing run says exactly what to fix:
@@ -44,8 +45,11 @@ A failing run says exactly what to fix:
 ```
 src/app/parse.py:12: parse CRAP 17.8 > 8 (complexity 5, coverage 20%)
 clean: 41 function(s) checked, 1 over CRAP 8
+src/app/grade.py:9: app.grade.x_grade__mutmut_5: survived [if score >= 80: -> if score > 80:]
 mutation score 84.0% < 90%
 ```
+
+The third line is a planted bug no test noticed: the function it is in, and the line it changed.
 
 Exit codes: `0` passed, `1` a gate failed, `2` error or bad input.
 
@@ -89,8 +93,8 @@ sandbox if you ask. The gates read results and refuse any that do not match the 
 
 ## Limits
 
-- Python only, for now. The first run of a large project can take a long time: mutation testing reruns the tests once
-  per bug it plants.
+- Python only, for now. A full run of a large project can take a long time: mutation testing reruns the tests once
+  per bug it plants. `--changed` plants bugs only in the files you touched.
 - Projects that need services or system libraries may need setup. When a project's own tests fail,
   gauntlet stops with a clear error instead of reporting a wrong number.
 - Tests could forge their own numbers. A sandbox protects your machine, not the numbers.
