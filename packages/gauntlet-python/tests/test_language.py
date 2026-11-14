@@ -64,10 +64,10 @@ def test_python_steps_in_full() -> None:
     assert LANGUAGE.steps("src", "/tmp/snap", "/tmp/snap/.gauntlet-out", "mutmut", ()) == [
         Step("tests", (*uv, "--with", "pytest-cov==7.1.0", "pytest", "-q", "--cov=src", "--cov-branch",
                        "--cov-report=json:/tmp/snap/.gauntlet-out/coverage.json"), None, 3600, True, env),
-        Step("mutation-config", ("python3", "-c", CONFIGURE_MUTMUT, "/tmp/snap", "src"), None, 60, True, ()),
-        Step("mutation", ("python3", "-c", RUN_MUTMUT, *uv, "--with", "mutmut==3.8.1", "mutmut", "run"),
+        Step("mutation-config", ("python3", "-I", "-c", CONFIGURE_MUTMUT, "/tmp/snap", "src"), None, 60, True, ()),
+        Step("mutation", ("python3", "-I", "-c", RUN_MUTMUT, *uv, "--with", "mutmut==3.8.1", "mutmut", "run"),
              None, 7200, False, env),
-        Step("mutation-results", (*uv, "--with", "mutmut==3.8.1", "python3", "-c", RESULTS_MUTMUT),
+        Step("mutation-results", (*uv, "--with", "mutmut==3.8.1", "python3", "-I", "-c", RESULTS_MUTMUT),
              "mutmut-results.txt", 1800, True, env),
     ]  # fmt: skip
 
@@ -229,3 +229,19 @@ def test_each_survivor_is_followed_by_the_line_it_changed(tmp_path: Path) -> Non
 def test_a_failing_results_command_fails_the_step_with_its_message(tmp_path: Path) -> None:
     done = _results(tmp_path, "import sys; print('no mutants dir', file=sys.stderr); sys.exit(3)")
     assert (done.returncode, done.stdout, done.stderr) == (3, "", "no mutants dir\n")
+
+
+def test_every_helper_runs_isolated_so_a_project_module_cannot_stand_in_for_the_standard_library(
+    tmp_path: Path,
+) -> None:
+    """The project is the working directory, and `python3 -c` would import its `re.py` before the real one."""
+    plan = LANGUAGE.steps("src", "/p", "/p/out", "mutmut", ()) + LANGUAGE.steps("src", "/p", "/p/out", "cosmic-ray", ())
+    helpers = [step.argv for step in plan if "-c" in step.argv]
+    assert len(helpers) == 6
+    for argv in helpers:
+        assert argv[argv.index("-c") - 2 : argv.index("-c")] == ("python3", "-I")
+
+    (tmp_path / "re.py").write_text("raise SystemExit('the project hijacked the helper')\n")
+    hijacked = subprocess.run([sys.executable, "-c", "import re"], cwd=tmp_path, capture_output=True, text=True)
+    assert "hijacked" in hijacked.stderr  # what -I prevents
+    assert subprocess.run([sys.executable, "-I", "-c", "import re"], cwd=tmp_path).returncode == 0

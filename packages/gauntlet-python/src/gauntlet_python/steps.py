@@ -1,4 +1,8 @@
-"""The fixed, pinned commands that produce the Python artifacts in the sandbox."""
+"""The fixed, pinned commands that produce the Python artifacts in the sandbox.
+
+The helper scripts run as `python3 -I -c`: isolated mode keeps the working directory (the project) off the import
+path, so a project file called `re.py` or `json.py` cannot stand in for the standard library's.
+"""
 
 from pathlib import PurePosixPath
 
@@ -191,17 +195,17 @@ def mutants(only: tuple[str, ...]) -> tuple[str, ...]:
 def _mutmut(src: str, project: str, out: str, only: tuple[str, ...]) -> list[Step]:
     uv = ("uv", "run", "--project", project)
     return [
-        Step("mutation-config", ("python3", "-c", CONFIGURE_MUTMUT, project, src), timeout=60),
+        Step("mutation-config", ("python3", "-I", "-c", CONFIGURE_MUTMUT, project, src), timeout=60),
         Step(
             "mutation",
-            ("python3", "-c", RUN_MUTMUT, *uv, "--with", MUTMUT, "mutmut", "run", *mutants(only)),
+            ("python3", "-I", "-c", RUN_MUTMUT, *uv, "--with", MUTMUT, "mutmut", "run", *mutants(only)),
             timeout=7200,
             must_pass=False,
             env=ENV,
         ),
         Step(
             "mutation-results",
-            (*uv, "--with", MUTMUT, "python3", "-c", RESULTS_MUTMUT),
+            (*uv, "--with", MUTMUT, "python3", "-I", "-c", RESULTS_MUTMUT),
             "mutmut-results.txt",
             env=ENV,
         ),
@@ -209,9 +213,9 @@ def _mutmut(src: str, project: str, out: str, only: tuple[str, ...]) -> list[Ste
 
 
 def _cosmic_ray(src: str, project: str, out: str, only: tuple[str, ...]) -> list[Step]:
-    run = ("uv", "run", "--no-project", "--with", COSMIC_RAY, "python3", "-c")
+    run = ("uv", "run", "--no-project", "--with", COSMIC_RAY, "python3", "-I", "-c")
     return [
-        Step("mutation-config", ("python3", "-c", CONFIGURE_CR, project, src, out, *only), timeout=60),
+        Step("mutation-config", ("python3", "-I", "-c", CONFIGURE_CR, project, src, out, *only), timeout=60),
         Step("mutation", (*run, RUN_CR, project, out), timeout=7200, env=ENV),
         Step(
             "mutation-results",

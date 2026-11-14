@@ -71,12 +71,12 @@ def test_the_plugin_offers_both_tools_under_one_artifact() -> None:
 
 def test_cosmic_ray_steps_in_full() -> None:
     project, out = "/tmp/snap", "/tmp/snap/.gauntlet-out"
-    uv = ("uv", "run", "--no-project", "--with", "cosmic-ray==8.7.0", "python3", "-c")
+    uv = ("uv", "run", "--no-project", "--with", "cosmic-ray==8.7.0", "python3", "-I", "-c")
     env = (("SETUPTOOLS_SCM_PRETEND_VERSION", "0.0.0"),)
     plan = steps("src", project, out, "cosmic-ray", ())
     assert plan[0] == steps("src", project, out, "mutmut", ())[0]  # the tests step is shared
     assert plan[1:] == [
-        Step("mutation-config", ("python3", "-c", CONFIGURE_CR, project, "src", out), None, 60, True, ()),
+        Step("mutation-config", ("python3", "-I", "-c", CONFIGURE_CR, project, "src", out), None, 60, True, ()),
         Step("mutation", (*uv, RUN_CR, project, out), None, 7200, True, env),
         Step("mutation-results", (*uv, DUMP_CR, "cosmic-ray", "dump", f"{out}/session.sqlite"),
              "mutmut-results.txt", 1800, True, env),
