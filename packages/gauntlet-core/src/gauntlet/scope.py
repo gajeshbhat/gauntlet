@@ -12,9 +12,27 @@ class Scope:
     entries: tuple[Entry, ...] = ()  # empty means everything
 
     def contains(self, path: str, line: int) -> bool:
+        return self.overlaps(path, line, line)
+
+    def overlaps(self, path: str, lo: int, hi: int) -> bool:
+        """Whether any of the lines lo..hi of `path` is in scope: a function is in scope when any of its lines is."""
         if not self.entries:
             return True
-        return any(_matches(path, name) and (span is None or span[0] <= line <= span[1]) for name, span in self.entries)
+        return any(
+            _matches(path, name) and (span is None or (span[0] <= hi and lo <= span[1])) for name, span in self.entries
+        )
+
+    def __str__(self) -> str:
+        """As `--only` takes it, for the evidence report."""
+        shown = [name if span is None else f"{name}:{span[0]}-{span[1]}" for name, span in self.entries]
+        return ", ".join(shown) or "all source"
+
+    def files(self, names: list[str]) -> list[str]:
+        """The `names` an entry points at, whatever its lines."""
+        return [n for n in names if any(_matches(n, name) for name, _ in self.entries)]
+
+
+EVERYTHING = Scope()
 
 
 def _matches(path: str, name: str) -> bool:

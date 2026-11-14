@@ -115,6 +115,15 @@ def test_scope_limits_what_is_evaluated_and_reported(tmp_path: Path) -> None:
     assert check(tmp_path, {"mod.py": hits}, PY, 8, parse(["other.py"])).evaluated == 0
 
 
+def test_a_changed_line_inside_a_function_puts_the_whole_function_in_scope(tmp_path: Path) -> None:
+    project(tmp_path, SIMPLE + "\n" + BRANCHY.replace("g", "h", 1))
+    hits = {1: 1, 2: 1, **{n: 0 for n in range(4, 12)}}
+    result = check(tmp_path, {"mod.py": hits}, PY, 8, parse(["mod.py:6-6"]))  # h starts on line 4
+    assert [f.name for _, f in result.offenders] == ["h"]
+    assert result.evaluated == 1
+    assert check(tmp_path, {"mod.py": hits}, PY, 8, parse(["mod.py:3-3"])).evaluated == 0  # between the two
+
+
 def test_every_measured_file_is_evaluated(tmp_path: Path) -> None:
     project(tmp_path, BRANCHY, "a.py")
     project(tmp_path, BRANCHY, "pkg/b.py")

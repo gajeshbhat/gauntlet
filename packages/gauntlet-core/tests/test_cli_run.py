@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from gauntlet import cli
 from gauntlet.cli import main
 from gauntlet.config import Config
 from gauntlet.policy import Policy
+from gauntlet.sandbox import ExecResult
 
 
 # ---- run (the pipeline in a sandbox)
@@ -119,3 +121,76 @@ def test_run_with_a_sandbox_that_cannot_start_is_a_clean_error(
     monkeypatch.setattr(cli, "MAKE_SANDBOX", broken_sandbox)
     assert main(["run", str(root), "--sandbox", "openshell"]) == 2
     assert capsys.readouterr().err == "gauntlet: cannot start an OpenShell sandbox: boom\n"
+
+
+# ---- only what changed
+def changed_project(root: Path) -> Path:
+    """mod.py (fully covered by the stand-in sandbox) plus a change to it since the commit."""
+    committed_py_project(root)
+    (root / "mod.py").write_text((root / "mod.py").read_text() + "\n\ndef h():\n    return 1\n")
+    return root
+
+
+def test_changed_limits_the_run_to_the_lines_that_differ_from_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out
+) -> None:
+    root = changed_project(tmp_path)
+    seen: list[list[str]] = []
+
+    class Spy(RunSandbox):
+        def exec(
+            self, argv: Sequence[str], env: Mapping[str, str | None] | None = None, timeout: int = 600
+        ) -> ExecResult:
+            seen.append(list(argv))
+            return super().exec(argv, env, timeout)
+
+    def factory(project: Path, cfg: Config, policy: Policy) -> RunSandbox:  # noqa: ARG001
+        return Spy(project)
+
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", factory)
+    report = tmp_path.parent / f"{tmp_path.name}-evidence.md"
+    assert main(["run", str(root), "--changed", "--report", str(report)]) == 1  # h is new and nothing covers it
+    assert ["fake-mutate", "mutmut", "mod.py"] in seen
+    out = capsys.readouterr().out
+    assert "clean: 1 function(s) checked, 0 over CRAP 8" in out  # h alone, not g
+    assert "stray: survived" not in out
+    text = report.read_text()
+    assert "- Scope: mod.py:17-20\n" in text
+    assert f"gauntlet run {root} --changed HEAD\n" in text
+
+
+def test_changed_takes_the_commit_to_compare_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out) -> None:
+    root = changed_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", sandbox_factory())
+    assert main(["clean", str(root), "--changed=HEAD~0", "--artifacts", str(tmp_path / "none")]) == 2
+    assert "is not stamped" in capsys.readouterr().err  # the ref was fine: it got as far as the artifacts
+    assert main(["clean", str(root), "--changed", "nope"]) == 2
+    assert "--changed: 'nope' is not a commit" in capsys.readouterr().err
+
+
+def test_changed_with_nothing_changed_is_refused(tmp_path: Path, capsys: Out) -> None:
+    root = committed_py_project(tmp_path)
+    assert main(["run", str(root), "--changed"]) == 2
+    assert capsys.readouterr().err == "gauntlet: nothing to check: no source file differs from HEAD\n"
+
+
+def test_only_and_changed_add_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out) -> None:
+    root = changed_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", sandbox_factory())
+    report = tmp_path.parent / f"{tmp_path.name}-evidence.md"
+    main(["run", str(root), "--only", "mod.py:1-1", "--only", "x.py", "--changed", "HEAD", "--report", str(report)])
+    assert "clean: 2 function(s) checked" in capsys.readouterr().out
+    text = report.read_text()
+    assert "- Scope: mod.py:1-1, x.py, mod.py:17-20\n" in text
+    assert f"gauntlet run {root} --only mod.py:1-1 --only x.py --changed HEAD\n" in text
+
+
+def test_a_report_of_an_unscoped_run_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Out) -> None:
+    root = committed_py_project(tmp_path)
+    monkeypatch.setattr(cli, "MAKE_SANDBOX", sandbox_factory())
+    report = tmp_path.parent / f"{tmp_path.name}-evidence.md"
+    assert main(["run", str(root), "--report", str(report)]) == 0
+    text = report.read_text()
+    assert "- Scope: all source\n" in text
+    assert f"```\ngauntlet run {root}\n```" in text
+    capsys.readouterr()

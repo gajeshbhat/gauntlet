@@ -60,8 +60,8 @@ def function_findings(filename: str, source: str, hits: dict[int, int] | None) -
 
 
 def _measure(root: Path, rel: str, hits: dict[int, int] | None, scope: Scope, max_bytes: int) -> list[Finding]:
-    found = function_findings(rel, read_text(inside(root, rel), max_bytes), hits)
-    return [f for f in found if scope.contains(rel, f.line)]
+    functions = _functions(rel, read_text(inside(root, rel), max_bytes))
+    return [_finding(fn, hits) for fn in functions if scope.overlaps(rel, fn.start_line, fn.end_line)]
 
 
 def _measured(lines: linecov.Lines, files: list[str]) -> linecov.Lines:

@@ -14,7 +14,8 @@
 
 ## Options
 
-- `--only PATH[:LO-HI]`: limit to a file, `DIR/` or line range; repeatable.
+- `--only PATH[:LO-HI]`: limit to a file, `DIR/` or line range; repeatable. A function with any line in range is checked.
+- `--changed [REF]`: limit to the lines that differ from commit `REF` (default `HEAD`), untracked files included. Adds to `--only`.
 - `--artifacts DIR`: read artifacts here (default: `.gauntlet/` after a run, else `ROOT`).
 - `--source DIR`: git checkout the artifacts came from (default: `ROOT`).
 - `--policy FILE`: policy file (default: `~/.config/gauntlet/policy.toml`).
@@ -33,7 +34,8 @@
 ## Gates
 
 - `clean`: fails when a function's CRAP score exceeds 8 (default).
-- `harden`: fails when the mutation score is under 90% (default).
+- `harden`: fails when the mutation score is under 90% (default). Each survivor is printed as
+  `file:line: mutant: status [old line -> new line]`; `file:line` is the function it is in.
 - `arch`: fails when an import points outward through the layers.
 - `exclusions`: fails when ignore comments exceed 10 (default), or build settings hide code from the checks.
 - `spec`: fails when the Gherkin spec is malformed, or a scenario lacks an existing `@test(path::name)`.

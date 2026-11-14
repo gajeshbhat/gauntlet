@@ -54,3 +54,11 @@ def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
         main(["--version"])
     assert e.value.code == 0
     assert capsys.readouterr().out == f"gauntlet {version('gauntlet-core')}\n"
+
+
+def test_init_without_any_language_plugin_says_what_to_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(scaffold.languages, "registry", dict)
+    with pytest.raises(
+        ValueError, match=r'^no language plugin is installed; install one, such as "gauntlet-core\[python\]"$'
+    ):
+        scaffold.write_config(tmp_path)

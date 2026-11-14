@@ -7,6 +7,8 @@ from gauntlet.errors import GauntletError
 
 
 def _template(root: Path) -> str:
+    if not languages.registry():
+        raise GauntletError('no language plugin is installed; install one, such as "gauntlet-core[python]"')
     found = languages.detect(root)
     if not found:
         markers = ", ".join(m for row in languages.registry().values() for m in row.markers)

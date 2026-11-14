@@ -10,6 +10,7 @@ def make(results: list[GateResult]) -> str:
     return render(
         results,
         language="fake",
+        scope="all source",
         fingerprint="f" * 64,
         config_sha256="c" * 64,
         policy=Policy(crap_ceiling=7, mutation_floor=91, max_exclusions=3),

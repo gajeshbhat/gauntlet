@@ -22,6 +22,7 @@ def render(
     results: Sequence[GateResult],
     *,
     language: str,
+    scope: str,
     fingerprint: str,
     config_sha256: str,
     policy: Policy,
@@ -35,6 +36,7 @@ def render(
         f"Generated {created} by gauntlet {version('gauntlet-core')}.",
         "",
         f"- Language: {language}",
+        f"- Scope: {scope}",
         f"- Source fingerprint: `{fingerprint}`",
         f"- gauntlet.toml sha256: `{config_sha256}`",
         f"- Policy: crap ceiling {policy.crap_ceiling}, mutation floor {policy.mutation_floor}, "

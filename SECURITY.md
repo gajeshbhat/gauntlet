@@ -11,7 +11,7 @@
 | Hiding code from the gates | Exclusion comments are budgeted (the patterns list every ignore hint the pinned coverage tool honours); coverage `omit`/`include`/`exclude_*` and mutmut `do_not_mutate` are refused in `pyproject.toml`, `.coveragerc`, `setup.cfg` and `tox.ini`. Source files are listed through git (tracked and untracked, not ignored), whatever their directory is called. A source file absent from the report counts as 0%, and a function with branches but no measured lines counts as uncovered. |
 | Running project code on your machine | Gates only read artifacts. By default tests and mutation runs execute on your machine, in a private copy of the repo (0700 temp dir), with a minimal environment and a hard timeout: they are not isolated, and `run` says so. Set `sandbox = "openshell"` (or `--sandbox openshell`) to run them in an OpenShell sandbox instead: no host mount, no network except the package index. |
 | Commands chosen by the repo | Commands, tool versions and output names are fixed in gauntlet. |
-| Git being turned against us | Git is only asked for file names; contents are hashed in Python, so no diff, textconv or clean/smudge filter from repo config or `.gitattributes` ever runs. |
+| Git being turned against us | Git is only asked for file names and, for `--changed`, old file contents (`cat-file`); contents are hashed and compared in Python, so no diff, textconv or clean/smudge filter from repo config or `.gitattributes` ever runs. |
 
 ## What it does not defend against
 
