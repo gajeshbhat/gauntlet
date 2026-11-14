@@ -202,6 +202,7 @@ def test_cosmic_ray_runs_baseline_then_one_worker_per_cpu_then_init_and_exec(tmp
     assert all(not Path(c[0]).exists() for c in calls if c[1] == "http-worker")  # and they are cleaned up
     final = (tmp_path / "project" / ".gauntlet-out" / "run.toml").read_text()
     assert final.count("http://127.0.0.1:") == workers
+    assert len({c[3] for c in calls if c[1] == "http-worker"}) == workers  # every worker has a port of its own
     assert 'name = "http"' in final and "timeout = " in final
     assert [c[3] for c in calls if c[1] == "init"] == [str(tmp_path / "project" / ".gauntlet-out" / "session.sqlite")]
 

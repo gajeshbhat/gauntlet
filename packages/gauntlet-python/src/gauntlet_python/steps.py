@@ -97,6 +97,8 @@ command = "uv run --project . --with pytest pytest -x -q"
 # mutates the files in its own directory. So: baseline first (the tests must pass unmutated, and the timeout is five
 # times how long they took), then one worker per CPU, each in a private copy, then init and exec. A worker or
 # command that fails stops the run with a message; the workers are always stopped and their copies removed.
+# The workers' ports are picked while every probe socket is still open: picked one at a time, a port just released
+# is sometimes handed out again before its worker has bound it, and that worker dies.
 RUN_CR = """
 import json, os, shutil, socket, subprocess, sys, tempfile, time
 from pathlib import Path
@@ -116,16 +118,19 @@ done = cr("baseline", config(3600, 'name = "local"'))
 if done.returncode:
     fail("the tests fail on the unmutated code, so mutation testing cannot start:\\n" + done.stderr[-1500:])
 timeout = max(30, round(5 * (time.monotonic() - start)))
+probes = [socket.socket() for _ in os.sched_getaffinity(0)]
+for probe in probes:
+    probe.bind(("127.0.0.1", 0))
+ports = [probe.getsockname()[1] for probe in probes]
+for probe in probes:
+    probe.close()
 workers, copies = [], []
 try:
-    for _ in os.sched_getaffinity(0):
+    for port in ports:
         copy = Path(tempfile.mkdtemp(prefix="cosmic-ray-worker-"))
         copies.append(copy)
         skip = shutil.ignore_patterns(".venv", ".gauntlet-out", "mutants")
         shutil.copytree(project, copy, ignore=skip, dirs_exist_ok=True)
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
         command = ["cosmic-ray", "http-worker", "--port", str(port)]
         quiet = subprocess.DEVNULL
         workers.append((subprocess.Popen(command, cwd=copy, stdout=quiet, stderr=quiet), port))
